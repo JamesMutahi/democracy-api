@@ -15,9 +15,10 @@ class BaseModel(models.Model):
 
 class Survey(BaseModel):
     name = models.CharField(max_length=255)
+    is_poll = models.BooleanField(default=False)
 
     class Meta:
-        ordering = ['name']
+        ordering = ['-id']
         db_table = 'Survey'
 
     def __str__(self):
@@ -26,7 +27,6 @@ class Survey(BaseModel):
 
 class Question(models.Model):
     TYPES = {
-        "Poll": "Poll",  # Requires choices & Survey IS null
         "Number": "Number",
         "Text": "Text",
         "Single Choice": "Single Choice",  # Requires choices
