@@ -49,7 +49,6 @@ class Question(models.Model):
 class Choice(models.Model):
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='choices')
     text = models.CharField(max_length=255)
-    votes = models.IntegerField(default=0)
 
     class Meta:
         db_table = 'Choice'
@@ -69,14 +68,25 @@ class Response(BaseModel):
         return self.survey.name
 
 
-class Answer(models.Model):
-    response = models.ForeignKey(Response, on_delete=models.CASCADE, related_name='answers')
-    number = models.IntegerField()
-    question = models.TextField()
+class TextAnswer(models.Model):
+    response = models.ForeignKey(Response, on_delete=models.CASCADE)
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='text_answers')
     answer = models.TextField()
 
     class Meta:
-        db_table = 'Answer'
+        db_table = 'TextAnswer'
 
     def __str__(self):
         return self.answer
+
+
+class ChoiceAnswer(models.Model):
+    response = models.ForeignKey(Response, on_delete=models.CASCADE)
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='choice_answers')
+    choice = models.ForeignKey(Choice, on_delete=models.PROTECT)
+
+    class Meta:
+        db_table = 'ChoiceAnswer'
+
+    def __str__(self):
+        return self.choice
