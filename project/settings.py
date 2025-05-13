@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'users.apps.UsersConfig',
     'participation.apps.ParticipationConfig',
     'country.apps.CountryConfig',
+    'news.apps.NewsConfig',
     'rest_framework',
     'rest_framework_gis',
     'rest_framework.authtoken',
