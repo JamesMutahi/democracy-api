@@ -32,6 +32,7 @@ class Question(models.Model):
         "Single Choice": "Single Choice",  # Requires choices
         "Multiple Choice": "Multiple Choice",  # Requires choices
     }
+    page = models.IntegerField()
     number = models.IntegerField()
     survey = models.ForeignKey(Survey, on_delete=models.CASCADE, related_name='questions', null=True, blank=True)
     type = models.CharField(max_length=255, choices=TYPES)

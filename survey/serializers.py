@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
-from participation.models import Survey, Question, Choice
+from survey.models import Survey, Question, Choice, Response
+
 
 class ChoiceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -11,8 +12,10 @@ class ChoiceSerializer(serializers.ModelSerializer):
             'text',
         ]
 
+
 class QuestionSerializer(serializers.ModelSerializer):
     choices = ChoiceSerializer(many=True)
+
     class Meta:
         model = Question
         fields = [
@@ -26,6 +29,7 @@ class QuestionSerializer(serializers.ModelSerializer):
 
 class SurveySerializer(serializers.ModelSerializer):
     questions = QuestionSerializer(many=True)
+
     class Meta:
         model = Survey
         fields = [
@@ -33,3 +37,9 @@ class SurveySerializer(serializers.ModelSerializer):
             'name',
             'questions',
         ]
+
+
+class ResponseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Response
+        fields = '__all__'
