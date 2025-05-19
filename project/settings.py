@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     'country.apps.CountryConfig',
     'news.apps.NewsConfig',
     'events.apps.EventsConfig',
+    'social.apps.SocialConfig',
     'rest_framework',
     'rest_framework_gis',
     'rest_framework.authtoken',
