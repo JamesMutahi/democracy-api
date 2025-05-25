@@ -47,6 +47,8 @@ class SurveySerializer(serializers.ModelSerializer):
             'name',
             'description',
             'is_poll',
+            'start',
+            'end',
             'options',
             'questions',
         ]
