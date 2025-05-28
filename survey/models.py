@@ -33,7 +33,7 @@ class Survey(BaseModel):
 
 class Option(models.Model):
     """
-        Options/choices for polls when Survey 'is_poll = True'
+        Options for polls when Survey 'is_poll = True'
     """
     survey = models.ForeignKey(Survey, on_delete=models.CASCADE, related_name='options', null=True, blank=True)
     text = models.CharField(max_length=255)
@@ -60,7 +60,7 @@ class Question(models.Model):
     survey = models.ForeignKey(Survey, on_delete=models.CASCADE, related_name='questions', null=True, blank=True)
     type = models.CharField(max_length=255, choices=TYPES)
     text = models.TextField()
-    dependency = models.ForeignKey('Choice', on_delete=models.CASCADE, null=True, blank=True, related_name='dependency')
+    dependency = models.ForeignKey('Choice', on_delete=models.CASCADE, null=True, blank=True, related_name='dependencies')
 
     class Meta:
         ordering = ['number', 'id']

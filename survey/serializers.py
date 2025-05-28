@@ -20,10 +20,13 @@ class QuestionSerializer(serializers.ModelSerializer):
         model = Question
         fields = [
             'id',
+            'survey',
+            'page',
             'number',
             'type',
             'text',
             'choices',
+            'dependency',
         ]
 
 
@@ -32,6 +35,7 @@ class OptionSerializer(serializers.ModelSerializer):
         model = Option
         fields = [
             'id',
+            'survey',
             'text',
         ]
 
