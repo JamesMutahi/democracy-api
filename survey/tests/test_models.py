@@ -1,6 +1,6 @@
 from django.test import TestCase
 
-from participation.models import *
+from survey.models import *
 
 
 class TestParticipationAppModels(TestCase):
@@ -33,11 +33,16 @@ class TestParticipationAppModels(TestCase):
             survey = self.survey,
         )
 
-        self.answer = Answer.objects.create(
+        self.text_answer = TextAnswer.objects.create(
             response=self.response,
-            number=self.question.number,
-            question=self.question.text,
-            answer='answer',
+            question=self.question,
+            text='answer',
+        )
+
+        self.choice_answer = Choice.objects.create(
+            response=self.response,
+            question=self.question,
+            choice=self.choice,
         )
 
     def test_survey_creation(self):
@@ -64,8 +69,14 @@ class TestParticipationAppModels(TestCase):
     def test_response_representation(self):
         self.assertEqual(self.response, self.response)
 
-    def test_answer_creation(self):
-        self.assertEqual(Answer.objects.count(), 1)
+    def test_text_answer_creation(self):
+        self.assertEqual(TextAnswer.objects.count(), 1)
 
-    def test_answer_representation(self):
-        self.assertEqual(self.answer, self.answer)
+    def test_text_answer_representation(self):
+        self.assertEqual(self.text_answer, self.text_answer)
+
+    def test_choice_answer_creation(self):
+        self.assertEqual(ChoiceAnswer.objects.count(), 1)
+
+    def test_choice_answer_representation(self):
+        self.assertEqual(self.choice_answer, self.choice_answer)

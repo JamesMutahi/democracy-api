@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'django.contrib.gis',
     'users.apps.UsersConfig',
     'survey.apps.SurveyConfig',
+    'poll.apps.PollConfig',
     'country.apps.CountryConfig',
     'news.apps.NewsConfig',
     'events.apps.EventsConfig',

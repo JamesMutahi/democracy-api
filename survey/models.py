@@ -14,12 +14,8 @@ class BaseModel(models.Model):
 
 
 class Survey(BaseModel):
-    """
-        Polls are grouped with general surveys to have them listed together in chronological order
-    """
     name = models.CharField(max_length=255)
     description = models.TextField()
-    is_poll = models.BooleanField(default=False)
     start = models.DateTimeField()
     end = models.DateTimeField()
 
@@ -29,23 +25,6 @@ class Survey(BaseModel):
 
     def __str__(self):
         return self.name
-
-
-class Option(models.Model):
-    """
-        Options for polls when Survey 'is_poll = True'
-    """
-    survey = models.ForeignKey(Survey, on_delete=models.CASCADE, related_name='options', null=True, blank=True)
-    text = models.CharField(max_length=255)
-    selectors = models.ManyToManyField(User, blank=True)
-
-    class Meta:
-        ordering = ['id']
-        unique_together = ['survey', 'text']
-        db_table = 'Option'
-
-    def __str__(self):
-        return self.text
 
 
 class Question(models.Model):
