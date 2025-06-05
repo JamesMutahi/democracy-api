@@ -3,7 +3,7 @@ from rest_framework import generics, permissions
 from rest_framework.filters import SearchFilter
 from rest_framework.pagination import PageNumberPagination
 
-from survey.models import Survey, Response
+from survey.models import Survey
 from survey.serializers import SurveySerializer, ResponseSerializer
 from survey.utils.filters import SurveyFilter
 
@@ -24,10 +24,6 @@ class SurveyListView(generics.ListAPIView):
     queryset = Survey.objects.all()
 
 
-class ResponseCreateView(generics.ListCreateAPIView):
+class ResponseListCreateView(generics.ListCreateAPIView):
     permission_classes = (permissions.IsAuthenticated,)
     serializer_class = ResponseSerializer
-
-    def get_queryset(self):
-        queryset = Response.objects.filter(user=self.request.user)
-        return queryset

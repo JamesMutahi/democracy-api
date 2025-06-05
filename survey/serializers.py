@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from survey.models import Survey, Question, Choice, Response, Option
+from survey.models import Survey, Question, Choice, Response, Option, TextAnswer, ChoiceAnswer
 
 
 class ChoiceSerializer(serializers.ModelSerializer):
@@ -25,6 +25,8 @@ class QuestionSerializer(serializers.ModelSerializer):
             'number',
             'type',
             'text',
+            'hint',
+            'is_required',
             'choices',
             'dependency',
         ]
@@ -58,7 +60,50 @@ class SurveySerializer(serializers.ModelSerializer):
         ]
 
 
+class TextAnswerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TextAnswer
+        fields = (
+            'question',
+            'text',
+        )
+
+
+class ChoiceAnswerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChoiceAnswer
+        fields = (
+            'question',
+            'choice',
+        )
+
+
 class ResponseSerializer(serializers.ModelSerializer):
+    user = serializers.HiddenField(default=serializers.CurrentUserDefault())
+    text_answers = TextAnswerSerializer(required=True, many=True)
+    choice_answers = ChoiceAnswerSerializer(required=True, many=True)
+
     class Meta:
         model = Response
-        fields = '__all__'
+        fields = (
+            'user',
+            'survey',
+            'start_time',
+            'end_time',
+            'text_answers',
+            'choice_answers',
+        )
+        extra_kwargs = {'id': {'read_only': True}}
+
+    def create(self, validated_data):
+        text_answers = validated_data.pop('text_answers')
+        choice_answers = validated_data.pop('choice_answers')
+        response_qs = Response.objects.filter(**validated_data)
+        if response_qs.exists():
+            return response_qs.first()
+        response = Response.objects.create(**validated_data)
+        for answer in text_answers:
+            TextAnswer.objects.create(response=response, **answer)
+        for answer in choice_answers:
+            ChoiceAnswer.objects.create(response=response, **answer)
+        return response

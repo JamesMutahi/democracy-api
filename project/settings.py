@@ -72,8 +72,8 @@ AUTH_USER_MODEL = 'users.CustomUser'
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -128,7 +128,7 @@ REST_FRAMEWORK = {
     #     'rest_framework.throttling.UserRateThrottle'
     # ],
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '50/hour',
+        'anon': '100/hour',
         'user': '1000/hour',
         'portal': '1000/hour',
     }

@@ -60,7 +60,9 @@ class Question(models.Model):
     survey = models.ForeignKey(Survey, on_delete=models.CASCADE, related_name='questions', null=True, blank=True)
     type = models.CharField(max_length=255, choices=TYPES)
     text = models.TextField()
-    dependency = models.ForeignKey('Choice', on_delete=models.CASCADE, null=True, blank=True, related_name='dependencies')
+    hint = models.CharField(max_length=255, null=True, blank=True)
+    is_required = models.BooleanField(default=True)
+    dependency = models.ForeignKey('Choice', on_delete=models.CASCADE, null=True, blank=True, related_name='dependants')
 
     class Meta:
         ordering = ['number', 'id']
@@ -88,6 +90,8 @@ class Choice(models.Model):
 class Response(BaseModel):
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='responses')
     survey = models.ForeignKey(Survey, on_delete=models.PROTECT, related_name='responses')
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
 
     class Meta:
         db_table = 'Response'
@@ -97,24 +101,24 @@ class Response(BaseModel):
 
 
 class TextAnswer(models.Model):
-    response = models.ForeignKey(Response, on_delete=models.CASCADE)
-    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='text_answers')
-    answer = models.TextField()
+    response = models.ForeignKey(Response, on_delete=models.CASCADE, related_name='text_answers')
+    question = models.ForeignKey(Question, on_delete=models.PROTECT, related_name='text_answers')
+    text = models.TextField()
 
     class Meta:
         db_table = 'TextAnswer'
 
     def __str__(self):
-        return self.answer
+        return self.text
 
 
 class ChoiceAnswer(models.Model):
-    response = models.ForeignKey(Response, on_delete=models.CASCADE)
-    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='choice_answers')
+    response = models.ForeignKey(Response, on_delete=models.CASCADE, related_name='choice_answers')
+    question = models.ForeignKey(Question, on_delete=models.PROTECT, related_name='choice_answers')
     choice = models.ForeignKey(Choice, on_delete=models.PROTECT)
 
     class Meta:
         db_table = 'ChoiceAnswer'
 
     def __str__(self):
-        return self.choice
+        return self.choice.text

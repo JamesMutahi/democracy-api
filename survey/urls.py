@@ -3,5 +3,5 @@ from survey import views
 
 urlpatterns = [
     path('surveys/', views.SurveyListView.as_view()),
-    path('response/', views.ResponseCreateView.as_view()),
+    path('response/', views.ResponseListCreateView.as_view()),
 ]
