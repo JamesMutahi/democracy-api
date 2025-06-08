@@ -22,6 +22,7 @@ from django.conf import settings
 urlpatterns = [
     path('auth/', include('users.urls')),
     path('api/', include('survey.urls')),
+    path('api/', include('poll.urls')),
     path('api/', include('country.urls')),
     path('api/', include('news.urls')),
     path('api/', include('events.urls')),

@@ -1,10 +1,10 @@
 from django_filters import rest_framework as filters
 
-from survey.models import Survey
+from poll.models import Poll
 
 
-class SurveyFilter(filters.FilterSet):
+class PollFilter(filters.FilterSet):
 
     class Meta:
-        model = Survey
+        model = Poll
         fields = ['name', 'description', 'start_time', 'end_time']

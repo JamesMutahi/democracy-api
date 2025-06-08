@@ -15,12 +15,11 @@ class BaseModel(models.Model):
 
 class Poll(BaseModel):
     name = models.CharField(max_length=255)
-    description = models.TextField()
-    start = models.DateTimeField()
-    end = models.DateTimeField()
+    description = models.TextField(null=True, blank=True)
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
 
     class Meta:
-        ordering = ['-start']
         db_table = 'Poll'
 
     def __str__(self):
@@ -30,7 +29,7 @@ class Poll(BaseModel):
 class Option(models.Model):
     poll = models.ForeignKey(Poll, on_delete=models.CASCADE, related_name='options')
     text = models.CharField(max_length=255)
-    selectors = models.ManyToManyField(User, blank=True)
+    votes = models.ManyToManyField(User, blank=True)
 
     class Meta:
         ordering = ['id']

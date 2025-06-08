@@ -41,8 +41,8 @@ class SurveySerializer(serializers.ModelSerializer):
             'id',
             'name',
             'description',
-            'start',
-            'end',
+            'start_time',
+            'end_time',
             'questions',
         ]
 

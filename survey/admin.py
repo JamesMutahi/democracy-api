@@ -21,7 +21,7 @@ class QuestionInline(admin.TabularInline):
 
 @admin.register(Survey)
 class SurveyAdmin(admin.ModelAdmin):
-    list_display = ['name', 'start', 'end']
+    list_display = ['name', 'start_time', 'end_time']
     inlines = [QuestionInline]
 
 

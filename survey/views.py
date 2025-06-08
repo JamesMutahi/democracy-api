@@ -18,7 +18,7 @@ class SurveyListView(generics.ListAPIView):
     permission_classes = (permissions.AllowAny,)
     serializer_class = SurveySerializer
     filter_backends = (filters.DjangoFilterBackend, SearchFilter)
-    search_fields = ['name', 'county__name', 'description', 'contractor__name']
+    search_fields = ['name', 'description']
     filterset_class = SurveyFilter
     pagination_class = SurveyListPagination
     queryset = Survey.objects.all()

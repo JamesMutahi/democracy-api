@@ -15,12 +15,11 @@ class BaseModel(models.Model):
 
 class Survey(BaseModel):
     name = models.CharField(max_length=255)
-    description = models.TextField()
-    start = models.DateTimeField()
-    end = models.DateTimeField()
+    description = models.TextField(null=True, blank=True)
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
 
     class Meta:
-        ordering = ['-start']
         db_table = 'Survey'
 
     def __str__(self):
