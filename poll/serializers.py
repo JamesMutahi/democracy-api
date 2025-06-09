@@ -50,5 +50,5 @@ class PollSerializer(serializers.ModelSerializer):
         voted_option = None
         for option in obj.options.all():
             if option.votes.filter(id=self.context['request'].user.id).exists():
-                voted_option = option.votes.filter(id=self.context['request'].user.id).first().id
+                voted_option = option.id
         return voted_option
