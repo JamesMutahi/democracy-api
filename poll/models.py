@@ -28,6 +28,7 @@ class Poll(BaseModel):
 
 class Option(models.Model):
     poll = models.ForeignKey(Poll, on_delete=models.CASCADE, related_name='options')
+    number = models.IntegerField()
     text = models.CharField(max_length=255)
     votes = models.ManyToManyField(User, blank=True)
 

@@ -1,22 +1,26 @@
 from django.contrib import admin
+from grappelli.forms import GrappelliSortableHiddenMixin
+from nested_admin import nested
 
 from survey.models import *
 
 
-class ChoiceInline(admin.TabularInline):
+class ChoiceInline(GrappelliSortableHiddenMixin, admin.TabularInline):
     model = Choice
     extra = 0
+    sortable_field_name = 'number'
 
 
 @admin.register(Question)
-class QuestionAdmin(admin.ModelAdmin):
+class QuestionAdmin(nested.ModelAdmin):
     list_display = ['survey', 'page', 'number', 'text', 'is_required']
     inlines = [ChoiceInline]
 
 
-class QuestionInline(admin.TabularInline):
+class QuestionInline(GrappelliSortableHiddenMixin, admin.TabularInline):
     model = Question
     extra = 0
+    sortable_field_name = 'number'
 
 
 @admin.register(Survey)

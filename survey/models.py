@@ -55,6 +55,7 @@ class Choice(models.Model):
         Choices for relevant questions
     """
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='choices')
+    number = models.IntegerField()
     text = models.CharField(max_length=255)
 
     class Meta:

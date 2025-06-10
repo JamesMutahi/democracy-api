@@ -20,6 +20,7 @@ from django.urls import path, include, re_path
 from django.conf import settings
 
 urlpatterns = [
+    path('grappelli/', include('grappelli.urls')),
     path('auth/', include('users.urls')),
     path('api/', include('survey.urls')),
     path('api/', include('poll.urls')),
@@ -29,7 +30,6 @@ urlpatterns = [
     path('api/', include('social.urls')),
     path('', admin.site.urls),
 ]
-
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

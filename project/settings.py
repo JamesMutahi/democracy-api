@@ -46,9 +46,11 @@ GDAL_LIBRARY_PATH = r'C:\OSGeo4W\bin\gdal309.dll'
 # Application definition
 
 INSTALLED_APPS = [
+    'django.contrib.contenttypes',
+    'grappelli.dashboard',
+    'grappelli',
     'django.contrib.admin',
     'django.contrib.auth',
-    'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
@@ -66,9 +68,16 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_filters',
     'leaflet',
+    'nested_admin',
 ]
 
 AUTH_USER_MODEL = 'users.CustomUser'
+
+# Grappelli configs
+GRAPPELLI_ADMIN_TITLE = 'Democracy'
+GRAPPELLI_SWITCH_USER = True
+GRAPPELLI_CLEAN_INPUT_TYPES = True
+GRAPPELLI_INDEX_DASHBOARD = 'project.dashboard.CustomIndexDashboard'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -167,7 +176,8 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'static')
+STATIC_URL = '/static/'
 
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 MEDIA_URL = '/media/'
