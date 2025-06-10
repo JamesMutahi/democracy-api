@@ -59,7 +59,6 @@ INSTALLED_APPS = [
     'survey.apps.SurveyConfig',
     'poll.apps.PollConfig',
     'country.apps.CountryConfig',
-    'news.apps.NewsConfig',
     'events.apps.EventsConfig',
     'social.apps.SocialConfig',
     'rest_framework',
