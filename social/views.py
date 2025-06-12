@@ -21,4 +21,4 @@ class PostListView(generics.ListAPIView):
     search_fields = ['name', 'county__name', 'description', 'contractor__name']
     filterset_class = PostFilter
     pagination_class = PostListPagination
-    queryset = Post.objects.filter(reply_to=None)
+    queryset = Post.objects.all()

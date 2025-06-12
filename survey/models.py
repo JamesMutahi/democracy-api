@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 User = get_user_model()
 
@@ -39,7 +40,7 @@ class Question(models.Model):
     type = models.CharField(max_length=255, choices=TYPES)
     text = models.TextField()
     hint = models.CharField(max_length=255, null=True, blank=True)
-    is_required = models.BooleanField(default=True)
+    is_required = models.BooleanField(_('required'), default=True)
     dependency = models.ForeignKey('Choice', on_delete=models.CASCADE, null=True, blank=True, related_name='dependants')
 
     class Meta:

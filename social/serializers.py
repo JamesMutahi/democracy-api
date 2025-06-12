@@ -25,6 +25,8 @@ class PostSerializer(serializers.ModelSerializer):
             'author',
             'created_at',
             'updated_at',
+            'status',
+            'published_at',
             'body',
             'image1',
             'image2',
@@ -40,15 +42,14 @@ class PostSerializer(serializers.ModelSerializer):
             'is_active',
             'likes',
             'views',
-            'reply_to',
-            'repost_of',
+            'parent',
+            'is_repost',
             'replies',
         )
 
     def get_fields(self):
         fields = super(PostSerializer, self).get_fields()
-        fields['reply_to'] = PostSerializer(read_only=True)
-        fields['repost_of'] = PostSerializer(read_only=True)
+        fields['parent'] = PostSerializer(read_only=True)
         return fields
 
     @staticmethod
@@ -58,7 +59,7 @@ class PostSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_replies(obj):
-        count = obj.replies.count() + obj.reposts.count()
+        count = obj.replies_and_reposts.count()
         return count
 
     @staticmethod
