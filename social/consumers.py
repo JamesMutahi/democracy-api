@@ -61,7 +61,7 @@ class PostConsumer(
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
 
-        # we need to ensure that only the author can edit there posts.
+        # we need to ensure that only the author can edit their posts.
         if kwargs.get('action') == 'list':
             filter = kwargs.get("body_contains", None)
             if filter:

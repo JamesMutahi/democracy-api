@@ -29,7 +29,7 @@ class CustomIndexDashboard(Dashboard):
             title=_(''),
             column=1,
             collapsible=True,
-            models=('payments.models.Post',),
+            models=('social.models.Post',),
         ))
         self.children.append(modules.AppList(
             title=_(''),

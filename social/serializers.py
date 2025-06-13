@@ -64,7 +64,7 @@ class PostSerializer(ModelSerializer):
 
     @staticmethod
     def get_views(obj):
-        count = obj.ip_views.count()
+        count = obj.views.count()
         return count
 
     def create(self, validated_data):
