@@ -1,22 +1,22 @@
 from django.contrib.auth import get_user_model
-from rest_framework import serializers
+from rest_framework.serializers import ModelSerializer, SerializerMethodField
 
 from social.models import Post
 
 User = get_user_model()
 
 
-class SafeUserSerializer(serializers.ModelSerializer):
+class SafeUserSerializer(ModelSerializer):
     class Meta:
         model = User
         fields = ('id', 'email', 'first_name', 'last_name', 'is_verified', 'is_staff', 'is_active',)
 
 
-class PostSerializer(serializers.ModelSerializer):
+class PostSerializer(ModelSerializer):
     author = SafeUserSerializer(read_only=True)
-    likes = serializers.SerializerMethodField()
-    replies = serializers.SerializerMethodField()
-    views = serializers.SerializerMethodField()
+    likes = SerializerMethodField()
+    replies = SerializerMethodField()
+    views = SerializerMethodField()
 
     class Meta:
         model = Post
@@ -66,3 +66,7 @@ class PostSerializer(serializers.ModelSerializer):
     def get_views(obj):
         count = obj.ip_views.count()
         return count
+
+    def create(self, validated_data):
+        validated_data['author'] = self.context.get('scope').get('user')
+        return super().create(validated_data)
