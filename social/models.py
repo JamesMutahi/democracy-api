@@ -26,7 +26,7 @@ class Post(BaseModel):
         ('published', 'Published'),
     )
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='posts')
-    body = models.TextField()
+    body = models.TextField(blank=True)
     image1 = models.ImageField(upload_to='posts/images/', null=True, blank=True)
     image2 = models.ImageField(upload_to='posts/images/', null=True, blank=True)
     image3 = models.ImageField(upload_to='posts/images/', null=True, blank=True)
@@ -38,9 +38,10 @@ class Post(BaseModel):
     video3 = models.ImageField(upload_to='posts/videos/', null=True, blank=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='draft')
     published_at = models.DateTimeField(default=timezone.now)
-    parent = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
-                               related_name='replies_and_reposts')
-    is_repost = models.BooleanField(_('repost'), default=False)
+    reply_to = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
+                                 related_name='replies')
+    repost_of = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
+                                  related_name='reposts')
     likes = models.ManyToManyField(User, blank=True, related_name='post_likes')
     views = models.ManyToManyField(User, blank=True)
     is_edited = models.BooleanField(_('edited'), default=False)
