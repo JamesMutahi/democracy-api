@@ -12,10 +12,9 @@ import os
 from channels.auth import AuthMiddlewareStack
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.security.websocket import AllowedHostsOriginValidator
+from channelsmultiplexer import AsyncJsonWebsocketDemultiplexer
 from django.core.asgi import get_asgi_application
 from django.urls import path
-
-from social.routing import social_websocket_urlpatterns
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mysite.settings")
 # Initialize Django ASGI application early to ensure the AppRegistry
@@ -28,8 +27,12 @@ application = ProtocolTypeRouter({
     # Django's ASGI application to handle traditional HTTP requests
     "http": django_asgi_app,
 
-    # WebSocket chat handler
+    # WebSocket handler
     "websocket": AllowedHostsOriginValidator(
-        AuthMiddlewareStack(URLRouter(social_websocket_urlpatterns))
+        AuthMiddlewareStack(URLRouter([
+            path("ws/", AsyncJsonWebsocketDemultiplexer.as_asgi(
+                posts=PostConsumer.as_asgi(),
+            )),
+        ]), )
     ),
 })
