@@ -43,6 +43,7 @@ class Post(BaseModel):
     repost_of = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
                                   related_name='reposts')
     likes = models.ManyToManyField(User, blank=True, related_name='post_likes')
+    bookmarks = models.ManyToManyField(User, blank=True, related_name='post_bookmarks')
     views = models.ManyToManyField(User, blank=True)
     is_edited = models.BooleanField(_('edited'), default=False)
     is_deleted = models.BooleanField(_('deleted'), default=False)

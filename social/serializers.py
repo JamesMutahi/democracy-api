@@ -15,6 +15,7 @@ class SafeUserSerializer(ModelSerializer):
 class PostSerializer(ModelSerializer):
     author = SafeUserSerializer(read_only=True)
     likes = SerializerMethodField()
+    bookmarks = SerializerMethodField()
     replies = SerializerMethodField()
     reposts = SerializerMethodField()
     views = SerializerMethodField()
@@ -24,8 +25,6 @@ class PostSerializer(ModelSerializer):
         fields = (
             'id',
             'author',
-            'created_at',
-            'updated_at',
             'status',
             'published_at',
             'body',
@@ -42,6 +41,7 @@ class PostSerializer(ModelSerializer):
             'is_deleted',
             'is_active',
             'likes',
+            'bookmarks',
             'views',
             'replies',
             'reposts',
@@ -58,6 +58,11 @@ class PostSerializer(ModelSerializer):
     @staticmethod
     def get_likes(obj):
         count = obj.likes.count()
+        return count
+
+    @staticmethod
+    def get_bookmarks(obj):
+        count = obj.bookmarks.count()
         return count
 
     @staticmethod
