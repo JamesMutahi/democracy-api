@@ -1,8 +1,10 @@
 import re
-from typing import Dict, Any
 
-from channels.consumer import AsyncConsumer
+from channels.db import database_sync_to_async
+from channels.middleware import BaseMiddleware
+from django.contrib.auth.models import AnonymousUser
 from django.db.models import QuerySet
+from djangochannelsrestframework import permissions
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import (
@@ -13,31 +15,34 @@ from djangochannelsrestframework.mixins import (
     RetrieveModelMixin
 )
 from djangochannelsrestframework.observer import model_observer
-from djangochannelsrestframework.permissions import IsAuthenticated
+from rest_framework.authtoken.models import Token
 
 from social import models, serializers
 
 
-class IsAuthenticatedForWrite(IsAuthenticated):
-    async def has_permission(
-            self, scope: Dict[str, Any],
-            consumer: AsyncConsumer,
-            action: str,
-            **kwargs
-    ) -> bool:
-        """
-        This method will permit un-authenticated requests
-         for non-destructive actions only.
-        """
+class TokenAuthMiddleware(BaseMiddleware):
+    async def __call__(self, scope, receive, send):
+        headers = dict(scope['headers'])
+        if b'authorization' in headers:
+            try:
+                token_name, token_key = headers[b'authorization'].decode(
+                ).split()
+            except ValueError:
+                token_key = None
+            scope['user'] = AnonymousUser() if token_key is None else await get_user(token_key)
+            return await super().__call__(scope, receive, send)
+        else:
+            scope['user'] = AnonymousUser()
+            return await super().__call__(scope, receive, send)
 
-        if action in ('list', 'retrieve'):
-            return True
-        return await super().has_permission(
-            scope,
-            consumer,
-            action,
-            **kwargs
-        )
+
+@database_sync_to_async
+def get_user(token):
+    try:
+        user = Token.objects.get(key=token).user
+    except:
+        user = AnonymousUser()
+    return user
 
 
 class PostConsumer(
@@ -50,13 +55,19 @@ class PostConsumer(
 ):
     queryset = models.Post.objects.all()
     serializer_class = serializers.PostSerializer
-    permission_classes = (IsAuthenticatedForWrite,)
+    permission_classes = [permissions.IsAuthenticated]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.subscribed_to_list = False
         self.subscribed_to_hashtag = None
+
+    async def connect(self):
+        if self.scope['user'].is_authenticated:
+            await self.accept()
+        else:
+            await self.close()
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)

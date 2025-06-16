@@ -1,5 +1,5 @@
 from django_filters import rest_framework as filters
-from rest_framework import generics, permissions
+from rest_framework import generics
 from rest_framework.filters import SearchFilter
 from rest_framework.pagination import PageNumberPagination
 
@@ -15,7 +15,6 @@ class SurveyListPagination(PageNumberPagination):
 
 
 class SurveyListView(generics.ListAPIView):
-    permission_classes = (permissions.AllowAny,)
     serializer_class = SurveySerializer
     filter_backends = (filters.DjangoFilterBackend, SearchFilter)
     search_fields = ['name', 'description']
@@ -25,5 +24,4 @@ class SurveyListView(generics.ListAPIView):
 
 
 class ResponseListCreateView(generics.ListCreateAPIView):
-    permission_classes = (permissions.IsAuthenticated,)
     serializer_class = ResponseSerializer

@@ -1,6 +1,6 @@
 from django_filters import rest_framework as filters
-from rest_framework import generics, permissions, status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework import generics, status
+from rest_framework.decorators import api_view
 from rest_framework.filters import SearchFilter
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
@@ -17,7 +17,6 @@ class PollListPagination(PageNumberPagination):
 
 
 class PollListView(generics.ListAPIView):
-    permission_classes = (permissions.AllowAny,)
     serializer_class = PollSerializer
     filter_backends = (filters.DjangoFilterBackend, SearchFilter)
     search_fields = ['name', 'description']
@@ -27,7 +26,6 @@ class PollListView(generics.ListAPIView):
 
 
 @api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
 def vote_poll(request):
     option = Option.objects.get(id=request.data['option'])
     for o in option.poll.options.all():

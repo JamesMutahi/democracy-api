@@ -21,18 +21,19 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mysite.settings")
 # is populated before importing code that may import ORM models.
 django_asgi_app = get_asgi_application()
 
-from social.consumers import PostConsumer
+from social.consumers import PostConsumer, TokenAuthMiddleware
 
 application = ProtocolTypeRouter({
     # Django's ASGI application to handle traditional HTTP requests
     "http": django_asgi_app,
 
     # WebSocket handler
-    "websocket": AllowedHostsOriginValidator(
-        AuthMiddlewareStack(URLRouter([
-            path("ws/", AsyncJsonWebsocketDemultiplexer.as_asgi(
-                posts=PostConsumer.as_asgi(),
-            )),
-        ]), )
-    ),
+    "websocket":
+        AllowedHostsOriginValidator(
+            TokenAuthMiddleware(URLRouter([
+                path("ws/", AsyncJsonWebsocketDemultiplexer.as_asgi(
+                    posts=PostConsumer.as_asgi(),
+                )),
+            ]), )
+        ),
 })

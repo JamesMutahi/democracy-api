@@ -11,6 +11,7 @@ from users.serializers import *
 
 
 class LoginView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
     serializer_class = LoginSerializer
     if coreapi is not None and coreschema is not None:
         schema = ManualSchema(
@@ -52,6 +53,7 @@ class LoginView(APIView):
 
 
 class CreateUserView(generics.CreateAPIView):
+    permission_classes = [permissions.AllowAny]
     serializer_class = UserSerializer
 
     if coreapi is not None and coreschema is not None:
@@ -127,7 +129,6 @@ def resend_code(request):
 
 
 @api_view(['DELETE'])
-@permission_classes([permissions.IsAuthenticated])
 def logout(request):
     request.user.auth_token.delete()
     return Response(status=status.HTTP_200_OK)
@@ -135,7 +136,6 @@ def logout(request):
 
 class RegistrationVerificationView(APIView):
     serializer_class = RegistrationVerificationSerializer
-    permission_classes = (permissions.IsAuthenticated,)
 
     if coreapi is not None and coreschema is not None:
         schema = AutoSchema(
@@ -167,6 +167,7 @@ class RegistrationVerificationView(APIView):
 
 
 class PasswordResetEmailVerification(APIView):
+    permission_classes = [permissions.AllowAny]
     serializer_class = EmailVerificationSerializer
 
     if coreapi is not None and coreschema is not None:
@@ -199,6 +200,7 @@ class PasswordResetEmailVerification(APIView):
 
 
 class PasswordResetCodeVerification(APIView):
+    permission_classes = [permissions.AllowAny]
     serializer_class = PasswordResetCodeVerificationSerializer
 
     if coreapi is not None and coreschema is not None:
@@ -241,7 +243,6 @@ class PasswordResetCodeVerification(APIView):
 
 
 class PasswordResetView(APIView):
-    permission_classes = (permissions.IsAuthenticated,)
     serializer_class = PasswordResetSerializer
 
     if coreapi is not None and coreschema is not None:
@@ -279,7 +280,6 @@ class PasswordResetView(APIView):
 
 
 class PasswordChangeView(APIView):
-    permission_classes = (permissions.IsAuthenticated,)
     serializer_class = PasswordChangeSerializer
 
     if coreapi is not None and coreschema is not None:
@@ -328,8 +328,6 @@ class PasswordChangeView(APIView):
 
 
 class UserView(viewsets.ModelViewSet):
-    permission_classes = (permissions.IsAuthenticated,)
-
     serializer_classes = {
         'update': UserUpdateSerializer,
         'retrieve': UserSerializer,
