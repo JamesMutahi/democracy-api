@@ -2,7 +2,7 @@ from django.contrib.auth.models import update_last_login
 from django.utils import timezone
 from rest_framework import generics, status, permissions, viewsets
 from rest_framework.compat import coreapi, coreschema
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework.schemas import ManualSchema, AutoSchema
 from rest_framework.views import APIView
@@ -11,7 +11,7 @@ from users.serializers import *
 
 
 class LoginView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
     serializer_class = LoginSerializer
     if coreapi is not None and coreschema is not None:
         schema = ManualSchema(
@@ -120,7 +120,6 @@ class CreateUserView(generics.CreateAPIView):
 
 
 @api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
 def resend_code(request):
     if not Code.objects.filter(user=request.user).exists():
         Code.objects.get_or_create(user=request.user, code=generate_code())

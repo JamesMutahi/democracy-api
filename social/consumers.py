@@ -17,7 +17,8 @@ from djangochannelsrestframework.mixins import (
 from djangochannelsrestframework.observer import model_observer
 from rest_framework.authtoken.models import Token
 
-from social import models, serializers
+from social.models import Post
+from social.serializers import PostSerializer
 
 
 class TokenAuthMiddleware(BaseMiddleware):
@@ -53,8 +54,8 @@ class PostConsumer(
     DeleteModelMixin,
     GenericAsyncAPIConsumer
 ):
-    queryset = models.Post.objects.all()
-    serializer_class = serializers.PostSerializer
+    queryset = Post.objects.all()
+    serializer_class = PostSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def __init__(self, *args, **kwargs):
@@ -86,13 +87,13 @@ class PostConsumer(
         # for other actions we can only expose the posts created by this user.
         return queryset.filter(author=self.scope.get("user"))
 
-    @model_observer(models.Post)
+    @model_observer(Post)
     async def post_change_handler(self, message, observer=None, **kwargs):
         # called when a subscribed item changes
         await self.send_json(message)
 
     @post_change_handler.groups_for_signal
-    def post_change_handler(self, instance: models.Post, **kwargs):
+    def post_change_handler(self, instance: Post, **kwargs):
         # DO NOT DO DATABASE QUERIES HERE
         # This is called very often through the lifecycle of every instance of a Post model
         for hashtag in re.findall(r"#[a-z0-9]+", instance.body.lower()):
@@ -148,7 +149,37 @@ class PostConsumer(
             self.subscribed_to_list = False
 
     @post_change_handler.serializer
-    def post_change_handler(self, instance: models.Post, action, **kwargs):
+    def post_change_handler(self, instance: Post, action, **kwargs):
         if action == 'delete':
             return {"pk": instance.pk}
-        return {"pk": instance.pk, "data": {"body": instance.body}}
+        return {"id": instance.pk, "data": {"body": instance.body}}
+
+    @action()
+    async def like(self, **kwargs):
+        data = await self.like_post(pk=kwargs['data']['id'], user=self.scope.get("user"))
+        return data, 200
+
+    @database_sync_to_async
+    def like_post(self, pk, user):
+        post = Post.objects.get(pk=pk)
+        if post.likes.filter(id=user.id).exists():
+            post.likes.remove(user)
+        else:
+            post.likes.add(user)
+        serializer = PostSerializer(post, context={'scope': self.scope})
+        return serializer.data
+
+    @action()
+    async def bookmark(self, **kwargs):
+        data = await self.bookmark_post(pk=kwargs['data']['id'], user=self.scope.get("user"))
+        return data, 200
+
+    @database_sync_to_async
+    def bookmark_post(self, pk, user):
+        post = Post.objects.get(pk=pk)
+        if post.bookmarks.filter(id=user.id).exists():
+            post.bookmarks.remove(user)
+        else:
+            post.bookmarks.add(user)
+        serializer = PostSerializer(post, context={'scope': self.scope})
+        return serializer.data
