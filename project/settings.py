@@ -60,7 +60,6 @@ INSTALLED_APPS = [
     'survey.apps.SurveyConfig',
     'poll.apps.PollConfig',
     'country.apps.CountryConfig',
-    'events.apps.EventsConfig',
     'social.apps.SocialConfig',
     'rest_framework',
     'rest_framework_gis',
