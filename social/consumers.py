@@ -19,7 +19,7 @@ from djangochannelsrestframework.observer import model_observer
 from rest_framework.authtoken.models import Token
 
 from social.models import Post
-from social.serializers import PostSerializer, UserProfileSerializer
+from social.serializers import PostSerializer
 
 User = get_user_model()
 
@@ -198,17 +198,6 @@ class PostConsumer(
         return serializer.data
 
     @action()
-    async def profile(self, pk, **kwargs):
-        data = await self.get_user_profile(pk=pk)
-        return data, 200
-
-    @database_sync_to_async
-    def get_user_profile(self, pk):
-        user = User.objects.get(pk=pk)
-        serializer = UserProfileSerializer(user, context={'scope': self.scope})
-        return serializer.data
-
-    @action()
     async def bookmarks(self, **kwargs):
         data = await self.get_bookmarked_posts(user=self.scope["user"])
         return data, 200
@@ -216,5 +205,38 @@ class PostConsumer(
     @database_sync_to_async
     def get_bookmarked_posts(self, user):
         posts = user.bookmarked_posts.all()
+        serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
+        return serializer.data
+
+    @action()
+    async def liked_posts(self, **kwargs):
+        data = await self.get_liked_posts(user=self.scope["user"])
+        return data, 200
+
+    @database_sync_to_async
+    def get_liked_posts(self, user):
+        posts = user.liked_posts.all()
+        serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
+        return serializer.data
+
+    @action()
+    async def user_posts(self, **kwargs):
+        data = await self.get_user_posts(user=self.scope["user"])
+        return data, 200
+
+    @database_sync_to_async
+    def get_user_posts(self, user):
+        posts = user.posts.filter(reply_to=None)
+        serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
+        return serializer.data
+
+    @action()
+    async def user_replies(self, **kwargs):
+        data = await self.get_user_replies(user=self.scope["user"])
+        return data, 200
+
+    @database_sync_to_async
+    def get_user_replies(self, user):
+        posts = user.posts.exclude(reply_to=None)
         serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
         return serializer.data

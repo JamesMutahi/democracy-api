@@ -9,10 +9,24 @@ User = get_user_model()
 
 class SafeUserSerializer(ModelSerializer):
     image = SerializerMethodField()
+    following = SerializerMethodField(read_only=True)
+    followers = SerializerMethodField(read_only=True)
 
     class Meta:
         model = User
-        fields = ('id', 'email', 'first_name', 'last_name', 'image', 'status', 'is_staff', 'is_active', 'date_joined')
+        fields = (
+            'id',
+            'email',
+            'first_name',
+            'last_name',
+            'image',
+            'status',
+            'is_staff',
+            'is_active',
+            'following',
+            'followers',
+            'date_joined'
+        )
 
     def get_image(self, obj):
         # Building the url manually as serializer requires request which is not available in consumer scope
@@ -23,6 +37,14 @@ class SafeUserSerializer(ModelSerializer):
             return 'http://' + host + obj.image.url
         else:
             return 'https://' + host + obj.image.url
+
+    @staticmethod
+    def get_following(user):
+        return user.following.count()
+
+    @staticmethod
+    def get_followers(user):
+        return user.followers.count()
 
 
 class PostSerializer(ModelSerializer):
@@ -108,28 +130,3 @@ class PostSerializer(ModelSerializer):
     def create(self, validated_data):
         validated_data['author'] = self.context['scope']['user']
         return super().create(validated_data)
-
-
-class UserProfileSerializer(ModelSerializer):
-    posts = PostSerializer(many=True)
-    replies = SerializerMethodField()
-    liked_posts = PostSerializer(many=True)
-    following = SafeUserSerializer(read_only=True, many=True)
-    followers = SafeUserSerializer(read_only=True, many=True)
-
-    class Meta:
-        model = User
-        fields = (
-            'id',
-            'posts',
-            'replies',
-            'liked_posts',
-            'following',
-            'followers',
-        )
-
-    @staticmethod
-    def get_replies(user):
-        posts = user.posts.exclude(reply_to=None)
-        serializer = PostSerializer(posts, many=True)
-        return serializer.data

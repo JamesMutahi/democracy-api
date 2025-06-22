@@ -17,14 +17,25 @@ class UserSerializer(serializers.ModelSerializer):
     token = serializers.CharField(source='auth_token.key', read_only=True)
     password = serializers.CharField(write_only=True, required=True)
     password2 = serializers.CharField(write_only=True, required=True)
+    following = serializers.SerializerMethodField(read_only=True)
+    followers = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = User
         fields = (
             'id', 'token', 'email', 'first_name', 'last_name', 'image', 'status', 'password', 'password2',
-            'is_active', 'is_staff', 'date_joined')
+            'is_active', 'is_staff', 'date_joined', 'following', 'followers')
         extra_kwargs = {'first_name': {'required': True}, 'last_name': {'required': True}, 'image': {'required': True},
                         'is_active': {'read_only': True}, 'is_staff': {'read_only': True}}
+
+
+    @staticmethod
+    def get_following(user):
+        return user.following.count()
+
+    @staticmethod
+    def get_followers(user):
+        return user.followers.count()
 
     def validate(self, attrs):
         if attrs.get('password') != attrs.pop('password2'):
