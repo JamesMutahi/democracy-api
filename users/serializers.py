@@ -21,11 +21,10 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = (
-            'id', 'token', 'email', 'first_name', 'last_name', 'password', 'password2',
-            'is_verified', 'is_active', 'is_staff')
-        extra_kwargs = {'first_name': {'required': True}, 'last_name': {'required': True},
-                        'is_verified': {'read_only': True}, 'is_active': {'read_only': True},
-                        'is_staff': {'read_only': True}}
+            'id', 'token', 'email', 'first_name', 'last_name', 'image', 'status', 'password', 'password2',
+            'is_active', 'is_staff', 'date_joined')
+        extra_kwargs = {'first_name': {'required': True}, 'last_name': {'required': True}, 'image': {'required': True},
+                        'is_active': {'read_only': True}, 'is_staff': {'read_only': True}}
 
     def validate(self, attrs):
         if attrs.get('password') != attrs.pop('password2'):
@@ -42,20 +41,11 @@ class UserSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         user_qs = User.objects.filter(email=validated_data['email'])
         if user_qs.exists():
-            user = user_qs.first()
-            if user.is_verified:
-                raise serializers.ValidationError({'error': ['User with this email already exists.']})
-            else:
-                if not Code.objects.filter(user=user_qs.first()).exists():
-                    Code.objects.get_or_create(user=user_qs.first(), code=generate_code())
-                # send_code.delay(user_id=user_qs.first().id, subject='Registration Code',
-                #                 template_name='emails/index.html')
-                return user
+            raise serializers.ValidationError({'error': ['User with this email already exists.']})
         user = User(
             email=validated_data['email'],
             first_name=validated_data['first_name'],
             last_name=validated_data['last_name'],
-            is_verified=False,
         )
         user.set_password(validated_data['password'])
         user.save()
@@ -109,11 +99,6 @@ class LoginSerializer(serializers.Serializer):
             else:
                 msg = _('Unable to log in with provided credentials.')
                 raise serializers.ValidationError({'error': msg}, code='authorization')
-        if not user.is_verified:
-            # send_code.delay(user_id=user.id, subject='Registration Code', template_name='emails/index.html')
-            if not Code.objects.filter(user=user_qs.first()).exists():
-                Code.objects.get_or_create(user=user_qs.first(), code=generate_code())
-
         attrs['users'] = user
         return attrs
 
@@ -215,4 +200,5 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         fields = (
             'first_name',
             'last_name',
+            'status',
         )

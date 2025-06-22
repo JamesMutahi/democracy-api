@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework.serializers import ModelSerializer, SerializerMethodField
 
@@ -7,17 +8,29 @@ User = get_user_model()
 
 
 class SafeUserSerializer(ModelSerializer):
+    image = SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ('id', 'email', 'first_name', 'last_name', 'is_verified', 'is_staff', 'is_active',)
+        fields = ('id', 'email', 'first_name', 'last_name', 'image', 'status', 'is_staff', 'is_active', 'date_joined')
+
+    def get_image(self, obj):
+        # Building the url manually as serializer requires request which is not available in consumer scope
+        scope = self.context['scope']
+        headers = dict(scope['headers'])
+        host = headers[b'host'].decode()
+        if settings.MEDIA_URL:
+            return 'http://' + host + obj.image.url
+        else:
+            return 'https://' + host + obj.image.url
 
 
 class PostSerializer(ModelSerializer):
     author = SafeUserSerializer(read_only=True)
     likes = SerializerMethodField()
-    liked = SerializerMethodField()
+    is_liked = SerializerMethodField()
     bookmarks = SerializerMethodField()
-    bookmarked = SerializerMethodField()
+    is_bookmarked = SerializerMethodField()
     replies = SerializerMethodField()
     reposts = SerializerMethodField()
     views = SerializerMethodField()
@@ -43,9 +56,9 @@ class PostSerializer(ModelSerializer):
             'is_deleted',
             'is_active',
             'likes',
-            'liked',
+            'is_liked',
             'bookmarks',
-            'bookmarked',
+            'is_bookmarked',
             'views',
             'replies',
             'reposts',
@@ -64,18 +77,18 @@ class PostSerializer(ModelSerializer):
         count = obj.likes.count()
         return count
 
-    def get_liked(self, obj):
-        liked = obj.likes.filter(id=self.context['scope']['user'].id).exists()
-        return liked
+    def get_is_liked(self, obj):
+        is_liked = obj.likes.filter(id=self.context['scope']['user'].id).exists()
+        return is_liked
 
     @staticmethod
     def get_bookmarks(obj):
         count = obj.bookmarks.count()
         return count
 
-    def get_bookmarked(self, obj):
-        bookmarked = obj.bookmarks.filter(id=self.context['scope']['user'].id).exists()
-        return bookmarked
+    def get_is_bookmarked(self, obj):
+        is_bookmarked = obj.bookmarks.filter(id=self.context['scope']['user'].id).exists()
+        return is_bookmarked
 
     @staticmethod
     def get_replies(obj):
@@ -93,5 +106,30 @@ class PostSerializer(ModelSerializer):
         return count
 
     def create(self, validated_data):
-        validated_data['author'] = self.context.get('scope').get('user')
+        validated_data['author'] = self.context['scope']['user']
         return super().create(validated_data)
+
+
+class UserProfileSerializer(ModelSerializer):
+    posts = PostSerializer(many=True)
+    replies = SerializerMethodField()
+    liked_posts = PostSerializer(many=True)
+    following = SafeUserSerializer(read_only=True, many=True)
+    followers = SafeUserSerializer(read_only=True, many=True)
+
+    class Meta:
+        model = User
+        fields = (
+            'id',
+            'posts',
+            'replies',
+            'liked_posts',
+            'following',
+            'followers',
+        )
+
+    @staticmethod
+    def get_replies(user):
+        posts = user.posts.exclude(reply_to=None)
+        serializer = PostSerializer(posts, many=True)
+        return serializer.data

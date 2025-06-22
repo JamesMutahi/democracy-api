@@ -25,7 +25,7 @@ urlpatterns = [
     path('api/', include('survey.urls')),
     path('api/', include('poll.urls')),
     path('api/', include('country.urls')),
-    path('', admin.site.urls),
+    path('admin', admin.site.urls),
 ]
 
 if settings.DEBUG:

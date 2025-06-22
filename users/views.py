@@ -48,7 +48,7 @@ class LoginView(APIView):
         user = serializer.validated_data['users']
         Token.objects.get_or_create(user=user)
         update_last_login(None, user)
-        serializer = UserSerializer(user)
+        serializer = UserSerializer(user, context={'request': request})
         return Response(serializer.data)
 
 
@@ -159,7 +159,8 @@ class RegistrationVerificationView(APIView):
         user = self.request.user
         code_obj = Code.objects.get(user=user, code=serializer.validated_data['code'])
         code_obj.delete()
-        user.is_verified = True
+        # TODO: No verification
+        # user.is_verified = True
         user.save()
         serializer = UserSerializer(user)
         return Response(serializer.data)

@@ -2,6 +2,7 @@ import re
 
 from channels.db import database_sync_to_async
 from channels.middleware import BaseMiddleware
+from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.db.models import QuerySet
 from djangochannelsrestframework import permissions
@@ -18,7 +19,9 @@ from djangochannelsrestframework.observer import model_observer
 from rest_framework.authtoken.models import Token
 
 from social.models import Post
-from social.serializers import PostSerializer
+from social.serializers import PostSerializer, UserProfileSerializer
+
+User = get_user_model()
 
 
 class TokenAuthMiddleware(BaseMiddleware):
@@ -26,8 +29,7 @@ class TokenAuthMiddleware(BaseMiddleware):
         headers = dict(scope['headers'])
         if b'authorization' in headers:
             try:
-                token_name, token_key = headers[b'authorization'].decode(
-                ).split()
+                token_name, token_key = headers[b'authorization'].decode().split()
             except ValueError:
                 token_key = None
             scope['user'] = AnonymousUser() if token_key is None else await get_user(token_key)
@@ -54,7 +56,7 @@ class PostConsumer(
     DeleteModelMixin,
     GenericAsyncAPIConsumer
 ):
-    queryset = Post.objects.all()
+    queryset = Post.published.filter(reply_to=None)
     serializer_class = PostSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -73,7 +75,7 @@ class PostConsumer(
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
 
-        # we need to ensure that only the author can edit their posts.
+        # Ensure that only the author can edit their posts.
         if kwargs.get('action') == 'list':
             filter = kwargs.get("body_contains", None)
             if filter:
@@ -84,7 +86,7 @@ class PostConsumer(
         if kwargs.get('action') == 'retrieve':
             return queryset
 
-        # for other actions we can only expose the posts created by this user.
+        # for other actions only expose the posts created by this user.
         return queryset.filter(author=self.scope.get("user"))
 
     @model_observer(Post)
@@ -152,17 +154,17 @@ class PostConsumer(
     def post_change_handler(self, instance: Post, action, **kwargs):
         if action == 'delete':
             return {"pk": instance.pk}
-        return {"id": instance.pk, "data": {"body": instance.body}}
+        return {"pk": instance.pk, "data": {"body": instance.body}}
 
     @action()
     async def like(self, **kwargs):
-        data = await self.like_post(pk=kwargs['data']['id'], user=self.scope.get("user"))
+        data = await self.like_post(pk=kwargs['data']['pk'], user=self.scope["user"])
         return data, 200
 
     @database_sync_to_async
     def like_post(self, pk, user):
         post = Post.objects.get(pk=pk)
-        if post.likes.filter(id=user.id).exists():
+        if post.likes.filter(pk=user.id).exists():
             post.likes.remove(user)
         else:
             post.likes.add(user)
@@ -171,15 +173,48 @@ class PostConsumer(
 
     @action()
     async def bookmark(self, **kwargs):
-        data = await self.bookmark_post(pk=kwargs['data']['id'], user=self.scope.get("user"))
+        data = await self.bookmark_post(pk=kwargs['data']['pk'], user=self.scope["user"])
         return data, 200
 
     @database_sync_to_async
     def bookmark_post(self, pk, user):
         post = Post.objects.get(pk=pk)
-        if post.bookmarks.filter(id=user.id).exists():
+        if post.bookmarks.filter(pk=user.pk).exists():
             post.bookmarks.remove(user)
         else:
             post.bookmarks.add(user)
         serializer = PostSerializer(post, context={'scope': self.scope})
+        return serializer.data
+
+    @action()
+    async def replies(self, pk, **kwargs):
+        data = await self.get_post_replies(pk=pk)
+        return data, 200
+
+    @database_sync_to_async
+    def get_post_replies(self, pk):
+        posts = Post.objects.get(pk=pk).replies.all()
+        serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
+        return serializer.data
+
+    @action()
+    async def profile(self, pk, **kwargs):
+        data = await self.get_user_profile(pk=pk)
+        return data, 200
+
+    @database_sync_to_async
+    def get_user_profile(self, pk):
+        user = User.objects.get(pk=pk)
+        serializer = UserProfileSerializer(user, context={'scope': self.scope})
+        return serializer.data
+
+    @action()
+    async def bookmarks(self, **kwargs):
+        data = await self.get_bookmarked_posts(user=self.scope["user"])
+        return data, 200
+
+    @database_sync_to_async
+    def get_bookmarked_posts(self, user):
+        posts = user.bookmarked_posts.all()
+        serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
         return serializer.data

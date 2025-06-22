@@ -42,8 +42,8 @@ class Post(BaseModel):
                                  related_name='replies')
     repost_of = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
                                   related_name='reposts')
-    likes = models.ManyToManyField(User, blank=True, related_name='post_likes')
-    bookmarks = models.ManyToManyField(User, blank=True, related_name='post_bookmarks')
+    likes = models.ManyToManyField(User, blank=True, related_name='liked_posts')
+    bookmarks = models.ManyToManyField(User, blank=True, related_name='bookmarked_posts')
     views = models.ManyToManyField(User, blank=True)
     is_edited = models.BooleanField(_('edited'), default=False)
     is_deleted = models.BooleanField(_('deleted'), default=False)
@@ -57,3 +57,15 @@ class Post(BaseModel):
 
     def __str__(self):
         return self.body
+
+
+class Report(BaseModel):
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='reports')
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    reason = models.CharField(max_length=255)
+
+    class Meta:
+        db_table = 'Report'
+
+    def __str__(self):
+        return self.reason

@@ -6,7 +6,6 @@ from django.core.mail import send_mail
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
-from django.contrib.postgres.fields import ArrayField
 
 from .managers import UserManager
 
@@ -19,10 +18,11 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     date_joined = models.DateTimeField(_('date joined'), auto_now_add=True)
     is_staff = models.BooleanField(_('staff status'), default=False)
     is_active = models.BooleanField(_('active'), default=True)
-    is_verified = models.BooleanField(_('verified'), default=True)
-    app_version = models.CharField(_('app version'), max_length=20, blank=True, null=True)
-    muted = ArrayField(models.IntegerField(null=True, blank=True), default=list, blank=True)
-    blocked = ArrayField(models.IntegerField(null=True, blank=True), default=list, blank=True)
+    muted = models.ManyToManyField('self', symmetrical=False, blank=True)
+    blocked = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='blockers')
+    status = models.TextField(_('username'), blank=True)
+    image = models.ImageField(upload_to='profile_pics/', default='profile_pics/default.jpg')
+    following = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='followers')
 
     objects = UserManager()
 
