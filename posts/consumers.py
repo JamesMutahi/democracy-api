@@ -18,8 +18,8 @@ from djangochannelsrestframework.mixins import (
 from djangochannelsrestframework.observer import model_observer
 from rest_framework.authtoken.models import Token
 
-from social.models import Post
-from social.serializers import PostSerializer
+from posts.models import Post
+from posts.serializers import PostSerializer
 
 User = get_user_model()
 

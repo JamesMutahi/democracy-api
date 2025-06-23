@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from social.models import Post
+from posts.models import Post
 
 
 @admin.register(Post)
