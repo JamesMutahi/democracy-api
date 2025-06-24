@@ -17,7 +17,7 @@ class CustomIndexDashboard(Dashboard):
             title=_(''),
             column=1,
             collapsible=True,
-            models=('poll.models.Poll', 'poll.models.Option'),
+            models=('poll.models.Poll',),
         ))
         self.children.append(modules.AppList(
             title=_(''),
@@ -29,7 +29,13 @@ class CustomIndexDashboard(Dashboard):
             title=_(''),
             column=1,
             collapsible=True,
-            models=('social.models.Post',),
+            models=('posts.models.Post',),
+        ))
+        self.children.append(modules.AppList(
+            title=_(''),
+            column=1,
+            collapsible=True,
+            models=('chat.models.Room',),
         ))
         self.children.append(modules.AppList(
             title=_(''),

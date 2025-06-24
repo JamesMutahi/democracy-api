@@ -27,7 +27,7 @@ class CustomUserAdmin(UserAdmin):
         return obj.get_full_name()
 
     full_name.short_description = 'Name'
-    list_display = ('full_name', 'email', 'is_active')
+    list_display = ('id', 'full_name', 'email', 'is_active')
     list_filter = ['is_active']
     fieldsets = (
         (None, {'fields': (

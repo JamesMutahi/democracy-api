@@ -28,15 +28,9 @@ class SafeUserSerializer(ModelSerializer):
             'date_joined'
         )
 
-    def get_image(self, obj):
-        # Building the url manually as serializer requires request which is not available in consumer scope
-        scope = self.context['scope']
-        headers = dict(scope['headers'])
-        host = headers[b'host'].decode()
-        if settings.MEDIA_URL:
-            return 'http://' + host + obj.image.url
-        else:
-            return 'https://' + host + obj.image.url
+    @staticmethod
+    def get_image(obj):
+        return obj.image.url
 
     @staticmethod
     def get_following(user):
