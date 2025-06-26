@@ -6,7 +6,7 @@ from chat.models import Message, Room
 class MessageInline(admin.TabularInline):
     model = Message
     fieldsets = [
-        (None, {'fields': ['user', 'text']}),
+        (None, {'fields': ['user', 'text', 'is_read']}),
     ]
     extra = 0
     classes = ('grp-collapse grp-open',)

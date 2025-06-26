@@ -1,7 +1,8 @@
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
+from django.db.models import QuerySet
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
-from djangochannelsrestframework.mixins import CreateModelMixin
+from djangochannelsrestframework.mixins import CreateModelMixin, ListModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import ObserverModelInstanceMixin, action
 
@@ -11,10 +12,14 @@ from .serializers import MessageSerializer, RoomSerializer
 User = get_user_model()
 
 
-class RoomConsumer(CreateModelMixin, ObserverModelInstanceMixin, GenericAsyncAPIConsumer):
+class RoomConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin, GenericAsyncAPIConsumer):
     serializer_class = RoomSerializer
     queryset = Room.objects.all()
     lookup_field = "pk"
+
+    def filter_queryset(self, queryset: QuerySet, **kwargs):
+        queryset = super().filter_queryset(queryset=queryset, **kwargs)
+        return queryset.filter(users=self.scope['user'])
 
     @action()
     async def create(self, data: dict, request_id: str, **kwargs):
@@ -49,7 +54,7 @@ class RoomConsumer(CreateModelMixin, ObserverModelInstanceMixin, GenericAsyncAPI
 
     @action()
     async def create_message(self, message, room, **kwargs):
-        return await self.create_message_(room=room,  message=message), 200
+        return await self.create_message_(room=room, message=message), 201
 
     @database_sync_to_async
     def create_message_(self, room, message):

@@ -35,7 +35,7 @@ application = ProtocolTypeRouter({
             TokenAuthMiddleware(URLRouter([
                 path("ws/", AsyncJsonWebsocketDemultiplexer.as_asgi(
                     posts=PostConsumer.as_asgi(),
-                    room=RoomConsumer.as_asgi(),
+                    rooms=RoomConsumer.as_asgi(),
                 )),
             ]), )
         ),
