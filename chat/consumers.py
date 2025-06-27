@@ -63,6 +63,21 @@ class RoomConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         serializer = RoomSerializer(obj, context={'scope': self.scope})
         return serializer.data
 
+    @action()
+    async def delete_message(self, pk, **kwargs):
+        return await self.delete_message_(pk=pk)
+
+    @database_sync_to_async
+    def delete_message_(self, pk):
+        message = Message.objects.get(pk=pk)
+        if self.scope['user'] == message.user:
+            message.text = 'Deleted'
+            message.is_deleted = True
+            message.save()
+            return {"room": RoomSerializer(Room.objects.get(pk=message.room.id), context={'scope': self.scope}).data,
+                    "message": MessageSerializer(message, context={'scope': self.scope}).data}, 204
+        return {"pk": message.pk, "errors": ['Permission denied']}, 401
+
     @model_observer(Message)
     async def message_activity(
             self,

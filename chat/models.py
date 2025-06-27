@@ -29,6 +29,7 @@ class Message(BaseModel):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="messages")
     text = models.TextField(max_length=500)
     is_read = models.BooleanField(_('read'), default=False)
+    is_edited = models.BooleanField(_('edited'), default=False)
     is_deleted = models.BooleanField(_('deleted'), default=False)
 
     class Meta:
