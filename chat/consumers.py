@@ -102,6 +102,18 @@ class RoomConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         return {"room": RoomSerializer(Room.objects.get(pk=message.room.id), context={'scope': self.scope}).data,
                 "message": MessageSerializer(message, context={'scope': self.scope}).data}, 200
 
+    @action()
+    async def mark_as_read(self, pk, **kwargs):
+        return await self.mark_as_read_(pk=pk)
+
+    @database_sync_to_async
+    def mark_as_read_(self, pk):
+        room = Room.objects.get(pk=pk)
+        for message in room.messages.filter(is_read=False):
+            message.is_read = True
+            message.save()
+        return RoomSerializer(Room.objects.get(pk=pk), context={'scope': self.scope}).data, 200
+
     @model_observer(Message)
     async def message_activity(
             self,
