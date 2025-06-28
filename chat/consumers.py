@@ -5,6 +5,7 @@ from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import CreateModelMixin, ListModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import ObserverModelInstanceMixin, action
+from rest_framework import serializers
 
 from .models import Message, Room
 from .serializers import MessageSerializer, RoomSerializer
@@ -69,14 +70,37 @@ class RoomConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
 
     @database_sync_to_async
     def delete_message_(self, pk):
-        message = Message.objects.get(pk=pk)
+        message_qs = Message.objects.filter(pk=pk)
+        if not message_qs.exists():
+            raise serializers.ValidationError('Message does not exist', code=404)
+        message = message_qs.first()
         if self.scope['user'] == message.user:
             message.text = 'Deleted'
             message.is_deleted = True
             message.save()
             return {"room": RoomSerializer(Room.objects.get(pk=message.room.id), context={'scope': self.scope}).data,
                     "message": MessageSerializer(message, context={'scope': self.scope}).data}, 204
-        return {"pk": message.pk, "errors": ['Permission denied']}, 401
+        raise serializers.ValidationError(detail='Permission denied', code=403)
+
+    @action()
+    async def edit_message(self, pk, text, **kwargs):
+        return await self.edit_message_(pk=pk, text=text)
+
+    @database_sync_to_async
+    def edit_message_(self, pk, text):
+        message_qs = Message.objects.filter(pk=pk)
+        if not message_qs.exists():
+            raise serializers.ValidationError('Message does not exist', code=404)
+        message = message_qs.first()
+        if self.scope['user'] != message.user:
+            raise serializers.ValidationError(detail='Permission denied', code=403)
+        if message.is_deleted:
+            raise serializers.ValidationError(detail='Message was deleted', code=404)
+        message.text = text
+        message.is_edited = True
+        message.save()
+        return {"room": RoomSerializer(Room.objects.get(pk=message.room.id), context={'scope': self.scope}).data,
+                "message": MessageSerializer(message, context={'scope': self.scope}).data}, 200
 
     @model_observer(Message)
     async def message_activity(
