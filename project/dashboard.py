@@ -33,7 +33,7 @@ class CustomIndexDashboard(Dashboard):
             title=_(''),
             column=1,
             collapsible=True,
-            models=('chat.models.Room',),
+            models=('chat.models.Chat',),
         ))
         self.children.append(modules.AppList(
             title=_(''),

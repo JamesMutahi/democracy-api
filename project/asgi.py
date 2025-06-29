@@ -16,7 +16,7 @@ from channelsmultiplexer import AsyncJsonWebsocketDemultiplexer
 from django.core.asgi import get_asgi_application
 from django.urls import path
 
-from chat.consumers import RoomConsumer
+from chat.consumers import ChatConsumer
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mysite.settings")
 # Initialize Django ASGI application early to ensure the AppRegistry
@@ -35,7 +35,7 @@ application = ProtocolTypeRouter({
             TokenAuthMiddleware(URLRouter([
                 path("ws/", AsyncJsonWebsocketDemultiplexer.as_asgi(
                     posts=PostConsumer.as_asgi(),
-                    rooms=RoomConsumer.as_asgi(),
+                    chats=ChatConsumer.as_asgi(),
                 )),
             ]), )
         ),

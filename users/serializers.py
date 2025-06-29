@@ -4,7 +4,6 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 User = get_user_model()
-current_site = Site.objects.get_current()
 
 class UserSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField()
@@ -29,7 +28,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_image(obj):
-        return current_site.domain + obj.image.url
+        return Site.objects.get_current().domain + obj.image.url
 
     @staticmethod
     def get_following(user):

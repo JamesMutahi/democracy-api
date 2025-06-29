@@ -7,15 +7,15 @@ from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import ObserverModelInstanceMixin, action
 from rest_framework import serializers
 
-from .models import Message, Room
-from .serializers import MessageSerializer, RoomSerializer
+from .models import Message, Chat
+from .serializers import MessageSerializer, ChatSerializer
 
 User = get_user_model()
 
 
-class RoomConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin, GenericAsyncAPIConsumer):
-    serializer_class = RoomSerializer
-    queryset = Room.objects.all()
+class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin, GenericAsyncAPIConsumer):
+    serializer_class = ChatSerializer
+    queryset = Chat.objects.all()
     lookup_field = "pk"
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
@@ -23,50 +23,33 @@ class RoomConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         return queryset.filter(users=self.scope['user'])
 
     @action()
-    async def create(self, data: dict, request_id: str, **kwargs):
-        response, status = await super().create(data, **kwargs)
-        room_pk = response["pk"]
-        await self.subscribe_instance(request_id=request_id, pk=room_pk)
-        return response, status
-
-    @action()
-    async def join_room(self, pk, request_id, **kwargs):
-        room = await database_sync_to_async(self.get_object)(pk=pk)
-        await self.subscribe_instance(request_id=request_id, pk=room.pk)
-        await self.message_activity.subscribe(room=pk, request_id=request_id)
-        await self.add_user_to_room(room)
-
-    @action()
-    async def leave_room(self, pk, **kwargs):
-        room = await database_sync_to_async(self.get_object)(pk=pk)
-        await self.unsubscribe_instance(pk=room.pk)
-        await self.message_activity.unsubscribe(room=room.pk)
-        await self.remove_user_from_room(room)
+    async def join_chats(self, request_id, **kwargs):
+        chat_pks = await self.get_chat_pks()
+        for pk in chat_pks:
+            await self.message_activity.subscribe(chat=pk, request_id=request_id)
 
     @database_sync_to_async
-    def add_user_to_room(self, room: Room):
-        user: User = self.scope["user"]
-        room.users.add(user)
+    def get_chat_pks(self):
+        chat_pks = list(self.scope['user'].chats.all().values_list('pk', flat=True))
+        return chat_pks
 
     @database_sync_to_async
-    def remove_user_from_room(self, room: Room):
-        user: User = self.scope["user"]
-        room.users.remove(user)
+    def get_chat_serializer_data(self, chats):
+        return ChatSerializer(chats, many=True, context={'scope': self.scope}).data, 200
 
     @action()
-    async def create_message(self, message, room, **kwargs):
-        return await self.create_message_(room=room, message=message), 201
+    async def create_message(self, text, chat, **kwargs):
+        await self.create_message_(chat=chat, text=text), 201
 
     @database_sync_to_async
-    def create_message_(self, room, message):
-        obj = Room.objects.get(pk=room)
-        Message.objects.create(room=obj, user=self.scope['user'], text=message)
-        serializer = RoomSerializer(obj, context={'scope': self.scope})
-        return serializer.data
+    def create_message_(self, chat, text):
+        obj = Chat.objects.get(pk=chat)
+        message = Message.objects.create(chat=obj, user=self.scope['user'], text=text)
+        return MessageSerializer(message, context={'scope': self.scope}).data
 
     @action()
     async def delete_message(self, pk, **kwargs):
-        return await self.delete_message_(pk=pk)
+        await self.delete_message_(pk=pk)
 
     @database_sync_to_async
     def delete_message_(self, pk):
@@ -78,13 +61,12 @@ class RoomConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
             message.text = 'Deleted'
             message.is_deleted = True
             message.save()
-            return {"room": RoomSerializer(Room.objects.get(pk=message.room.id), context={'scope': self.scope}).data,
-                    "message": MessageSerializer(message, context={'scope': self.scope}).data}, 204
+            return MessageSerializer(message, context={'scope': self.scope}).data
         raise serializers.ValidationError(detail='Permission denied', code=403)
 
     @action()
     async def edit_message(self, pk, text, **kwargs):
-        return await self.edit_message_(pk=pk, text=text)
+        await self.edit_message_(pk=pk, text=text)
 
     @database_sync_to_async
     def edit_message_(self, pk, text):
@@ -99,20 +81,20 @@ class RoomConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         message.text = text
         message.is_edited = True
         message.save()
-        return {"room": RoomSerializer(Room.objects.get(pk=message.room.id), context={'scope': self.scope}).data,
-                "message": MessageSerializer(message, context={'scope': self.scope}).data}, 200
+        return MessageSerializer(message, context={'scope': self.scope}).data
 
     @action()
     async def mark_as_read(self, pk, **kwargs):
-        return await self.mark_as_read_(pk=pk)
+        return await self.mark_as_read_(pk=pk), 200
 
     @database_sync_to_async
     def mark_as_read_(self, pk):
-        room = Room.objects.get(pk=pk)
-        for message in room.messages.filter(is_read=False):
+        chat = Chat.objects.get(pk=pk)
+        messages = chat.messages.filter(is_read=False)
+        for message in messages:
             message.is_read = True
             message.save()
-        return RoomSerializer(Room.objects.get(pk=pk), context={'scope': self.scope}).data, 200
+        return MessageSerializer(messages, many=True, context={'scope': self.scope}).data
 
     @model_observer(Message)
     async def message_activity(
@@ -134,12 +116,12 @@ class RoomConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
 
     @message_activity.groups_for_signal
     def message_activity(self, instance: Message, **kwargs):
-        yield f'room__{instance.room.id}'
+        yield f'chat__{instance.chat.id}'
 
     @message_activity.groups_for_consumer
-    def message_activity(self, room=None, **kwargs):
-        if room is not None:
-            yield f'room__{room}'
+    def message_activity(self, chat=None, **kwargs):
+        if chat is not None:
+            yield f'chat__{chat}'
 
     @message_activity.serializer
     def message_activity(self, instance: Message, action, **kwargs):
@@ -150,5 +132,7 @@ class RoomConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         return dict(
             data=MessageSerializer(instance).data,
             action=action.value,
-            pk=instance.pk
+            request_id=2,
+            pk=instance.pk,
+            response_status=201 if action.value == 'create' else 200
         )

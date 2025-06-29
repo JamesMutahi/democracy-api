@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from chat.models import Message, Room
+from chat.models import Message, Chat
 from users.serializers import UserSerializer
 
 User = get_user_model()
@@ -12,22 +12,31 @@ class MessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Message
-        fields = ['id', 'room', 'user', 'text', 'is_read', 'is_edited', 'is_deleted', 'created_at', 'updated_at']
+        fields = ['id', 'chat', 'user', 'text', 'is_read', 'is_edited', 'is_deleted', 'created_at', 'updated_at']
 
 
-class RoomSerializer(serializers.ModelSerializer):
-    users = UserSerializer(many=True)
-    last_message = serializers.SerializerMethodField()
+class ChatSerializer(serializers.ModelSerializer):
+    users = UserSerializer(many=True, read_only=True)
+    user = serializers.IntegerField(write_only=True)
+    last_message = serializers.SerializerMethodField(read_only=True)
     messages = MessageSerializer(many=True, read_only=True)
 
     class Meta:
-        model = Room
-        fields = ["id", "messages", "users", "last_message"]
+        model = Chat
+        fields = ["id", "messages", "users", "last_message", "user"]
         read_only_fields = ["messages", "last_message"]
 
-    def get_last_message(self, obj: Room):
+    def get_last_message(self, obj: Chat):
         if obj.messages.exists():
             serializer = MessageSerializer(obj.messages.order_by('created_at').last(), context=self.context)
             return serializer.data
         else:
             return None
+
+    def create(self, validated_data):
+        user = validated_data.pop('user')
+        validated_data['users'] = [self.context['scope']['user'], User.objects.get(id=user)]
+        chat_qs = Chat.objects.filter(users__in=validated_data['users'])
+        if chat_qs.exists():
+            return chat_qs.first()
+        return super().create(validated_data)
