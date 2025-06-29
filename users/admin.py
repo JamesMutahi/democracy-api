@@ -3,7 +3,6 @@ from django.contrib.auth.admin import UserAdmin
 from rest_framework.authtoken.models import Token
 
 from users.forms import CustomUserChangeForm, CustomUserCreationForm
-from users.models import Code
 from users.models import CustomUser
 
 
@@ -12,13 +11,8 @@ class TokenInline(admin.TabularInline):
     classes = ('grp-collapse grp-closed',)
 
 
-class CodeInline(admin.TabularInline):
-    model = Code
-    classes = ('grp-collapse grp-closed',)
-
-
 class CustomUserAdmin(UserAdmin):
-    inlines = [TokenInline, CodeInline]
+    inlines = [TokenInline]
     add_form = CustomUserCreationForm
     form = CustomUserChangeForm
     model = CustomUser

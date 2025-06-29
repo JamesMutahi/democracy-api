@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.sites',
     'django.contrib.gis',
     'users.apps.UsersConfig',
     'survey.apps.SurveyConfig',
@@ -77,6 +78,8 @@ GRAPPELLI_ADMIN_TITLE = 'Democracy'
 GRAPPELLI_SWITCH_USER = True
 GRAPPELLI_CLEAN_INPUT_TYPES = True
 GRAPPELLI_INDEX_DASHBOARD = 'project.dashboard.CustomIndexDashboard'
+
+SITE_ID = 1
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

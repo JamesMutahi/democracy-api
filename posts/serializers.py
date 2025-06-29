@@ -2,46 +2,13 @@ from django.contrib.auth import get_user_model
 from rest_framework.serializers import ModelSerializer, SerializerMethodField
 
 from posts.models import Post
+from users.serializers import UserSerializer
 
 User = get_user_model()
 
 
-class SafeUserSerializer(ModelSerializer):
-    image = SerializerMethodField()
-    following = SerializerMethodField(read_only=True)
-    followers = SerializerMethodField(read_only=True)
-
-    class Meta:
-        model = User
-        fields = (
-            'id',
-            'email',
-            'first_name',
-            'last_name',
-            'image',
-            'status',
-            'is_staff',
-            'is_active',
-            'following',
-            'followers',
-            'date_joined'
-        )
-
-    @staticmethod
-    def get_image(obj):
-        return obj.image.url
-
-    @staticmethod
-    def get_following(user):
-        return user.following.count()
-
-    @staticmethod
-    def get_followers(user):
-        return user.followers.count()
-
-
 class PostSerializer(ModelSerializer):
-    author = SafeUserSerializer(read_only=True)
+    author = UserSerializer(read_only=True)
     likes = SerializerMethodField()
     is_liked = SerializerMethodField()
     bookmarks = SerializerMethodField()

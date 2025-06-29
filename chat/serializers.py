@@ -2,13 +2,13 @@ from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from chat.models import Message, Room
-from posts.serializers import SafeUserSerializer
+from users.serializers import UserSerializer
 
 User = get_user_model()
 
 
 class MessageSerializer(serializers.ModelSerializer):
-    user = SafeUserSerializer()
+    user = UserSerializer()
 
     class Meta:
         model = Message
@@ -16,7 +16,7 @@ class MessageSerializer(serializers.ModelSerializer):
 
 
 class RoomSerializer(serializers.ModelSerializer):
-    users = SafeUserSerializer(many=True)
+    users = UserSerializer(many=True)
     last_message = serializers.SerializerMethodField()
     messages = MessageSerializer(many=True, read_only=True)
 

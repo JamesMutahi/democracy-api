@@ -4,7 +4,6 @@ from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin
 from django.core.mail import send_mail
 from django.db import models
-from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from .managers import UserManager
@@ -55,17 +54,3 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         Sends an email to this User.
         """
         send_mail(subject, message, from_email, [self.email], **kwargs)
-
-
-class Code(models.Model):
-    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name="code", db_column='UserID')
-    code = models.IntegerField(unique=True)
-    created_at = models.DateTimeField(default=timezone.now)
-
-    class Meta:
-        verbose_name = _('Code')
-        verbose_name_plural = _('Codes')
-        db_table = 'User_Code'
-
-    def __str__(self):
-        return f'{self.code}'
