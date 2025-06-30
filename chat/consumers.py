@@ -23,19 +23,27 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         return queryset.filter(users=self.scope['user'])
 
     @action()
+    async def create(self, data: dict, request_id: str, **kwargs):
+        response, status = await super().create(data, **kwargs)
+        pk = response["id"]
+        await self.join_chat(pk=pk, request_id=request_id)
+        return response, status
+
+    @action()
+    async def join_chat(self, pk, request_id, **kwargs):
+        await self.subscribe_instance(pk=pk, request_id=request_id)
+        await self.message_activity.subscribe(chat=pk, request_id=request_id)
+
+    @action()
     async def join_chats(self, request_id, **kwargs):
         chat_pks = await self.get_chat_pks()
         for pk in chat_pks:
-            await self.message_activity.subscribe(chat=pk, request_id=request_id)
+            await self.join_chat(pk=pk, request_id=request_id)
 
     @database_sync_to_async
     def get_chat_pks(self):
         chat_pks = list(self.scope['user'].chats.all().values_list('pk', flat=True))
         return chat_pks
-
-    @database_sync_to_async
-    def get_chat_serializer_data(self, chats):
-        return ChatSerializer(chats, many=True, context={'scope': self.scope}).data, 200
 
     @action()
     async def create_message(self, text, chat, **kwargs):
@@ -45,7 +53,7 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
     def create_message_(self, chat, text):
         obj = Chat.objects.get(pk=chat)
         message = Message.objects.create(chat=obj, user=self.scope['user'], text=text)
-        return MessageSerializer(message, context={'scope': self.scope}).data
+        return message
 
     @action()
     async def delete_message(self, pk, **kwargs):
@@ -61,8 +69,7 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
             message.text = 'Deleted'
             message.is_deleted = True
             message.save()
-            return MessageSerializer(message, context={'scope': self.scope}).data
-        raise serializers.ValidationError(detail='Permission denied', code=403)
+        return message
 
     @action()
     async def edit_message(self, pk, text, **kwargs):
@@ -81,11 +88,11 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         message.text = text
         message.is_edited = True
         message.save()
-        return MessageSerializer(message, context={'scope': self.scope}).data
+        return message
 
     @action()
     async def mark_as_read(self, pk, **kwargs):
-        return await self.mark_as_read_(pk=pk), 200
+        await self.mark_as_read_(pk=pk), 200
 
     @database_sync_to_async
     def mark_as_read_(self, pk):
@@ -94,7 +101,26 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         for message in messages:
             message.is_read = True
             message.save()
-        return MessageSerializer(messages, many=True, context={'scope': self.scope}).data
+        return messages
+
+    @action()
+    async def block_user(self, user: int, **kwargs):
+        await self.block_user_(pk=user), 200
+
+    @database_sync_to_async
+    def block_user_(self, pk: int):
+        user = User.objects.get(pk=pk)
+        if user in self.scope['user'].blocked.all():
+            self.scope['user'].blocked.remove(user)
+        else:
+            self.scope['user'].blocked.add(user)
+        chats = self.scope['user'].chats.all()
+        obj = None
+        for chat in chats:
+            if chat.users.all().contains(user):
+                obj = chat
+                obj.save()
+        return obj
 
     @model_observer(Message)
     async def message_activity(

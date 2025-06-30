@@ -19,11 +19,12 @@ class UserSerializer(serializers.ModelSerializer):
             'last_name',
             'image',
             'status',
-            'is_staff',
-            'is_active',
+            'muted',
+            'blocked',
             'following',
             'followers',
-            'date_joined'
+            'is_active',
+            'date_joined',
         )
 
     @staticmethod

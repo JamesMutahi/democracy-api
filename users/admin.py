@@ -37,7 +37,7 @@ class CustomUserAdmin(UserAdmin):
     search_fields = ('email', 'first_name', 'last_name')
     ordering = ('first_name', 'email',)
     readonly_fields = ('last_login', 'date_joined',)
-    filter_horizontal = ['following']
+    filter_horizontal = ['following', 'blocked', 'muted']
 
 
 admin.site.register(CustomUser, CustomUserAdmin)

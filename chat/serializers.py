@@ -20,10 +20,11 @@ class ChatSerializer(serializers.ModelSerializer):
     user = serializers.IntegerField(write_only=True)
     last_message = serializers.SerializerMethodField(read_only=True)
     messages = MessageSerializer(many=True, read_only=True)
+    blocker = serializers.SerializerMethodField()
 
     class Meta:
         model = Chat
-        fields = ["id", "messages", "users", "last_message", "user"]
+        fields = ["id", "messages", "users", "last_message", "user", "blocker"]
         read_only_fields = ["messages", "last_message"]
 
     def get_last_message(self, obj: Chat):
@@ -33,10 +34,23 @@ class ChatSerializer(serializers.ModelSerializer):
         else:
             return None
 
+    def get_blocker(self, instance: Chat):
+        blocker = None
+        user1 = instance.users.first()
+        user2 = instance.users.last()
+        if user1.blocked.all().contains(user2):
+            blocker = user1
+        if user2.blocked.all().contains(user1):
+            blocker = user2
+        if blocker is None:
+            return None
+        return UserSerializer(blocker, context=self.context).data
+
     def create(self, validated_data):
-        user = validated_data.pop('user')
-        validated_data['users'] = [self.context['scope']['user'], User.objects.get(id=user)]
-        chat_qs = Chat.objects.filter(users__in=validated_data['users'])
-        if chat_qs.exists():
-            return chat_qs.first()
+        user = User.objects.get(id=validated_data.pop('user'))
+        chats = self.context['scope']['user'].chats.all()
+        for chat in chats:
+            if chat.users.all().contains(user):
+                return chat
+        validated_data['users'] = [self.context['scope']['user'], user]
         return super().create(validated_data)

@@ -19,7 +19,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(_('active'), default=True)
     muted = models.ManyToManyField('self', symmetrical=False, blank=True)
     blocked = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='blockers')
-    status = models.TextField(_('username'), blank=True)
+    status = models.TextField(_('status'), blank=True)
     image = models.ImageField(upload_to='profile_pics/', default='profile_pics/default.jpg')
     following = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='followers')
 

@@ -209,34 +209,34 @@ class PostConsumer(
         return serializer.data
 
     @action()
-    async def liked_posts(self, **kwargs):
-        data = await self.get_liked_posts(user=self.scope["user"])
+    async def liked_posts(self, user: int, **kwargs):
+        data = await self.get_liked_posts(user=user)
         return data, 200
 
     @database_sync_to_async
-    def get_liked_posts(self, user):
-        posts = user.liked_posts.all()
+    def get_liked_posts(self, user: int):
+        posts = User.objects.get(pk=user).liked_posts.all()
         serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
         return serializer.data
 
     @action()
-    async def user_posts(self, **kwargs):
-        data = await self.get_user_posts(user=self.scope["user"])
+    async def user_posts(self, user: int, **kwargs):
+        data = await self.get_user_posts(user=user)
         return data, 200
 
     @database_sync_to_async
-    def get_user_posts(self, user):
-        posts = user.posts.filter(reply_to=None)
+    def get_user_posts(self, user: int):
+        posts = User.objects.get(pk=user).posts.filter(reply_to=None)
         serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
         return serializer.data
 
     @action()
-    async def user_replies(self, **kwargs):
-        data = await self.get_user_replies(user=self.scope["user"])
+    async def user_replies(self, user: int, **kwargs):
+        data = await self.get_user_replies(user=user)
         return data, 200
 
     @database_sync_to_async
-    def get_user_replies(self, user):
-        posts = user.posts.exclude(reply_to=None)
+    def get_user_replies(self, user: int):
+        posts = User.objects.get(pk=user).posts.exclude(reply_to=None)
         serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
         return serializer.data
