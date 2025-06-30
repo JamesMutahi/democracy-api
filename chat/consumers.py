@@ -29,7 +29,6 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         await self.join_chat(pk=pk, request_id=request_id)
         return response, status
 
-    @action()
     async def join_chat(self, pk, request_id, **kwargs):
         await self.subscribe_instance(pk=pk, request_id=request_id)
         await self.message_activity.subscribe(chat=pk, request_id=request_id)

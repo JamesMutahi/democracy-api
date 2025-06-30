@@ -20,11 +20,11 @@ class ChatSerializer(serializers.ModelSerializer):
     user = serializers.IntegerField(write_only=True)
     last_message = serializers.SerializerMethodField(read_only=True)
     messages = MessageSerializer(many=True, read_only=True)
-    blocker = serializers.SerializerMethodField()
+    blockers = serializers.SerializerMethodField()
 
     class Meta:
         model = Chat
-        fields = ["id", "messages", "users", "last_message", "user", "blocker"]
+        fields = ["id", "messages", "users", "last_message", "user", "blockers"]
         read_only_fields = ["messages", "last_message"]
 
     def get_last_message(self, obj: Chat):
@@ -34,17 +34,16 @@ class ChatSerializer(serializers.ModelSerializer):
         else:
             return None
 
-    def get_blocker(self, instance: Chat):
-        blocker = None
+    @staticmethod
+    def get_blockers(instance: Chat):
+        blockers = []
         user1 = instance.users.first()
         user2 = instance.users.last()
         if user1.blocked.all().contains(user2):
-            blocker = user1
+            blockers.append(user1.id)
         if user2.blocked.all().contains(user1):
-            blocker = user2
-        if blocker is None:
-            return None
-        return UserSerializer(blocker, context=self.context).data
+            blockers.append(user2.id)
+        return blockers
 
     def create(self, validated_data):
         user = User.objects.get(id=validated_data.pop('user'))
