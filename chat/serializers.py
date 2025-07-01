@@ -37,12 +37,11 @@ class ChatSerializer(serializers.ModelSerializer):
     @staticmethod
     def get_blockers(instance: Chat):
         blockers = []
-        user1 = instance.users.first()
-        user2 = instance.users.last()
-        if user1.blocked.all().contains(user2):
-            blockers.append(user1.id)
-        if user2.blocked.all().contains(user1):
-            blockers.append(user2.id)
+        users = instance.users.all()
+        for user in users:
+            blocked_users = user.blocked.all()
+            if any(x in users for x in blocked_users):
+                blockers.append(user.id)
         return blockers
 
     def create(self, validated_data):
