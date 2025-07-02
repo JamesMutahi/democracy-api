@@ -49,6 +49,6 @@ class PollSerializer(serializers.ModelSerializer):
     def get_voted_option(self, obj):
         voted_option = None
         for option in obj.options.all():
-            if option.votes.filter(id=self.context['request'].user.id).exists():
+            if option.votes.filter(id=self.context['scope']['user'].id).exists():
                 voted_option = option.id
         return voted_option

@@ -7,7 +7,7 @@ from poll.models import Option, Poll
 class OptionInline(GrappelliSortableHiddenMixin, admin.TabularInline):
     model = Option
     fieldsets = [
-        (None, {'fields': ['number', 'text']}),
+        (None, {'fields': ['number', 'text', 'votes']}),
     ]
     extra = 0
     filter_horizontal = ['votes']
@@ -19,4 +19,4 @@ class OptionInline(GrappelliSortableHiddenMixin, admin.TabularInline):
 class PollAdmin(admin.ModelAdmin):
     list_display = ['name', 'start_time', 'end_time']
     inlines = [OptionInline]
-    readonly_fields = ['id', 'created_at', 'updated_at']
+    readonly_fields = ['created_at', 'updated_at']

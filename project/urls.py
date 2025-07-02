@@ -23,7 +23,6 @@ urlpatterns = [
     path('grappelli/', include('grappelli.urls')),
     path('auth/', include('users.urls')),
     path('api/', include('survey.urls')),
-    path('api/', include('poll.urls')),
     path('admin', admin.site.urls),
 ]
 
