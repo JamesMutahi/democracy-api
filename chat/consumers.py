@@ -5,7 +5,6 @@ from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import CreateModelMixin, ListModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import ObserverModelInstanceMixin, action
-from rest_framework import serializers
 
 from .models import Message, Chat
 from .serializers import MessageSerializer, ChatSerializer
@@ -55,15 +54,17 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         return message
 
     @action()
-    async def delete_message(self, pk, **kwargs):
-        await self.delete_message_(pk=pk)
+    async def delete_message(self, request_id, pk, **kwargs):
+        message = await self.get_message(pk=pk)
+        if message is None:
+            return self.reply(errors=['Not found'], action='delete', request_id=request_id, status=404)
+        is_author = await self.check_author(message=message)
+        if not is_author:
+            return self.reply(errors=['Forbidden'], action='delete', request_id=request_id, status=403)
+        await self.delete_message_(message=message)
 
     @database_sync_to_async
-    def delete_message_(self, pk):
-        message_qs = Message.objects.filter(pk=pk)
-        if not message_qs.exists():
-            raise serializers.ValidationError('Message does not exist', code=404)
-        message = message_qs.first()
+    def delete_message_(self, message):
         if self.scope['user'] == message.user:
             message.text = 'Deleted'
             message.is_deleted = True
@@ -71,23 +72,40 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         return message
 
     @action()
-    async def edit_message(self, pk, text, **kwargs):
-        await self.edit_message_(pk=pk, text=text)
+    async def edit_message(self, request_id, pk, text, **kwargs):
+        message = await self.get_message(pk=pk)
+        if message is None:
+            return self.reply(errors=['Not found'], action='update', request_id=request_id, status=404)
+        is_author = await self.check_author(message=message)
+        if not is_author:
+            return self.reply(errors=['Forbidden'], action='update', request_id=request_id, status=403)
+        is_deleted = await self.check_is_deleted(message=message)
+        if is_deleted:
+            return self.reply(errors=['Message was deleted'], action='update', request_id=request_id, status=404)
+        await self.edit_message_(message=message, text=text)
 
     @database_sync_to_async
-    def edit_message_(self, pk, text):
-        message_qs = Message.objects.filter(pk=pk)
-        if not message_qs.exists():
-            raise serializers.ValidationError('Message does not exist', code=404)
-        message = message_qs.first()
-        if self.scope['user'] != message.user:
-            raise serializers.ValidationError(detail='Permission denied', code=403)
-        if message.is_deleted:
-            raise serializers.ValidationError(detail='Message was deleted', code=404)
+    def edit_message_(self, message, text):
         message.text = text
         message.is_edited = True
         message.save()
         return message
+
+    @database_sync_to_async
+    def get_message(self, pk):
+        message = None
+        message_qs = Message.objects.filter(pk=pk)
+        if message_qs.exists():
+            message = message_qs.first()
+        return message
+
+    @database_sync_to_async
+    def check_author(self, message):
+        return self.scope['user'] == message.user
+
+    @database_sync_to_async
+    def check_is_deleted(self, message):
+        return message.is_deleted
 
     @action()
     async def mark_as_read(self, pk, **kwargs):
@@ -114,12 +132,12 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         else:
             self.scope['user'].blocked.add(user)
         chats = self.scope['user'].chats.all()
-        obj = None
-        for chat in chats:
-            if chat.users.all().contains(user):
-                obj = chat
-                obj.save()
-        return obj
+        chat = None
+        for c in chats:
+            if c.users.all().contains(user):
+                chat = c
+                chat.save()
+        return chat
 
     @model_observer(Message)
     async def message_activity(
