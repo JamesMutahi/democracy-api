@@ -39,3 +39,15 @@ class Option(models.Model):
 
     def __str__(self):
         return self.text
+
+
+class Reason(BaseModel):
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    poll = models.ForeignKey(Poll, on_delete=models.CASCADE, related_name='reasons')
+    text = models.TextField()
+
+    class Meta:
+        db_table = 'Reason'
+
+    def __str__(self):
+        return self.text
