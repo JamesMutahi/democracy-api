@@ -32,8 +32,63 @@ class QuestionSerializer(serializers.ModelSerializer):
         ]
 
 
+class TextAnswerSerializer(serializers.ModelSerializer):
+    question = QuestionSerializer()
+
+    class Meta:
+        model = TextAnswer
+        fields = (
+            'question',
+            'text',
+        )
+
+
+class ChoiceAnswerSerializer(serializers.ModelSerializer):
+    question = QuestionSerializer()
+    choice = ChoiceSerializer()
+
+    class Meta:
+        model = ChoiceAnswer
+        fields = (
+            'question',
+            'choice',
+        )
+
+
+class ResponseSerializer(serializers.ModelSerializer):
+    text_answers = TextAnswerSerializer(required=True, many=True)
+    choice_answers = ChoiceAnswerSerializer(required=True, many=True)
+
+    class Meta:
+        model = Response
+        fields = (
+            'id',
+            'survey',
+            'start_time',
+            'end_time',
+            'text_answers',
+            'choice_answers',
+        )
+        extra_kwargs = {'id': {'read_only': True}, 'survey': {'write_only': True}, }
+
+    def create(self, validated_data):
+        validated_data['user'] = self.context['scope']['user']
+        text_answers = validated_data.pop('text_answers')
+        choice_answers = validated_data.pop('choice_answers')
+        response_qs = Response.objects.filter(survey=validated_data['survey'], user=validated_data['user'])
+        if response_qs.exists():
+            response_qs.delete()
+        response = Response.objects.create(**validated_data)
+        for answer in text_answers:
+            TextAnswer.objects.create(response=response, **answer)
+        for answer in choice_answers:
+            ChoiceAnswer.objects.create(response=response, **answer)
+        return response
+
+
 class SurveySerializer(serializers.ModelSerializer):
     questions = QuestionSerializer(many=True)
+    response = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Survey
@@ -44,53 +99,12 @@ class SurveySerializer(serializers.ModelSerializer):
             'start_time',
             'end_time',
             'questions',
+            'response',
         ]
 
-
-class TextAnswerSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = TextAnswer
-        fields = (
-            'question',
-            'text',
-        )
-
-
-class ChoiceAnswerSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ChoiceAnswer
-        fields = (
-            'question',
-            'choice',
-        )
-
-
-class ResponseSerializer(serializers.ModelSerializer):
-    user = serializers.HiddenField(default=serializers.CurrentUserDefault())
-    text_answers = TextAnswerSerializer(required=True, many=True)
-    choice_answers = ChoiceAnswerSerializer(required=True, many=True)
-
-    class Meta:
-        model = Response
-        fields = (
-            'user',
-            'survey',
-            'start_time',
-            'end_time',
-            'text_answers',
-            'choice_answers',
-        )
-        extra_kwargs = {'id': {'read_only': True}}
-
-    def create(self, validated_data):
-        text_answers = validated_data.pop('text_answers')
-        choice_answers = validated_data.pop('choice_answers')
-        response_qs = Response.objects.filter(**validated_data)
+    def get_response(self, instance: Survey):
+        response_qs = Response.objects.filter(survey=instance, user=self.context['scope']['user'])
         if response_qs.exists():
-            return response_qs.first()
-        response = Response.objects.create(**validated_data)
-        for answer in text_answers:
-            TextAnswer.objects.create(response=response, **answer)
-        for answer in choice_answers:
-            ChoiceAnswer.objects.create(response=response, **answer)
-        return response
+            return ResponseSerializer(response_qs.first(), context=self.context).data
+        else:
+            return None

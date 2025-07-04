@@ -22,7 +22,6 @@ from django.conf import settings
 urlpatterns = [
     path('grappelli/', include('grappelli.urls')),
     path('auth/', include('users.urls')),
-    path('api/', include('survey.urls')),
     path('admin', admin.site.urls),
 ]
 

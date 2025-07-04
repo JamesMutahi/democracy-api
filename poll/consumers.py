@@ -1,17 +1,15 @@
-from datetime import datetime
-
 from channels.db import database_sync_to_async
+from django.utils import timezone
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
-from djangochannelsrestframework.mixins import ListModelMixin, CreateModelMixin, UpdateModelMixin
+from djangochannelsrestframework.mixins import ListModelMixin
 from djangochannelsrestframework.observer.generics import ObserverModelInstanceMixin
 
 from poll.models import Poll, Option, Reason
 from poll.serializers import PollSerializer
 
 
-class PollConsumer(ListModelMixin, CreateModelMixin, UpdateModelMixin, ObserverModelInstanceMixin,
-                   GenericAsyncAPIConsumer):
+class PollConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPIConsumer):
     serializer_class = PollSerializer
     queryset = Poll.objects.all()
     lookup_field = "pk"
@@ -24,7 +22,7 @@ class PollConsumer(ListModelMixin, CreateModelMixin, UpdateModelMixin, ObserverM
 
     @database_sync_to_async
     def get_running_polls_pks(self):
-        return list(Poll.objects.filter(end_time__gte=datetime.now()).values_list('pk', flat=True))
+        return list(Poll.objects.filter(end_time__gte=timezone.now()).values_list('pk', flat=True))
 
     @action()
     async def vote(self, option: int, **kwargs):

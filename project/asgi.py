@@ -23,6 +23,7 @@ django_asgi_app = get_asgi_application()
 from posts.consumers import PostConsumer, TokenAuthMiddleware
 from chat.consumers import ChatConsumer
 from poll.consumers import PollConsumer
+from survey.consumers import SurveyConsumer
 
 application = ProtocolTypeRouter({
     # Django's ASGI application to handle traditional HTTP requests
@@ -36,6 +37,7 @@ application = ProtocolTypeRouter({
                     posts=PostConsumer.as_asgi(),
                     chats=ChatConsumer.as_asgi(),
                     polls=PollConsumer.as_asgi(),
+                    surveys=SurveyConsumer.as_asgi(),
                 )),
             ]), )
         ),

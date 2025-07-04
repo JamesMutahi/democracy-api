@@ -22,7 +22,7 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         return queryset.filter(users=self.scope['user'])
 
     @action()
-    async def create(self, data: dict, request_id: str, **kwargs):
+    async def create(self, data: dict, request_id: int, **kwargs):
         response, status = await super().create(data, **kwargs)
         pk = response["id"]
         await self.join_chat(pk=pk, request_id=request_id)
@@ -45,13 +45,8 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
 
     @action()
     async def create_message(self, text, chat, **kwargs):
-        await self.create_message_(chat=chat, text=text), 201
-
-    @database_sync_to_async
-    def create_message_(self, chat, text):
-        obj = Chat.objects.get(pk=chat)
-        message = Message.objects.create(chat=obj, user=self.scope['user'], text=text)
-        return message
+        chat: Chat = await database_sync_to_async(self.get_object)(pk=chat)
+        await database_sync_to_async(Message.objects.create)(chat=chat, user=self.scope["user"], text=text)
 
     @action()
     async def delete_message(self, request_id, pk, **kwargs):
