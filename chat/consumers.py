@@ -6,6 +6,7 @@ from djangochannelsrestframework.mixins import CreateModelMixin, ListModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import ObserverModelInstanceMixin, action
 
+from users.serializers import UserSerializer
 from .models import Message, Chat
 from .serializers import MessageSerializer, ChatSerializer
 
@@ -44,18 +45,20 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         return chat_pks
 
     @action()
-    async def create_message(self, text, chat, **kwargs):
-        chat: Chat = await database_sync_to_async(self.get_object)(pk=chat)
-        await database_sync_to_async(Message.objects.create)(chat=chat, user=self.scope["user"], text=text)
+    async def create_message(self, data, **kwargs):
+        await self.create_message_(data=data)
+
+    @database_sync_to_async
+    def create_message_(self, data: dict):
+        serializer = MessageSerializer(data=data, context={'scope': self.scope})
+        serializer.is_valid(raise_exception=True)
+        return serializer.save()
 
     @action()
     async def delete_message(self, request_id, pk, **kwargs):
         message = await self.get_message(pk=pk)
         if message is None:
             return self.reply(errors=['Not found'], action='delete', request_id=request_id, status=404)
-        is_author = await self.check_author(message=message)
-        if not is_author:
-            return self.reply(errors=['Forbidden'], action='delete', request_id=request_id, status=403)
         await self.delete_message_(message=message)
 
     @database_sync_to_async
@@ -67,17 +70,11 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         return message
 
     @action()
-    async def edit_message(self, request_id, pk, text, **kwargs):
+    async def edit_message(self, request_id, pk, **kwargs):
         message = await self.get_message(pk=pk)
         if message is None:
             return self.reply(errors=['Not found'], action='update', request_id=request_id, status=404)
-        is_author = await self.check_author(message=message)
-        if not is_author:
-            return self.reply(errors=['Forbidden'], action='update', request_id=request_id, status=403)
-        is_deleted = await self.check_is_deleted(message=message)
-        if is_deleted:
-            return self.reply(errors=['Message was deleted'], action='update', request_id=request_id, status=404)
-        await self.edit_message_(message=message, text=text)
+        await self.edit_message_(message=message, text=kwargs['data']['text'])
 
     @database_sync_to_async
     def edit_message_(self, message, text):
@@ -89,18 +86,10 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
     @database_sync_to_async
     def get_message(self, pk):
         message = None
-        message_qs = Message.objects.filter(pk=pk)
+        message_qs = Message.objects.filter(pk=pk, user=self.scope["user"], is_deleted=False)
         if message_qs.exists():
             message = message_qs.first()
         return message
-
-    @database_sync_to_async
-    def check_author(self, message):
-        return self.scope['user'] == message.user
-
-    @database_sync_to_async
-    def check_is_deleted(self, message):
-        return message.is_deleted
 
     @action()
     async def mark_as_read(self, pk, **kwargs):

@@ -8,11 +8,15 @@ User = get_user_model()
 
 
 class MessageSerializer(serializers.ModelSerializer):
-    user = UserSerializer()
+    user = UserSerializer(read_only=True)
 
     class Meta:
         model = Message
         fields = ['id', 'chat', 'user', 'text', 'is_read', 'is_edited', 'is_deleted', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        validated_data['user'] = self.context['scope']['user']
+        return super().create(validated_data)
 
 
 class ChatSerializer(serializers.ModelSerializer):
