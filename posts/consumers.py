@@ -1,21 +1,14 @@
-import re
-
 from channels.db import database_sync_to_async
 from channels.middleware import BaseMiddleware
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.db.models import QuerySet
-from djangochannelsrestframework import permissions
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import (
-    ListModelMixin,
-    CreateModelMixin,
-    PatchModelMixin,
-    DeleteModelMixin,
-    RetrieveModelMixin
+    CreateModelMixin, ListModelMixin
 )
-from djangochannelsrestframework.observer import model_observer
+from djangochannelsrestframework.observer.generics import ObserverModelInstanceMixin
 from rest_framework.authtoken.models import Token
 
 from posts.models import Post
@@ -50,21 +43,13 @@ def get_user(token):
 
 class PostConsumer(
     ListModelMixin,
-    RetrieveModelMixin,
     CreateModelMixin,
-    PatchModelMixin,
-    DeleteModelMixin,
+    ObserverModelInstanceMixin,
     GenericAsyncAPIConsumer
 ):
-    queryset = Post.published.filter(reply_to=None)
+    queryset = Post.objects.all()
     serializer_class = PostSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.subscribed_to_list = False
-        self.subscribed_to_hashtag = None
+    lookup_field = "pk"
 
     async def connect(self):
         if self.scope['user'].is_authenticated:
@@ -74,92 +59,25 @@ class PostConsumer(
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
-
-        # Ensure that only the author can edit their posts.
         if kwargs.get('action') == 'list':
             filter = kwargs.get("body_contains", None)
             if filter:
-                queryset = queryset.filter(body__icontains=filter)
-            # users can list the latest 500 posts
+                return queryset.filter(body__icontains=filter).order_by('-created_at')[:500]
             return queryset.order_by('-created_at')[:500]
-
-        if kwargs.get('action') == 'retrieve':
-            return queryset
-
-        # for other actions only expose the posts created by this user.
-        return queryset.filter(author=self.scope.get("user"))
-
-    @model_observer(Post)
-    async def post_change_handler(self, message, observer=None, **kwargs):
-        # called when a subscribed item changes
-        await self.send_json(message)
-
-    @post_change_handler.groups_for_signal
-    def post_change_handler(self, instance: Post, **kwargs):
-        # DO NOT DO DATABASE QUERIES HERE
-        # This is called very often through the lifecycle of every instance of a Post model
-        for hashtag in re.findall(r"#[a-z0-9]+", instance.body.lower()):
-            yield f'-hashtag-{hashtag}'
-        yield '-all'
-
-    @post_change_handler.groups_for_consumer
-    def post_change_handler(self, hashtag=None, list=False, **kwargs):
-        # This is called when you subscribe/unsubscribe
-        if hashtag is not None:
-            yield f'-hashtag-#{hashtag}'
-        if list:
-            yield '-all'
+        if kwargs.get('action') == 'update' and kwargs.get('request_id') == 2:
+            return queryset.filter(author=self.scope.get("user"))
+        if kwargs.get('action') == 'delete':
+            return queryset.filter(author=self.scope.get("user"))
+        return queryset
 
     @action()
-    async def subscribe_to_hashtag(self, hashtag, **kwargs):
-        await self.clear_subscription()
-        await self.post_change_handler.subscribe(hashtag=hashtag)
-        self.subscribed_to_hashtag = hashtag
-        return {}, 201
-
-    @action()
-    async def subscribe_to_list(self, **kwargs):
-        await self.clear_subscription()
-        await self.post_change_handler.subscribe(list=True)
-        self.subscribed_to_list = True
-        return {}, 201
-
-    @action()
-    async def unsubscribe_from_hashtag(self, hashtag, **kwargs):
-        await self.post_change_handler.unsubscribe(hashtag=hashtag)
-        if self.subscribe_to_hashtag == hashtag:
-            self.subscribed_to_hashtag = None
-        return {}, 204
-
-    @action()
-    async def unsubscribe_from_list(self, **kwargs):
-        await self.post_change_handler.unsubscribe(list=True)
-        self.subscribed_to_list = False
-        return {}, 204
-
-    async def clear_subscription(self):
-        if self.subscribe_to_hashtag is not None:
-            await self.post_change_handler.unsubscribe(
-                hashtag=self.subscribe_to_hashtag
-            )
-            self.subscribed_to_hashtag = None
-
-        if self.subscribe_to_list:
-            await self.post_change_handler.unsubscribe(
-                list=True
-            )
-            self.subscribed_to_list = False
-
-    @post_change_handler.serializer
-    def post_change_handler(self, instance: Post, action, **kwargs):
-        if action == 'delete':
-            return {"pk": instance.pk}
-        return {"pk": instance.pk, "data": {"body": instance.body}}
+    async def subscribe(self, post_pks: list, request_id, **kwargs):
+        for pk in post_pks:
+            await self.subscribe_instance(pk=pk, request_id=request_id)
 
     @action()
     async def like(self, **kwargs):
-        data = await self.like_post(pk=kwargs['data']['pk'], user=self.scope["user"])
-        return data, 200
+        await self.like_post(pk=kwargs['data']['pk'], user=self.scope["user"])
 
     @database_sync_to_async
     def like_post(self, pk, user):
@@ -168,13 +86,11 @@ class PostConsumer(
             post.likes.remove(user)
         else:
             post.likes.add(user)
-        serializer = PostSerializer(post, context={'scope': self.scope})
-        return serializer.data
+        return post.save()
 
     @action()
     async def bookmark(self, **kwargs):
-        data = await self.bookmark_post(pk=kwargs['data']['pk'], user=self.scope["user"])
-        return data, 200
+        await self.bookmark_post(pk=kwargs['data']['pk'], user=self.scope["user"])
 
     @database_sync_to_async
     def bookmark_post(self, pk, user):
@@ -183,60 +99,34 @@ class PostConsumer(
             post.bookmarks.remove(user)
         else:
             post.bookmarks.add(user)
-        serializer = PostSerializer(post, context={'scope': self.scope})
-        return serializer.data
+        return post.save()
 
     @action()
-    async def replies(self, pk, **kwargs):
-        data = await self.get_post_replies(pk=pk)
-        return data, 200
-
-    @database_sync_to_async
-    def get_post_replies(self, pk):
+    def replies(self, pk, **kwargs):
         posts = Post.objects.get(pk=pk).replies.all()
         serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
-        return serializer.data
+        return serializer.data, 200
 
     @action()
-    async def bookmarks(self, **kwargs):
-        data = await self.get_bookmarked_posts(user=self.scope["user"])
-        return data, 200
-
-    @database_sync_to_async
-    def get_bookmarked_posts(self, user):
-        posts = user.bookmarked_posts.all()
+    def bookmarks(self, **kwargs):
+        posts = self.scope["user"].bookmarked_posts.all()
         serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
-        return serializer.data
+        return serializer.data, 200
 
     @action()
-    async def liked_posts(self, user: int, **kwargs):
-        data = await self.get_liked_posts(user=user)
-        return data, 200
-
-    @database_sync_to_async
-    def get_liked_posts(self, user: int):
+    def liked_posts(self, user: int, **kwargs):
         posts = User.objects.get(pk=user).liked_posts.all()
         serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
-        return serializer.data
+        return serializer.data, 200
 
     @action()
-    async def user_posts(self, user: int, **kwargs):
-        data = await self.get_user_posts(user=user)
-        return data, 200
-
-    @database_sync_to_async
-    def get_user_posts(self, user: int):
+    def user_posts(self, user: int, **kwargs):
         posts = User.objects.get(pk=user).posts.filter(reply_to=None)
         serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
-        return serializer.data
+        return serializer.data, 200
 
     @action()
-    async def user_replies(self, user: int, **kwargs):
-        data = await self.get_user_replies(user=user)
-        return data, 200
-
-    @database_sync_to_async
-    def get_user_replies(self, user: int):
+    def user_replies(self, user: int, **kwargs):
         posts = User.objects.get(pk=user).posts.exclude(reply_to=None)
         serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
-        return serializer.data
+        return serializer.data, 200
