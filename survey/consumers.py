@@ -13,6 +13,16 @@ class SurveyConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPI
     lookup_field = "pk"
 
     @action()
+    async def subscribe(self, request_id, **kwargs):
+        pks = await self.get_survey_pks()
+        for pk in pks:
+            await self.subscribe_instance(pk=pk, request_id=request_id)
+
+    @database_sync_to_async
+    def get_survey_pks(self):
+        return list(Survey.objects.all().values_list('pk', flat=True))
+
+    @action()
     async def create_response(self, data: dict, request_id: int, **kwargs):
         data = await self.create_response_(data=data)
         return await self.reply(data=data, action='create', request_id=request_id, status=201)
@@ -24,5 +34,3 @@ class SurveyConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPI
         serializer.save()
         survey = Survey.objects.get(pk=data['survey'])
         return SurveySerializer(survey, context={'scope': self.scope}).data
-
-

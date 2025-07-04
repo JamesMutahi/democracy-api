@@ -1,5 +1,4 @@
 from channels.db import database_sync_to_async
-from django.utils import timezone
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import ListModelMixin
@@ -16,13 +15,13 @@ class PollConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPICo
 
     @action()
     async def subscribe(self, request_id, **kwargs):
-        pks = await self.get_running_polls_pks()
+        pks = await self.get_poll_pks()
         for pk in pks:
             await self.subscribe_instance(pk=pk, request_id=request_id)
 
     @database_sync_to_async
-    def get_running_polls_pks(self):
-        return list(Poll.objects.filter(end_time__gte=timezone.now()).values_list('pk', flat=True))
+    def get_poll_pks(self):
+        return list(Poll.objects.all().values_list('pk', flat=True))
 
     @action()
     async def vote(self, option: int, **kwargs):
