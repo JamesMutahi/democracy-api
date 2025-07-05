@@ -6,7 +6,6 @@ from djangochannelsrestframework.mixins import CreateModelMixin, ListModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import ObserverModelInstanceMixin, action
 
-from users.serializers import UserSerializer
 from .models import Message, Chat
 from .serializers import MessageSerializer, ChatSerializer
 

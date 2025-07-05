@@ -3,6 +3,9 @@ from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+from poll.models import Poll
+from survey.models import Survey
+
 User = get_user_model()
 
 
@@ -17,7 +20,7 @@ class BaseModel(models.Model):
 
 class PublishedManager(models.Manager):
     def get_queryset(self):
-        return super(PublishedManager, self).get_queryset().filter(status='published', reply=None)
+        return super(PublishedManager, self).get_queryset().filter(status='published')
 
 
 class Post(BaseModel):
@@ -36,12 +39,14 @@ class Post(BaseModel):
     video1 = models.ImageField(upload_to='posts/videos/', null=True, blank=True)
     video2 = models.ImageField(upload_to='posts/videos/', null=True, blank=True)
     video3 = models.ImageField(upload_to='posts/videos/', null=True, blank=True)
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='draft')
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='published')
     published_at = models.DateTimeField(default=timezone.now)
     reply_to = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
                                  related_name='replies')
     repost_of = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
                                   related_name='reposts')
+    poll = models.ForeignKey(Poll, on_delete=models.SET_NULL, null=True, blank=True)
+    survey = models.ForeignKey(Survey, on_delete=models.SET_NULL, null=True, blank=True)
     likes = models.ManyToManyField(User, blank=True, related_name='liked_posts')
     bookmarks = models.ManyToManyField(User, blank=True, related_name='bookmarked_posts')
     views = models.ManyToManyField(User, blank=True)

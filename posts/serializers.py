@@ -1,21 +1,31 @@
 from django.contrib.auth import get_user_model
-from rest_framework.serializers import ModelSerializer, SerializerMethodField
+from rest_framework import serializers
 
+from poll.models import Poll
+from poll.serializers import PollSerializer
 from posts.models import Post
+from survey.models import Survey
+from survey.serializers import SurveySerializer
 from users.serializers import UserSerializer
 
 User = get_user_model()
 
 
-class PostSerializer(ModelSerializer):
+class PostSerializer(serializers.ModelSerializer):
     author = UserSerializer(read_only=True)
-    likes = SerializerMethodField()
-    is_liked = SerializerMethodField()
-    bookmarks = SerializerMethodField()
-    is_bookmarked = SerializerMethodField()
-    replies = SerializerMethodField()
-    reposts = SerializerMethodField()
-    views = SerializerMethodField()
+    likes = serializers.SerializerMethodField()
+    is_liked = serializers.SerializerMethodField()
+    bookmarks = serializers.SerializerMethodField()
+    is_bookmarked = serializers.SerializerMethodField()
+    replies = serializers.SerializerMethodField()
+    reposts = serializers.SerializerMethodField()
+    views = serializers.SerializerMethodField()
+    poll = PollSerializer(read_only=True)
+    survey = SurveySerializer(read_only=True)
+    reply_to_id = serializers.IntegerField(write_only=True, allow_null=True)
+    repost_of_id = serializers.IntegerField(write_only=True, allow_null=True)
+    poll_id = serializers.IntegerField(write_only=True, allow_null=True)
+    survey_id = serializers.IntegerField(write_only=True, allow_null=True)
 
     class Meta:
         model = Post
@@ -46,6 +56,12 @@ class PostSerializer(ModelSerializer):
             'reposts',
             'reply_to',
             'repost_of',
+            'poll',
+            'survey',
+            'reply_to_id',
+            'repost_of_id',
+            'poll_id',
+            'survey_id',
         )
 
     def get_fields(self):
@@ -89,4 +105,12 @@ class PostSerializer(ModelSerializer):
 
     def create(self, validated_data):
         validated_data['author'] = self.context['scope']['user']
+        if validated_data['reply_to_id'] is not None:
+            validated_data['reply_to'] = Post.objects.get(id=validated_data['reply_to_id'])
+        if validated_data['repost_of_id'] is not None:
+            validated_data['repost_of'] = Post.objects.get(id=validated_data['repost_of_id'])
+        if validated_data['poll_id'] is not None:
+            validated_data['poll'] = Poll.objects.get(id=validated_data['poll_id'])
+        if validated_data['survey_id'] is not None:
+            validated_data['survey'] = Survey.objects.get(id=validated_data['survey_id'])
         return super().create(validated_data)

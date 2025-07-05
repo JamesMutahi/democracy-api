@@ -71,9 +71,11 @@ class PostConsumer(
         return queryset
 
     @action()
-    async def subscribe(self, post_pks: list, request_id, **kwargs):
-        for pk in post_pks:
-            await self.subscribe_instance(pk=pk, request_id=request_id)
+    async def list(self, request_id: str, **kwargs):
+        response, status = await super().list()
+        for post in response:
+            await self.subscribe_instance(pk=post['id'], request_id=request_id)
+        return response, status
 
     @action()
     async def like(self, **kwargs):
