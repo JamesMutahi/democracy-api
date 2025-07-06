@@ -1,5 +1,4 @@
 from django.contrib.auth import get_user_model, authenticate
-from django.contrib.sites.models import Site
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
@@ -27,9 +26,12 @@ class UserSerializer(serializers.ModelSerializer):
             'date_joined',
         )
 
-    @staticmethod
-    def get_image(obj):
-        return Site.objects.get_current().domain + obj.image.url
+    def get_image(self, obj):
+        if 'scope' in self.context:
+            headers = dict(self.context['scope']['headers'])
+            host = headers[b'host'].decode()
+            return 'http://' + host + obj.image.url
+        return self.context.get('request').build_absolute_uri(obj.image.url)
 
     @staticmethod
     def get_following(user):

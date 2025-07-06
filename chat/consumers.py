@@ -69,7 +69,9 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         )
 
     async def disconnect(self, code):
-        await self.unsubscribe_instance()
+        chat_pks = await self.get_chat_pks()
+        for pk in chat_pks:
+            await self.unsubscribe_instance(pk=pk)
         await self.message_activity.unsubscribe()
         await super().disconnect(code)
 

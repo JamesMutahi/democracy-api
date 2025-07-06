@@ -104,8 +104,7 @@ class SurveySerializer(serializers.ModelSerializer):
         ]
 
     def get_response(self, instance: Survey):
-        if 'scope' in self.context:
-            response_qs = Response.objects.filter(survey=instance, user=self.context['scope']['user'])
-            if response_qs.exists():
-                return ResponseSerializer(response_qs.first(), context=self.context).data
+        response_qs = Response.objects.filter(survey=instance, user=self.context['scope']['user'])
+        if response_qs.exists():
+            return ResponseSerializer(response_qs.first(), context=self.context).data
         return None

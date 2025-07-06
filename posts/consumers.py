@@ -1,3 +1,5 @@
+from typing import Dict, Any
+
 from channels.db import database_sync_to_async
 from channels.middleware import BaseMiddleware
 from django.contrib.auth import get_user_model
@@ -56,6 +58,9 @@ class PostConsumer(
             await self.accept()
         else:
             await self.close()
+
+    def get_serializer_context(self, **kwargs) -> Dict[str, Any]:
+        return {'scope': self.scope}
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)

@@ -21,12 +21,19 @@ class SurveyConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPI
 
     @model_observer(Survey)
     async def survey_activity(self, message, observer=None, action=None, **kwargs):
+        message['data'] = await self.get_survey_serializer_data(pk=message['pk'])
         await self.send_json(message)
+
+    @database_sync_to_async
+    def get_survey_serializer_data(self, pk):
+        survey = Survey.objects.get(pk=pk)
+        serializer = SurveySerializer(instance=survey, context={'scope': self.scope})
+        return serializer.data
 
     @survey_activity.serializer
     def survey_activity(self, instance: Survey, action, **kwargs):
         return dict(
-            data=SurveySerializer(instance).data,
+            # data is overridden in model_observer
             action=action.value,
             request_id=1,
             pk=instance.pk,
@@ -35,29 +42,31 @@ class SurveyConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPI
 
     @model_observer(Question)
     async def question_activity(self, message, observer=None, action=None, **kwargs):
+        message['data'] = await self.get_survey_serializer_data(pk=message['pk'])
         await self.send_json(message)
 
     @question_activity.serializer
     def question_activity(self, instance: Question, action, **kwargs):
         return dict(
-            data=SurveySerializer(instance.survey).data,
+            # data is overridden in model_observer
             action='update',
             request_id=1,
-            pk=instance.pk,
+            pk=instance.survey.pk,
             response_status=200,
         )
 
     @model_observer(Choice)
     async def choice_activity(self, message, observer=None, action=None, **kwargs):
+        message['data'] = await self.get_survey_serializer_data(pk=message['pk'])
         await self.send_json(message)
 
     @choice_activity.serializer
     def choice_activity(self, instance: Choice, action, **kwargs):
         return dict(
-            data=SurveySerializer(instance.question.survey).data,
+            # data is overridden in model_observer
             action='update',
             request_id=1,
-            pk=instance.pk,
+            pk=instance.question.survey.pk,
             response_status=200,
         )
 

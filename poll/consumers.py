@@ -5,7 +5,7 @@ from djangochannelsrestframework.mixins import ListModelMixin
 from djangochannelsrestframework.observer import model_observer
 
 from poll.models import Poll, Option, Reason
-from poll.serializers import PollSerializer
+from poll.serializers import PollSerializer, OptionSerializer
 
 
 class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
@@ -20,12 +20,19 @@ class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
 
     @model_observer(Poll)
     async def poll_activity(self, message, observer=None, action=None, **kwargs):
+        message['data'] = await self.get_poll_serializer_data(pk=message['pk'])
         await self.send_json(message)
+
+    @database_sync_to_async
+    def get_poll_serializer_data(self, pk):
+        poll = Poll.objects.get(pk=pk)
+        serializer = PollSerializer(instance=poll, context={'scope': self.scope})
+        return serializer.data
 
     @poll_activity.serializer
     def poll_activity(self, instance: Poll, action, **kwargs):
         return dict(
-            data=PollSerializer(instance).data,
+            # data is overridden in model_observer
             action=action.value,
             request_id=1,
             pk=instance.pk,
@@ -34,15 +41,16 @@ class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
 
     @model_observer(Option)
     async def option_activity(self, message, observer=None, action=None, **kwargs):
+        message['data'] = await self.get_poll_serializer_data(pk=message['pk'])
         await self.send_json(message)
 
     @option_activity.serializer
     def option_activity(self, instance: Option, action, **kwargs):
         return dict(
-            data=PollSerializer(instance.poll).data,
+            # data is overridden in model_observer
             action='update',
             request_id=1,
-            pk=instance.pk,
+            pk=instance.poll.pk,
             response_status=200,
         )
 
