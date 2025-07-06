@@ -2,26 +2,54 @@ from channels.db import database_sync_to_async
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import ListModelMixin
-from djangochannelsrestframework.observer.generics import ObserverModelInstanceMixin
+from djangochannelsrestframework.observer import model_observer
 
 from poll.models import Poll, Option, Reason
 from poll.serializers import PollSerializer
 
 
-class PollConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPIConsumer):
+class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     serializer_class = PollSerializer
     queryset = Poll.objects.all()
     lookup_field = "pk"
 
-    async def connect(self):
-        await super().connect()
-        pks = await self.get_poll_pks()
-        for pk in pks:
-            await self.subscribe_instance(pk=pk, request_id='1')
+    async def accept(self, **kwargs):
+        await super().accept(**kwargs)
+        await self.poll_activity.subscribe()
+        await self.option_activity.subscribe()
 
-    @database_sync_to_async
-    def get_poll_pks(self):
-        return list(Poll.objects.all().values_list('pk', flat=True))
+    @model_observer(Poll)
+    async def poll_activity(self, message, observer=None, action=None, **kwargs):
+        await self.send_json(message)
+
+    @poll_activity.serializer
+    def poll_activity(self, instance: Poll, action, **kwargs):
+        return dict(
+            data=PollSerializer(instance).data,
+            action=action.value,
+            request_id=1,
+            pk=instance.pk,
+            response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
+        )
+
+    @model_observer(Option)
+    async def option_activity(self, message, observer=None, action=None, **kwargs):
+        await self.send_json(message)
+
+    @option_activity.serializer
+    def option_activity(self, instance: Option, action, **kwargs):
+        return dict(
+            data=PollSerializer(instance.poll).data,
+            action='update',
+            request_id=1,
+            pk=instance.pk,
+            response_status=200,
+        )
+
+    async def disconnect(self, code):
+        await self.poll_activity.unsubscribe()
+        await self.option_activity.unsubscribe()
+        await super().disconnect(code)
 
     @action()
     async def vote(self, option: int, **kwargs):

@@ -14,6 +14,11 @@ class MessageSerializer(serializers.ModelSerializer):
         model = Message
         fields = ['id', 'chat', 'user', 'text', 'is_read', 'is_edited', 'is_deleted', 'created_at', 'updated_at']
 
+    def validate(self, attrs):
+        if not attrs['chat'].users.contains(self.context['scope']['user']):
+            raise serializers.ValidationError(detail='Chat unavailable')
+        return super().validate(attrs)
+
     def create(self, validated_data):
         validated_data['user'] = self.context['scope']['user']
         return super().create(validated_data)

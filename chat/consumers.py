@@ -21,11 +21,57 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
         return queryset.filter(users=self.scope['user'])
 
-    async def connect(self):
-        await super().connect()
+    async def accept(self, **kwargs):
+        await super().accept(**kwargs)
         chat_pks = await self.get_chat_pks()
         for pk in chat_pks:
             await self.join_chat(pk=pk, request_id='1')
+
+    @model_observer(Message)
+    async def message_activity(
+            self,
+            message,
+            observer=None,
+            subscribing_request_ids=[],
+            **kwargs
+    ):
+        """
+        This is evaluated once for each subscribed consumer.
+        The result of `@message_activity.serializer` is provided here as the message.
+        """
+        # Since we provide the request_id when subscribing, we can just loop over them here.
+        for request_id in subscribing_request_ids:
+            message_body = dict(request_id=request_id)
+            message_body.update(message)
+            await self.send_json(message_body)
+
+    @message_activity.groups_for_signal
+    def message_activity(self, instance: Message, **kwargs):
+        yield f'chat__{instance.chat.id}'
+
+    @message_activity.groups_for_consumer
+    def message_activity(self, chat=None, **kwargs):
+        if chat is not None:
+            yield f'chat__{chat}'
+
+    @message_activity.serializer
+    def message_activity(self, instance: Message, action, **kwargs):
+        """
+        This is evaluated before the update is sent
+        out to all the subscribing consumers.
+        """
+        return dict(
+            data=MessageSerializer(instance).data,
+            action=action.value,
+            request_id=2,
+            pk=instance.pk,
+            response_status=201 if action.value == 'create' else 200
+        )
+
+    async def disconnect(self, code):
+        await self.unsubscribe_instance()
+        await self.message_activity.unsubscribe()
+        await super().disconnect(code)
 
     @action()
     async def create(self, data: dict, request_id: int, **kwargs):
@@ -121,44 +167,3 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
                 chat = c
                 chat.save()
         return chat
-
-    @model_observer(Message)
-    async def message_activity(
-            self,
-            message,
-            observer=None,
-            subscribing_request_ids=[],
-            **kwargs
-    ):
-        """
-        This is evaluated once for each subscribed consumer.
-        The result of `@message_activity.serializer` is provided here as the message.
-        """
-        # Since we provide the request_id when subscribing, we can just loop over them here.
-        for request_id in subscribing_request_ids:
-            message_body = dict(request_id=request_id)
-            message_body.update(message)
-            await self.send_json(message_body)
-
-    @message_activity.groups_for_signal
-    def message_activity(self, instance: Message, **kwargs):
-        yield f'chat__{instance.chat.id}'
-
-    @message_activity.groups_for_consumer
-    def message_activity(self, chat=None, **kwargs):
-        if chat is not None:
-            yield f'chat__{chat}'
-
-    @message_activity.serializer
-    def message_activity(self, instance: Message, action, **kwargs):
-        """
-        This is evaluated before the update is sent
-        out to all the subscribing consumers.
-        """
-        return dict(
-            data=MessageSerializer(instance).data,
-            action=action.value,
-            request_id=2,
-            pk=instance.pk,
-            response_status=201 if action.value == 'create' else 200
-        )

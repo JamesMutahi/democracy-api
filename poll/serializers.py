@@ -56,14 +56,16 @@ class PollSerializer(serializers.ModelSerializer):
 
     def get_voted_option(self, obj):
         voted_option = None
-        for option in obj.options.all():
-            if option.votes.filter(id=self.context['scope']['user'].id).exists():
-                voted_option = option.id
+        if 'scope' in self.context:
+            for option in obj.options.all():
+                if option.votes.filter(id=self.context['scope']['user'].id).exists():
+                    voted_option = option.id
         return voted_option
 
     def get_reason(self, obj):
-        reason_qs = Reason.objects.filter(poll=obj, user=self.context['scope']['user'])
-        if reason_qs.exists():
-            reason = reason_qs.first()
-            return ReasonSerializer(reason, context=self.context).data
+        if 'scope' in self.context:
+            reason_qs = Reason.objects.filter(poll=obj, user=self.context['scope']['user'])
+            if reason_qs.exists():
+                reason = reason_qs.first()
+                return ReasonSerializer(reason, context=self.context).data
         return None
