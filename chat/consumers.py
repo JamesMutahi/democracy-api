@@ -21,6 +21,12 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
         return queryset.filter(users=self.scope['user'])
 
+    async def connect(self):
+        await super().connect()
+        chat_pks = await self.get_chat_pks()
+        for pk in chat_pks:
+            await self.join_chat(pk=pk, request_id='1')
+
     @action()
     async def create(self, data: dict, request_id: int, **kwargs):
         response, status = await super().create(data, **kwargs)
@@ -31,12 +37,6 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
     async def join_chat(self, pk, request_id, **kwargs):
         await self.subscribe_instance(pk=pk, request_id=request_id)
         await self.message_activity.subscribe(chat=pk, request_id=request_id)
-
-    @action()
-    async def subscribe(self, request_id, **kwargs):
-        chat_pks = await self.get_chat_pks()
-        for pk in chat_pks:
-            await self.join_chat(pk=pk, request_id=request_id)
 
     @database_sync_to_async
     def get_chat_pks(self):

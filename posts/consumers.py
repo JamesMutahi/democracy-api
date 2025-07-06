@@ -47,7 +47,7 @@ class PostConsumer(
     ObserverModelInstanceMixin,
     GenericAsyncAPIConsumer
 ):
-    queryset = Post.objects.all()
+    queryset = Post.published.all()
     serializer_class = PostSerializer
     lookup_field = "pk"
 

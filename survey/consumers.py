@@ -12,11 +12,11 @@ class SurveyConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPI
     queryset = Survey.objects.all()
     lookup_field = "pk"
 
-    @action()
-    async def subscribe(self, request_id, **kwargs):
+    async def connect(self):
+        await super().connect()
         pks = await self.get_survey_pks()
         for pk in pks:
-            await self.subscribe_instance(pk=pk, request_id=request_id)
+            await self.subscribe_instance(pk=pk, request_id='1')
 
     @database_sync_to_async
     def get_survey_pks(self):
