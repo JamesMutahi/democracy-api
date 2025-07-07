@@ -149,11 +149,7 @@ class PostConsumer(
     async def create(self, data: dict, request_id: str, **kwargs):
         response, status = await super().create(data, **kwargs)
         pk = response["id"]
-        await self.post_activity.subscribe(pk=pk, request_id=request_id)
-        if response['repost_of'] is not None:
-            await self.repost_and_reply_activity.subscribe(pk=response['repost_of']['id'], request_id=request_id)
-        if response['reply_to'] is not None:
-            await self.repost_and_reply_activity.subscribe(pk=response['reply_to']['id'], request_id=request_id)
+        await self.subscribe_to_posts(pk, request_id)
         return response, status
 
     @action()
@@ -161,12 +157,12 @@ class PostConsumer(
         response, status = await super().list()
         for post in response:
             pk = post["id"]
-            await self.post_activity.subscribe(pk=pk, request_id=request_id)
-            if post['repost_of'] is not None:
-                await self.repost_and_reply_activity.subscribe(pk=post['repost_of']['id'], request_id=request_id)
-            if post['reply_to'] is not None:
-                await self.repost_and_reply_activity.subscribe(pk=post['reply_to']['id'], request_id=request_id)
+            await self.subscribe_to_posts(pk, request_id)
         return response, status
+
+    async def subscribe_to_posts(self, pk, request_id):
+        await self.post_activity.subscribe(pk=pk, request_id=request_id)
+        await self.repost_and_reply_activity.subscribe(pk=pk, request_id=request_id)
 
     @action()
     async def like(self, **kwargs):
