@@ -4,7 +4,6 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from poll.models import Poll
-from posts.managers import PublishedManager, RepostManager, ReplyManager
 from survey.models import Survey
 
 User = get_user_model()
@@ -18,6 +17,10 @@ class BaseModel(models.Model):
     class Meta:
         abstract = True
 
+
+class PublishedManager(models.Manager):
+    def get_queryset(self):
+        return super(PublishedManager, self).get_queryset().filter(status='published', reply_to=None)
 
 class Post(BaseModel):
     STATUS_CHOICES = (
@@ -49,6 +52,8 @@ class Post(BaseModel):
     is_edited = models.BooleanField(_('edited'), default=False)
     is_deleted = models.BooleanField(_('deleted'), default=False)
     is_active = models.BooleanField(_('active'), default=True)
+    objects = models.Manager()  # Default manager.
+    published = PublishedManager()  # Custom manager.
 
     class Meta:
         ordering = ['-published_at']
@@ -56,27 +61,6 @@ class Post(BaseModel):
 
     def __str__(self):
         return self.body
-
-
-class PublishedPost(Post):
-    objects = PublishedManager()
-
-    class Meta:
-        proxy = True
-
-
-class Repost(Post):
-    objects = RepostManager()
-
-    class Meta:
-        proxy = True
-
-
-class Reply(Post):
-    objects = ReplyManager()
-
-    class Meta:
-        proxy = True
 
 
 class Report(BaseModel):

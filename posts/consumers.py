@@ -1,4 +1,4 @@
-from typing import Dict, Any, Tuple
+from typing import Dict, Any
 
 from channels.db import database_sync_to_async
 from channels.middleware import BaseMiddleware
@@ -13,7 +13,7 @@ from djangochannelsrestframework.mixins import (
 from djangochannelsrestframework.observer import model_observer
 from rest_framework.authtoken.models import Token
 
-from posts.models import Post, Repost, Reply, PublishedPost
+from posts.models import Post
 from posts.serializers import PostSerializer
 
 User = get_user_model()
@@ -48,7 +48,7 @@ class PostConsumer(
     CreateModelMixin,
     GenericAsyncAPIConsumer
 ):
-    queryset = PublishedPost.objects.all()
+    queryset = Post.published.all()
     serializer_class = PostSerializer
     lookup_field = "pk"
 
@@ -60,7 +60,6 @@ class PostConsumer(
 
     async def accept(self, **kwargs):
         await super().accept(**kwargs)
-        # await self.post_activity.subscribe()
 
     @model_observer(Post)
     async def post_activity(self, message, observer=None, action=None, **kwargs):
@@ -92,8 +91,42 @@ class PostConsumer(
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
         )
 
+    @model_observer(Post)
+    async def repost_and_reply_activity(self, message, observer=None, action=None, **kwargs):
+        if message is not None:
+            message['data'] = await self.get_post_serializer_data(pk=message['pk'])
+            await self.send_json(message)
+
+    @repost_and_reply_activity.groups_for_signal
+    def repost_and_reply_activity(self, instance: Post, **kwargs):
+        pk = None
+        if instance.repost_of is not None:
+            pk = instance.repost_of.pk
+        if instance.reply_to is not None:
+            pk = instance.reply_to.pk
+        if pk is not None:
+            yield f'post__{pk}'
+
+    @repost_and_reply_activity.groups_for_consumer
+    def repost_and_reply_activity(self, pk=None, **kwargs):
+        if pk is not None:
+            yield f'post__{pk}'
+
+    @repost_and_reply_activity.serializer
+    def repost_and_reply_activity(self, instance: Post, action, **kwargs):
+        if action.value == 'create' or action.value == 'delete':
+            return dict(
+                # data is overridden in model_observer
+                action='update',
+                request_id=1,
+                pk=instance.repost_of.pk if instance.reply_to is None else instance.reply_to.pk,
+                response_status=200
+            )
+        return None
+
     async def disconnect(self, code):
         await self.post_activity.unsubscribe()
+        await self.repost_and_reply_activity.unsubscribe()
         await super().disconnect(code)
 
     def get_serializer_context(self, **kwargs) -> Dict[str, Any]:
@@ -117,6 +150,10 @@ class PostConsumer(
         response, status = await super().create(data, **kwargs)
         pk = response["id"]
         await self.post_activity.subscribe(pk=pk, request_id=request_id)
+        if response['repost_of'] is not None:
+            await self.repost_and_reply_activity.subscribe(pk=response['repost_of']['id'], request_id=request_id)
+        if response['reply_to'] is not None:
+            await self.repost_and_reply_activity.subscribe(pk=response['reply_to']['id'], request_id=request_id)
         return response, status
 
     @action()
@@ -125,6 +162,10 @@ class PostConsumer(
         for post in response:
             pk = post["id"]
             await self.post_activity.subscribe(pk=pk, request_id=request_id)
+            if post['repost_of'] is not None:
+                await self.repost_and_reply_activity.subscribe(pk=post['repost_of']['id'], request_id=request_id)
+            if post['reply_to'] is not None:
+                await self.repost_and_reply_activity.subscribe(pk=post['reply_to']['id'], request_id=request_id)
         return response, status
 
     @action()
