@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 from channels.db import database_sync_to_async
 from channels.middleware import BaseMiddleware
@@ -10,10 +10,10 @@ from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import (
     CreateModelMixin, ListModelMixin
 )
-from djangochannelsrestframework.observer.generics import ObserverModelInstanceMixin
+from djangochannelsrestframework.observer import model_observer
 from rest_framework.authtoken.models import Token
 
-from posts.models import Post
+from posts.models import Post, Repost, Reply, PublishedPost
 from posts.serializers import PostSerializer
 
 User = get_user_model()
@@ -46,10 +46,9 @@ def get_user(token):
 class PostConsumer(
     ListModelMixin,
     CreateModelMixin,
-    ObserverModelInstanceMixin,
     GenericAsyncAPIConsumer
 ):
-    queryset = Post.published.all()
+    queryset = PublishedPost.objects.all()
     serializer_class = PostSerializer
     lookup_field = "pk"
 
@@ -58,6 +57,44 @@ class PostConsumer(
             await self.accept()
         else:
             await self.close()
+
+    async def accept(self, **kwargs):
+        await super().accept(**kwargs)
+        # await self.post_activity.subscribe()
+
+    @model_observer(Post)
+    async def post_activity(self, message, observer=None, action=None, **kwargs):
+        message['data'] = await self.get_post_serializer_data(pk=message['pk'])
+        await self.send_json(message)
+
+    @database_sync_to_async
+    def get_post_serializer_data(self, pk):
+        post = Post.objects.get(pk=pk)
+        serializer = PostSerializer(instance=post, context={'scope': self.scope})
+        return serializer.data
+
+    @post_activity.groups_for_signal
+    def post_activity(self, instance: Post, **kwargs):
+        yield f'post__{instance.pk}'
+
+    @post_activity.groups_for_consumer
+    def post_activity(self, pk=None, **kwargs):
+        if pk is not None:
+            yield f'post__{pk}'
+
+    @post_activity.serializer
+    def post_activity(self, instance: Post, action, **kwargs):
+        return dict(
+            # data is overridden in model_observer
+            action=action.value,
+            request_id=1,
+            pk=instance.pk,
+            response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
+        )
+
+    async def disconnect(self, code):
+        await self.post_activity.unsubscribe()
+        await super().disconnect(code)
 
     def get_serializer_context(self, **kwargs) -> Dict[str, Any]:
         return {'scope': self.scope}
@@ -76,10 +113,18 @@ class PostConsumer(
         return queryset
 
     @action()
+    async def create(self, data: dict, request_id: str, **kwargs):
+        response, status = await super().create(data, **kwargs)
+        pk = response["id"]
+        await self.post_activity.subscribe(pk=pk, request_id=request_id)
+        return response, status
+
+    @action()
     async def list(self, request_id: str, **kwargs):
         response, status = await super().list()
         for post in response:
-            await self.subscribe_instance(pk=post['id'], request_id=request_id)
+            pk = post["id"]
+            await self.post_activity.subscribe(pk=pk, request_id=request_id)
         return response, status
 
     @action()

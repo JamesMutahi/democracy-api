@@ -56,10 +56,6 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
 
     @message_activity.serializer
     def message_activity(self, instance: Message, action, **kwargs):
-        """
-        This is evaluated before the update is sent
-        out to all the subscribing consumers.
-        """
         return dict(
             data=MessageSerializer(instance).data,
             action=action.value,
@@ -76,7 +72,7 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         await super().disconnect(code)
 
     @action()
-    async def create(self, data: dict, request_id: int, **kwargs):
+    async def create(self, data: dict, request_id: str, **kwargs):
         response, status = await super().create(data, **kwargs)
         pk = response["id"]
         await self.join_chat(pk=pk, request_id=request_id)

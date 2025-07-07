@@ -5,7 +5,7 @@ from djangochannelsrestframework.mixins import ListModelMixin
 from djangochannelsrestframework.observer import model_observer
 
 from poll.models import Poll, Option, Reason
-from poll.serializers import PollSerializer, OptionSerializer
+from poll.serializers import PollSerializer
 
 
 class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
