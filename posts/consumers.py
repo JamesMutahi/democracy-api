@@ -58,9 +58,6 @@ class PostConsumer(
         else:
             await self.close()
 
-    async def accept(self, **kwargs):
-        await super().accept(**kwargs)
-
     @model_observer(Post)
     async def post_activity(self, message, observer=None, action=None, **kwargs):
         message['data'] = await self.get_post_serializer_data(pk=message['pk'])
@@ -191,10 +188,29 @@ class PostConsumer(
         return post.save()
 
     @action()
-    def replies(self, pk, **kwargs):
-        posts = Post.objects.get(pk=pk).replies.all()
-        serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
-        return serializer.data, 200
+    async def replies(self, pk, request_id, **kwargs):
+        data = await self.replies_(pk)
+        for reply in data:
+            pk = reply["id"]
+            await self.subscribe_to_posts(pk, request_id)
+        return data, 200
+
+    @database_sync_to_async
+    def replies_(self, pk):
+        replies = Post.objects.get(pk=pk).replies.all()
+        serializer = PostSerializer(replies, many=True, context={'scope': self.scope})
+        return serializer.data
+
+    @action()
+    async def unsubscribe_replies(self, request_id, pk, **kwargs):
+        reply_pks = await self.get_reply_pks(pk=pk)
+        for pk in reply_pks:
+            await self.post_activity.unsubscribe(pk=pk, request_id=request_id)
+            await self.repost_and_reply_activity.unsubscribe(pk=pk, request_id=request_id)
+
+    @database_sync_to_async
+    def get_reply_pks(self, pk):
+        return list(Post.objects.get(pk=pk).replies.values_list('pk', flat=True))
 
     @action()
     def bookmarks(self, **kwargs):
