@@ -2,6 +2,12 @@ from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from chat.models import Message, Chat
+from poll.models import Poll
+from poll.serializers import PollSerializer
+from posts.models import Post
+from posts.serializers import PostSerializer
+from survey.models import Survey
+from survey.serializers import SurveySerializer
 from users.serializers import UserSerializer
 
 User = get_user_model()
@@ -9,10 +15,32 @@ User = get_user_model()
 
 class MessageSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
+    post = PostSerializer(read_only=True)
+    poll = PollSerializer(read_only=True)
+    survey = SurveySerializer(read_only=True)
+    post_id = serializers.IntegerField(write_only=True, allow_null=True)
+    poll_id = serializers.IntegerField(write_only=True, allow_null=True)
+    survey_id = serializers.IntegerField(write_only=True, allow_null=True)
 
     class Meta:
         model = Message
-        fields = ['id', 'chat', 'user', 'text', 'is_read', 'is_edited', 'is_deleted', 'created_at', 'updated_at']
+        fields = [
+            'id',
+            'chat',
+            'user',
+            'text',
+            'post',
+            'poll',
+            'survey',
+            'post_id',
+            'poll_id',
+            'survey_id',
+            'is_read',
+            'is_edited',
+            'is_deleted',
+            'created_at',
+            'updated_at'
+        ]
 
     def validate(self, attrs):
         if not attrs['chat'].users.contains(self.context['scope']['user']):
@@ -21,6 +49,12 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data['user'] = self.context['scope']['user']
+        if validated_data['post_id'] is not None:
+            validated_data['post'] = Post.objects.get(id=validated_data['post_id'])
+        if validated_data['poll_id'] is not None:
+            validated_data['poll'] = Poll.objects.get(id=validated_data['poll_id'])
+        if validated_data['survey_id'] is not None:
+            validated_data['survey'] = Survey.objects.get(id=validated_data['survey_id'])
         return super().create(validated_data)
 
 
