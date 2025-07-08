@@ -209,8 +209,7 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         chats = self.scope['user'].chats.all()
         for chat in chats:
             if chat.users.all().contains(user):
-                return chat.id
-        else:
-            chat = Chat.objects.create()
-            chat.users.set([user, self.scope['user']])
-            return chat.pk
+                return chat.pk
+        chat = Chat.objects.create()
+        chat.users.set([user, self.scope['user']])
+        return chat.pk

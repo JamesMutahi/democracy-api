@@ -4,7 +4,7 @@ from djangochannelsrestframework.mixins import ListModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import ObserverModelInstanceMixin, action
 
-from survey.models import Survey, Question, Choice
+from survey.models import Survey, Question, Choice, Response, TextAnswer, ChoiceAnswer
 from survey.serializers import SurveySerializer, ResponseSerializer
 
 

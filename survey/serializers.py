@@ -34,23 +34,29 @@ class QuestionSerializer(serializers.ModelSerializer):
 
 
 class TextAnswerSerializer(serializers.ModelSerializer):
-    question = QuestionSerializer()
+    question = QuestionSerializer(read_only=True)
+    question_id = serializers.IntegerField(write_only=True)
 
     class Meta:
         model = TextAnswer
         fields = (
+            'question_id',
             'question',
             'text',
         )
 
 
 class ChoiceAnswerSerializer(serializers.ModelSerializer):
-    question = QuestionSerializer()
-    choice = ChoiceSerializer()
+    question = QuestionSerializer(read_only=True)
+    choice = ChoiceSerializer(read_only=True)
+    question_id = serializers.IntegerField(write_only=True)
+    choice_id = serializers.IntegerField(write_only=True)
 
     class Meta:
         model = ChoiceAnswer
         fields = (
+            'question_id',
+            'choice_id',
             'question',
             'choice',
         )
