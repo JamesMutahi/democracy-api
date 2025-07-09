@@ -94,36 +94,8 @@ class PostConsumer(
             message['data'] = await self.get_post_serializer_data(pk=message['pk'])
             await self.send_json(message)
 
-    @repost_and_reply_activity.groups_for_signal
-    def repost_and_reply_activity(self, instance: Post, **kwargs):
-        pk = None
-        if instance.repost_of is not None:
-            pk = instance.repost_of.pk
-        if instance.reply_to is not None:
-            pk = instance.reply_to.pk
-        if pk is not None:
-            yield f'post__{pk}'
-
-    @repost_and_reply_activity.groups_for_consumer
-    def repost_and_reply_activity(self, pk=None, **kwargs):
-        if pk is not None:
-            yield f'post__{pk}'
-
-    @repost_and_reply_activity.serializer
-    def repost_and_reply_activity(self, instance: Post, action, **kwargs):
-        if action.value == 'create' or action.value == 'delete':
-            return dict(
-                # data is overridden in model_observer
-                action='update',
-                request_id=1,
-                pk=instance.repost_of.pk if instance.reply_to is None else instance.reply_to.pk,
-                response_status=200
-            )
-        return None
-
     async def disconnect(self, code):
         await self.post_activity.unsubscribe()
-        await self.repost_and_reply_activity.unsubscribe()
         await super().disconnect(code)
 
     def get_serializer_context(self, **kwargs) -> Dict[str, Any]:
@@ -159,7 +131,7 @@ class PostConsumer(
 
     async def subscribe_to_posts(self, pk, request_id):
         await self.post_activity.subscribe(pk=pk, request_id=request_id)
-        await self.repost_and_reply_activity.subscribe(pk=pk, request_id=request_id)
+        # await self.repost_and_reply_activity.subscribe(pk=pk, request_id=request_id)
 
     @action()
     async def like(self, **kwargs):

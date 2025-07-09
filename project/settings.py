@@ -136,6 +136,7 @@ REST_FRAMEWORK = {
     'DEFAULT_FILTER_BACKENDS': ('django_filters.rest_framework.DjangoFilterBackend',),
     'DEFAULT_SCHEMA_CLASS': 'rest_framework.schemas.coreapi.AutoSchema',
     'NON_FIELD_ERRORS_KEY': 'error',
+    'DATETIME_FORMAT': '%Y-%m-%dT%H:%M:%SZ',
     'TEST_REQUEST_DEFAULT_FORMAT': 'json',
     # 'DEFAULT_THROTTLE_CLASSES': [
     #     'rest_framework.throttling.AnonRateThrottle',
