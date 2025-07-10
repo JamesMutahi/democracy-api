@@ -14,7 +14,7 @@ from djangochannelsrestframework.observer import model_observer
 from rest_framework.authtoken.models import Token
 
 from posts.models import Post
-from posts.serializers import PostSerializer
+from posts.serializers import PostSerializer, ReportSerializer
 
 User = get_user_model()
 
@@ -88,12 +88,6 @@ class PostConsumer(
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
         )
 
-    @model_observer(Post)
-    async def repost_and_reply_activity(self, message, observer=None, action=None, **kwargs):
-        if message is not None:
-            message['data'] = await self.get_post_serializer_data(pk=message['pk'])
-            await self.send_json(message)
-
     async def disconnect(self, code):
         await self.post_activity.unsubscribe()
         await super().disconnect(code)
@@ -131,7 +125,6 @@ class PostConsumer(
 
     async def subscribe_to_posts(self, pk, request_id):
         await self.post_activity.subscribe(pk=pk, request_id=request_id)
-        # await self.repost_and_reply_activity.subscribe(pk=pk, request_id=request_id)
 
     @action()
     async def like(self, **kwargs):
@@ -178,7 +171,6 @@ class PostConsumer(
         reply_pks = await self.get_reply_pks(pk=pk)
         for pk in reply_pks:
             await self.post_activity.unsubscribe(pk=pk, request_id=request_id)
-            await self.repost_and_reply_activity.unsubscribe(pk=pk, request_id=request_id)
 
     @database_sync_to_async
     def get_reply_pks(self, pk):
@@ -206,4 +198,11 @@ class PostConsumer(
     def user_replies(self, user: int, **kwargs):
         posts = User.objects.get(pk=user).posts.exclude(reply_to=None)
         serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
+        return serializer.data, 200
+
+    @action()
+    def report(self, **kwargs):
+        serializer = ReportSerializer(data=kwargs['data'], context={'scope': self.scope})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
         return serializer.data, 200

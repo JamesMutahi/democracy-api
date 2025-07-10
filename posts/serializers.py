@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 from poll.models import Poll
 from poll.serializers import PollSerializer
-from posts.models import Post
+from posts.models import Post, Report
 from survey.models import Survey
 from survey.serializers import SurveySerializer
 from users.serializers import UserSerializer
@@ -113,4 +113,21 @@ class PostSerializer(serializers.ModelSerializer):
             validated_data['poll'] = Poll.objects.get(id=validated_data['poll_id'])
         if validated_data['survey_id'] is not None:
             validated_data['survey'] = Survey.objects.get(id=validated_data['survey_id'])
+        return super().create(validated_data)
+
+
+class ReportSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+
+    class Meta:
+        model = Report
+        fields = (
+            'id',
+            'post',
+            'user',
+            'issue',
+        )
+
+    def create(self, validated_data):
+        validated_data['user'] = self.context['scope']['user']
         return super().create(validated_data)

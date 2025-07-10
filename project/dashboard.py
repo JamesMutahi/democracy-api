@@ -27,7 +27,7 @@ class CustomIndexDashboard(Dashboard):
             title=_(''),
             column=1,
             collapsible=True,
-            models=('posts.models.Post',),
+            models=('posts.models.Post', 'posts.models.Report'),
         ))
         self.children.append(modules.AppList(
             title=_(''),

@@ -65,11 +65,11 @@ class Post(BaseModel):
 
 class Report(BaseModel):
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='reports')
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    reason = models.CharField(max_length=255)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reports')
+    issue = models.CharField(max_length=255)
 
     class Meta:
         db_table = 'Report'
 
     def __str__(self):
-        return self.reason
+        return self.issue
