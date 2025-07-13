@@ -49,6 +49,7 @@ class Post(BaseModel):
     likes = models.ManyToManyField(User, blank=True, related_name='liked_posts')
     bookmarks = models.ManyToManyField(User, blank=True, related_name='bookmarked_posts')
     views = models.ManyToManyField(User, blank=True)
+    tagged_users = models.ManyToManyField(User, blank=True, related_name='tagged_in_posts')
     is_edited = models.BooleanField(_('edited'), default=False)
     is_deleted = models.BooleanField(_('deleted'), default=False)
     is_active = models.BooleanField(_('active'), default=True)

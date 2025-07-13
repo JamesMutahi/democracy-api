@@ -188,6 +188,7 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         else:
             users = User.objects.filter(
                 Q(username__icontains=search_term) |
+                Q(display_name__icontains=search_term) |
                 Q(first_name__icontains=search_term) |
                 Q(last_name__icontains=search_term)
             ).distinct()
@@ -205,11 +206,7 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
 
     @database_sync_to_async
     def get_or_create_chat(self, pk):
-        user = User.objects.get(pk=pk)
-        chats = self.scope['user'].chats.all()
-        for chat in chats:
-            if chat.users.all().contains(user):
-                return chat.pk
-        chat = Chat.objects.create()
-        chat.users.set([user, self.scope['user']])
-        return chat.pk
+        serializer = ChatSerializer(data={'user': pk}, context={'scope': self.scope})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return serializer.data['id']

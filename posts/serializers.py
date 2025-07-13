@@ -22,10 +22,12 @@ class PostSerializer(serializers.ModelSerializer):
     views = serializers.SerializerMethodField()
     poll = PollSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
+    tagged_users = UserSerializer(read_only=True, many=True)
     reply_to_id = serializers.IntegerField(write_only=True, allow_null=True)
     repost_of_id = serializers.IntegerField(write_only=True, allow_null=True)
     poll_id = serializers.IntegerField(write_only=True, allow_null=True)
     survey_id = serializers.IntegerField(write_only=True, allow_null=True)
+    tagged_user_ids = serializers.ListField(write_only=True, allow_empty=True)
 
     class Meta:
         model = Post
@@ -51,6 +53,8 @@ class PostSerializer(serializers.ModelSerializer):
             'is_liked',
             'bookmarks',
             'is_bookmarked',
+            'tagged_users',
+            'tagged_user_ids',
             'views',
             'replies',
             'reposts',
@@ -113,6 +117,11 @@ class PostSerializer(serializers.ModelSerializer):
             validated_data['poll'] = Poll.objects.get(id=validated_data['poll_id'])
         if validated_data['survey_id'] is not None:
             validated_data['survey'] = Survey.objects.get(id=validated_data['survey_id'])
+        tagged_user_ids = validated_data.pop('tagged_user_ids')
+        validated_data['tagged_users'] = []
+        for tagged_user_id in tagged_user_ids:
+            user = User.objects.get(id=tagged_user_id)
+            validated_data['tagged_users'].append(user)
         return super().create(validated_data)
 
 

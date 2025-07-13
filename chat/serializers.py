@@ -89,7 +89,7 @@ class ChatSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         user = User.objects.get(id=validated_data.pop('user'))
-        chats = self.context['scope']['user'].chats.all()
+        chats = self.context['scope']['user'].chats.prefetch_related('users')
         for chat in chats:
             if chat.users.all().contains(user):
                 return chat
