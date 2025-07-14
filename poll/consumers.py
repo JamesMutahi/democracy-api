@@ -20,7 +20,8 @@ class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
 
     @model_observer(Poll)
     async def poll_activity(self, message, observer=None, action=None, **kwargs):
-        message['data'] = await self.get_poll_serializer_data(pk=message['pk'])
+        if message['action'] != 'delete':
+            message['data'] = await self.get_poll_serializer_data(pk=message['pk'])
         await self.send_json(message)
 
     @database_sync_to_async
@@ -41,8 +42,19 @@ class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
 
     @model_observer(Option)
     async def option_activity(self, message, observer=None, action=None, **kwargs):
-        message['data'] = await self.get_poll_serializer_data(pk=message['pk'])
-        await self.send_json(message)
+        data = await self.get_option_activity_data(pk=message['pk'])
+        if data is not None:
+            message['data'] = data
+            await self.send_json(message)
+
+    @database_sync_to_async
+    def get_option_activity_data(self, pk):
+        option_qs = Option.objects.filter(pk=pk)
+        if not option_qs.exists():
+            return None
+        poll = option_qs.first().poll
+        serializer = PollSerializer(instance=poll, context={'scope': self.scope})
+        return serializer.data
 
     @option_activity.serializer
     def option_activity(self, instance: Option, action, **kwargs):
@@ -50,7 +62,7 @@ class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
             # data is overridden in model_observer
             action='update',
             request_id=1,
-            pk=instance.poll.pk,
+            pk=instance.pk,
             response_status=200,
         )
 

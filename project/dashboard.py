@@ -39,6 +39,12 @@ class CustomIndexDashboard(Dashboard):
             title=_(''),
             column=1,
             collapsible=True,
+            models=('notification.models.Notification',),
+        ))
+        self.children.append(modules.AppList(
+            title=_(''),
+            column=1,
+            collapsible=True,
             models=('survey.models.Survey', 'survey.models.Question', 'survey.models.Choice', 'survey.models.Response',
                     'survey.models.TextAnswer', 'survey.models.ChoiceAnswer'),
         ))

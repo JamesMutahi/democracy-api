@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     'poll.apps.PollConfig',
     'posts.apps.PostsConfig',
     'chat.apps.ChatConfig',
+    'notification.apps.NotificationConfig',
     'rest_framework',
     'rest_framework_gis',
     'rest_framework.authtoken',

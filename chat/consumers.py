@@ -22,6 +22,12 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
         return queryset.filter(users=self.scope['user'])
 
+    async def connect(self):
+        if self.scope['user'].is_authenticated:
+            await self.accept()
+        else:
+            await self.close()
+
     async def accept(self, **kwargs):
         await super().accept(**kwargs)
         chat_pks = await self.get_chat_pks()
