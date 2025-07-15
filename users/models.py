@@ -1,5 +1,7 @@
 from __future__ import unicode_literals
 
+from enum import unique
+
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin
 from django.core.mail import send_mail
@@ -12,6 +14,7 @@ from .managers import UserManager
 class CustomUser(AbstractBaseUser, PermissionsMixin):
     username = models.CharField(_('username'), max_length=255, unique=True)
     name = models.CharField(_('name'), max_length=255)
+    id_number = models.IntegerField(_('ID number'), unique=True)
     email = models.EmailField(_('email'), unique=True, null=True, blank=True)
     date_joined = models.DateTimeField(_('date joined'), auto_now_add=True)
     is_staff = models.BooleanField(_('staff status'), default=False)
