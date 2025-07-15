@@ -12,8 +12,7 @@ class TestUsersAppModels(TestCase):
         self.user = User(
             username='test_user',
             email='testuser@gmail.com',
-            first_name='Kenya',
-            last_name='Nairobi',
+            name='Kenya',
         )
         self.user.save()
 

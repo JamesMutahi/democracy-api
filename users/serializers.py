@@ -5,8 +5,6 @@ from rest_framework import serializers
 User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
-    name = serializers.SerializerMethodField(read_only=True)
-    display_name = serializers.SerializerMethodField(read_only=True)
     image = serializers.SerializerMethodField()
     following = serializers.SerializerMethodField(read_only=True)
     followers = serializers.SerializerMethodField(read_only=True)
@@ -15,8 +13,8 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = (
             'id',
+            'username',
             'name',
-            'display_name',
             'email',
             'image',
             'status',
@@ -27,16 +25,6 @@ class UserSerializer(serializers.ModelSerializer):
             'is_active',
             'date_joined',
         )
-
-    @staticmethod
-    def get_name(user):
-        return user.get_full_name()
-
-    @staticmethod
-    def get_display_name(user):
-        if user.display_name == '':
-            return user.get_full_name()
-        return user.display_name
 
     def get_image(self, obj):
         if 'scope' in self.context:

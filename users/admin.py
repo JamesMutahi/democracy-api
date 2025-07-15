@@ -21,21 +21,21 @@ class CustomUserAdmin(UserAdmin):
         return obj.get_full_name()
 
     full_name.short_description = 'Name'
-    list_display = ('id', 'full_name', 'email', 'is_active')
+    list_display = ('id', 'name', 'username', 'email', 'is_active')
     list_filter = ['is_active']
     fieldsets = (
         (None, {'fields': (
-        'email', 'first_name', 'last_name', 'password', 'status', 'muted', 'blocked', 'following')}),
+            'name', 'username', 'email', 'password', 'status', 'muted', 'blocked', 'following')}),
         ('Date information', {'fields': ['last_login', 'date_joined'], 'classes': ('grp-collapse grp-closed',), }),
         ('Permissions',
          {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions'),
           'classes': ('grp-collapse grp-closed',), }),
     )
     add_fieldsets = (
-        (None, {'fields': ('email', 'first_name', 'last_name', 'password1', 'password2',)}),
+        (None, {'fields': ('name', 'username', 'email', 'password1', 'password2',)}),
     )
-    search_fields = ('email', 'first_name', 'last_name')
-    ordering = ('first_name', 'email',)
+    search_fields = ('email', 'name')
+    ordering = ('name', 'email',)
     readonly_fields = ('last_login', 'date_joined',)
     filter_horizontal = ['following', 'blocked', 'muted']
 
