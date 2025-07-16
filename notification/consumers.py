@@ -50,7 +50,6 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         return dict(
             data={'user': instance.user.pk},
             action=action.value,
-            request_id=1,
             pk=instance.pk,
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
         )

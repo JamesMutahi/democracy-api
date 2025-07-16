@@ -1,6 +1,7 @@
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from django.db.models import QuerySet, Q
+from django.db.models.signals import post_save
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import CreateModelMixin, ListModelMixin
 from djangochannelsrestframework.observer import model_observer
@@ -74,7 +75,6 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         return dict(
             # data is overridden in model_observer
             action=action.value,
-            request_id=2,
             pk=instance.pk,
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
         )
@@ -181,7 +181,7 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         for c in chats:
             if c.users.all().contains(user):
                 chat = c
-                chat.save()
+                post_save.send(sender=Chat, instance=chat, created=False)
         return chat
 
     @action()

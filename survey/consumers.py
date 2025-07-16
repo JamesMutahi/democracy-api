@@ -42,7 +42,6 @@ class SurveyConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPI
         return dict(
             # data is overridden in model_observer
             action=action.value,
-            request_id=1,
             pk=instance.pk,
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
         )
@@ -68,7 +67,6 @@ class SurveyConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPI
         return dict(
             # data is overridden in model_observer
             action='update',
-            request_id=1,
             pk=instance.pk,
             response_status=200,
         )
@@ -94,7 +92,6 @@ class SurveyConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPI
         return dict(
             # data is overridden in model_observer
             action='update',
-            request_id=1,
             pk=instance.pk,
             response_status=200,
         )
@@ -106,7 +103,7 @@ class SurveyConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPI
         await super().disconnect(code)
 
     @action()
-    async def create_response(self, data: dict, request_id: int, **kwargs):
+    async def create_response(self, data: dict, request_id: str, **kwargs):
         data = await self.create_response_(data=data)
         return await self.reply(data=data, action='create', request_id=request_id, status=201)
 

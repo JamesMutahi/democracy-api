@@ -25,7 +25,7 @@ from chat.consumers import ChatConsumer
 from poll.consumers import PollConsumer
 from survey.consumers import SurveyConsumer
 from notification.consumers import NotificationConsumer
-from users.consumers import UsersConsumer
+from users.consumers import UserConsumer
 
 application = ProtocolTypeRouter({
     # Django's ASGI application to handle traditional HTTP requests
@@ -41,7 +41,7 @@ application = ProtocolTypeRouter({
                     polls=PollConsumer.as_asgi(),
                     surveys=SurveyConsumer.as_asgi(),
                     notifications=NotificationConsumer.as_asgi(),
-                    users=UsersConsumer.as_asgi(),
+                    users=UserConsumer.as_asgi(),
                 )),
             ]), )
         ),

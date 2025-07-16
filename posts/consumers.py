@@ -5,6 +5,7 @@ from channels.middleware import BaseMiddleware
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.db.models import QuerySet
+from django.db.models.signals import post_save
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import (
@@ -83,7 +84,6 @@ class PostConsumer(
         return dict(
             # data is overridden in model_observer
             action=action.value,
-            request_id=1,
             pk=instance.pk,
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
         )
@@ -98,9 +98,9 @@ class PostConsumer(
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
         if kwargs.get('action') == 'list':
-            filter = kwargs.get("body_contains", None)
-            if filter:
-                return queryset.filter(body__icontains=filter).order_by('-created_at')[:500]
+            search_term = kwargs.get('search_term', None)
+            if search_term:
+                return queryset.filter(body__icontains=search_term).order_by('-created_at')[:500]
             return queryset.order_by('-created_at')[:500]
         if kwargs.get('action') == 'update' and kwargs.get('request_id') == 2:
             return queryset.filter(author=self.scope.get("user"))
@@ -137,7 +137,7 @@ class PostConsumer(
             post.likes.remove(user)
         else:
             post.likes.add(user)
-        return post.save()
+        return post_save.send(sender=Post, instance=post, created=False)
 
     @action()
     async def bookmark(self, **kwargs):
@@ -150,7 +150,7 @@ class PostConsumer(
             post.bookmarks.remove(user)
         else:
             post.bookmarks.add(user)
-        return post.save()
+        return post_save.send(sender=Post, instance=post, created=False)
 
     @action()
     async def replies(self, pk, request_id, **kwargs):
@@ -177,28 +177,74 @@ class PostConsumer(
         return list(Post.objects.get(pk=pk).replies.values_list('pk', flat=True))
 
     @action()
-    def bookmarks(self, **kwargs):
+    async def bookmarks(self, request_id, **kwargs):
+        data = await self.bookmarks_()
+        for post in data:
+            pk = post["id"]
+            await self.subscribe_to_posts(pk, request_id)
+        return data, 200
+
+    @database_sync_to_async
+    def bookmarks_(self, **kwargs):
         posts = self.scope["user"].bookmarked_posts.all()
         serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
-        return serializer.data, 200
+        return serializer.data
 
     @action()
-    def liked_posts(self, user: int, **kwargs):
+    async def liked_posts(self, user: int, request_id, **kwargs):
+        data = await self.liked_posts_(user)
+        for post in data:
+            pk = post["id"]
+            await self.subscribe_to_posts(pk, f'user_{request_id}')
+        return data, 200
+
+    @database_sync_to_async
+    def liked_posts_(self, user: int, **kwargs):
         posts = User.objects.get(pk=user).liked_posts.all()
         serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
-        return serializer.data, 200
+        return serializer.data
 
     @action()
-    def user_posts(self, user: int, **kwargs):
+    async def user_posts(self, user: int, request_id, **kwargs):
+        data = await self.user_posts_(user)
+        for post in data:
+            pk = post["id"]
+            await self.subscribe_to_posts(pk, f'user_{request_id}')
+        return data, 200
+
+    @database_sync_to_async
+    def user_posts_(self, user: int, **kwargs):
         posts = User.objects.get(pk=user).posts.filter(reply_to=None)
         serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
-        return serializer.data, 200
+        return serializer.data
 
     @action()
-    def user_replies(self, user: int, **kwargs):
+    async def user_replies(self, user: int, request_id, **kwargs):
+        data = await self.user_replies_(user)
+        for post in data:
+            pk = post["id"]
+            await self.subscribe_to_posts(pk, f'user_{request_id}')
+        return data, 200
+
+    @database_sync_to_async
+    def user_replies_(self, user: int, **kwargs):
         posts = User.objects.get(pk=user).posts.exclude(reply_to=None)
         serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
-        return serializer.data, 200
+        return serializer.data
+
+    @action()
+    async def unsubscribe_user_profile_posts(self, request_id, user, **kwargs):
+        pks = await self.get_user_profile_posts_pks(pk=user)
+        for pk in pks:
+            await self.post_activity.unsubscribe(pk=pk, request_id=f'user_{request_id}')
+
+    @database_sync_to_async
+    def get_user_profile_posts_pks(self, pk):
+        posts = User.objects.get(pk=pk).posts.all()
+        liked_posts = User.objects.get(pk=pk).liked_posts.all()
+        pks = list(posts.values_list('pk', flat=True))
+        pks.append(list(liked_posts.values_list('pk', flat=True)))
+        return pks
 
     @action()
     def report(self, **kwargs):

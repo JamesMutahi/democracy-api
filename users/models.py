@@ -23,6 +23,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     blocked = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='blockers')
     status = models.TextField(_('status'), blank=True)
     image = models.ImageField(upload_to='profile_pics/', default='profile_pics/default.jpg')
+    cover_photo = models.ImageField(upload_to='cover_photos/', default='cover_photos/default.jpg')
     following = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='followers')
 
     objects = UserManager()

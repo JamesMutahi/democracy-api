@@ -6,8 +6,12 @@ User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField()
+    cover_photo = serializers.SerializerMethodField()
     following = serializers.SerializerMethodField(read_only=True)
     followers = serializers.SerializerMethodField(read_only=True)
+    is_muted = serializers.SerializerMethodField(read_only=True)
+    is_blocked = serializers.SerializerMethodField(read_only=True)
+    is_followed = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = User
@@ -17,6 +21,7 @@ class UserSerializer(serializers.ModelSerializer):
             'name',
             'email',
             'image',
+            'cover_photo',
             'status',
             'muted',
             'blocked',
@@ -24,6 +29,9 @@ class UserSerializer(serializers.ModelSerializer):
             'followers',
             'is_active',
             'date_joined',
+            'is_muted',
+            'is_blocked',
+            'is_followed',
         )
 
     def get_image(self, obj):
@@ -33,6 +41,13 @@ class UserSerializer(serializers.ModelSerializer):
             return 'http://' + host + obj.image.url
         return self.context.get('request').build_absolute_uri(obj.image.url)
 
+    def get_cover_photo(self, obj):
+        if 'scope' in self.context:
+            headers = dict(self.context['scope']['headers'])
+            host = headers[b'host'].decode()
+            return 'http://' + host + obj.cover_photo.url
+        return self.context.get('request').build_absolute_uri(obj.cover_photo.url)
+
     @staticmethod
     def get_following(user):
         return user.following.count()
@@ -40,6 +55,21 @@ class UserSerializer(serializers.ModelSerializer):
     @staticmethod
     def get_followers(user):
         return user.followers.count()
+
+    def get_is_muted(self, user):
+        if 'scope' in self.context:
+            return self.context['scope']['user'].muted.contains(user)
+        return False
+
+    def get_is_blocked(self, user):
+        if 'scope' in self.context:
+            return self.context['scope']['user'].blocked.contains(user)
+        return False
+
+    def get_is_followed(self, user):
+        if 'scope' in self.context:
+            return self.context['scope']['user'].following.contains(user)
+        return False
 
 
 class LoginSerializer(serializers.Serializer):

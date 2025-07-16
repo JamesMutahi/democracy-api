@@ -35,7 +35,6 @@ class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         return dict(
             # data is overridden in model_observer
             action=action.value,
-            request_id=1,
             pk=instance.pk,
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
         )
@@ -61,7 +60,6 @@ class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         return dict(
             # data is overridden in model_observer
             action='update',
-            request_id=1,
             pk=instance.pk,
             response_status=200,
         )

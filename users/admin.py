@@ -25,7 +25,8 @@ class CustomUserAdmin(UserAdmin):
     list_filter = ['is_active']
     fieldsets = (
         (None, {'fields': (
-            'name', 'username', 'id_number', 'email', 'password', 'status', 'muted', 'blocked', 'following')}),
+            'name', 'username', 'id_number', 'email', 'password', 'status', 'image', 'cover_photo', 'muted', 'blocked',
+            'following')}),
         ('Date information', {'fields': ['last_login', 'date_joined'], 'classes': ('grp-collapse grp-closed',), }),
         ('Permissions',
          {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions'),
