@@ -33,7 +33,7 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         await super().accept(**kwargs)
         chat_pks = await self.get_chat_pks()
         for pk in chat_pks:
-            await self.join_chat(pk=pk, request_id='1')
+            await self.join_chat(pk=pk, request_id='chats')
 
     @model_observer(Message)
     async def message_activity(
@@ -75,6 +75,7 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         return dict(
             # data is overridden in model_observer
             action=action.value,
+            request_id='messages',
             pk=instance.pk,
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
         )
@@ -183,23 +184,6 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
                 chat = c
                 post_save.send(sender=Chat, instance=chat, created=False)
         return chat
-
-    @action()
-    def search_users(self, search_term: str, **kwargs):
-        if search_term == '':
-            # TODO: Customize to have user's following and chats
-            users = User.objects.all().order_by('first_name')
-            serializer = UserSerializer(users, many=True, context={'scope': self.scope})
-            return serializer.data, 200
-        else:
-            users = User.objects.filter(
-                Q(username__icontains=search_term) |
-                Q(display_name__icontains=search_term) |
-                Q(first_name__icontains=search_term) |
-                Q(last_name__icontains=search_term)
-            ).distinct()
-            serializer = UserSerializer(users, many=True, context={'scope': self.scope})
-            return serializer.data, 200
 
     @action()
     async def direct_message(self, user_pks: list, data, request_id, **kwargs):

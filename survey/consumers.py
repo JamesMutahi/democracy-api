@@ -42,6 +42,7 @@ class SurveyConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPI
         return dict(
             # data is overridden in model_observer
             action=action.value,
+            request_id='surveys',
             pk=instance.pk,
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
         )
@@ -67,6 +68,7 @@ class SurveyConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPI
         return dict(
             # data is overridden in model_observer
             action='update',
+            request_id='surveys',
             pk=instance.pk,
             response_status=200,
         )
@@ -92,6 +94,7 @@ class SurveyConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPI
         return dict(
             # data is overridden in model_observer
             action='update',
+            request_id='surveys',
             pk=instance.pk,
             response_status=200,
         )

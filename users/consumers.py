@@ -3,16 +3,16 @@ from django.contrib.auth import get_user_model
 from django.db.models import QuerySet, Q
 from django.db.models.signals import post_save
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
-from djangochannelsrestframework.mixins import ListModelMixin, RetrieveModelMixin
+from djangochannelsrestframework.mixins import ListModelMixin, RetrieveModelMixin, PatchModelMixin
 from djangochannelsrestframework.observer import model_observer
-from djangochannelsrestframework.observer.generics import action, ObserverModelInstanceMixin
+from djangochannelsrestframework.observer.generics import action
 
 from users.serializers import UserSerializer
 
 User = get_user_model()
 
 
-class UserConsumer(ListModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer):
+class UserConsumer(ListModelMixin, RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer):
     serializer_class = UserSerializer
     queryset = User.objects.all()
     lookup_field = "pk"
@@ -31,6 +31,8 @@ class UserConsumer(ListModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer):
                 return queryset.filter(Q(username__icontains=search_term) |
                                        Q(name__icontains=search_term)
                                        ).distinct()
+        if kwargs.get('action') == 'patch' and self.scope['user'].id != kwargs.get('pk'):
+            return None
         return queryset
 
     @model_observer(User)
@@ -85,6 +87,7 @@ class UserConsumer(ListModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer):
             self.scope['user'].muted.remove(user)
         else:
             self.scope['user'].muted.add(user)
+        self.signal(user)
         return UserSerializer(user, context={'scope': self.scope}).data
 
     @action()
@@ -99,6 +102,7 @@ class UserConsumer(ListModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer):
             self.scope['user'].blocked.remove(user)
         else:
             self.scope['user'].blocked.add(user)
+        self.signal(user)
         return UserSerializer(user, context={'scope': self.scope}).data
 
     @action()
@@ -112,4 +116,10 @@ class UserConsumer(ListModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer):
             self.scope['user'].following.remove(user)
         else:
             self.scope['user'].following.add(user)
-        return post_save.send(sender=User, instance=user, created=False)
+        self.signal(user)
+        return user
+
+    def signal(self, user: User):
+        post_save.send(sender=User, instance=self.scope['user'], created=False)
+        post_save.send(sender=User, instance=user, created=False)
+        return
