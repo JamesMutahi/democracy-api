@@ -63,6 +63,7 @@ class UserSerializer(serializers.ModelSerializer):
     followers = serializers.SerializerMethodField(read_only=True)
     is_muted = serializers.SerializerMethodField(read_only=True)
     is_blocked = serializers.SerializerMethodField(read_only=True)
+    has_blocked = serializers.SerializerMethodField(read_only=True)
     is_followed = serializers.SerializerMethodField(read_only=True)
     image_base64 = Base64ImageField(write_only=True, max_length=None, use_url=True, allow_null=True)
     cover_photo_base64 = Base64ImageField(write_only=True, max_length=None, use_url=True, allow_null=True)
@@ -85,6 +86,7 @@ class UserSerializer(serializers.ModelSerializer):
             'date_joined',
             'is_muted',
             'is_blocked',
+            'has_blocked',
             'is_followed',
             'image_base64',
             'cover_photo_base64',
@@ -120,6 +122,11 @@ class UserSerializer(serializers.ModelSerializer):
     def get_is_blocked(self, user):
         if 'scope' in self.context:
             return self.context['scope']['user'].blocked.contains(user)
+        return False
+
+    def get_has_blocked(self, user):
+        if 'scope' in self.context:
+            return user.blocked.contains(self.context['scope']['user'])
         return False
 
     def get_is_followed(self, user):

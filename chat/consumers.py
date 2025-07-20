@@ -167,25 +167,6 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         return messages
 
     @action()
-    async def block_user(self, user: int, **kwargs):
-        await self.block_user_(pk=user), 200
-
-    @database_sync_to_async
-    def block_user_(self, pk: int):
-        user = User.objects.get(pk=pk)
-        if user in self.scope['user'].blocked.all():
-            self.scope['user'].blocked.remove(user)
-        else:
-            self.scope['user'].blocked.add(user)
-        chats = self.scope['user'].chats.all()
-        chat = None
-        for c in chats:
-            if c.users.all().contains(user):
-                chat = c
-                post_save.send(sender=Chat, instance=chat, created=False)
-        return chat
-
-    @action()
     async def direct_message(self, user_pks: list, data, request_id, **kwargs):
         for pk in user_pks:
             chat = await self.get_or_create_chat(pk)

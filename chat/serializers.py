@@ -44,7 +44,7 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         if not attrs['chat'].users.contains(self.context['scope']['user']):
-            raise serializers.ValidationError(detail='Chat unavailable')
+            raise serializers.ValidationError(detail='Not found')
         return super().validate(attrs)
 
     def create(self, validated_data):
@@ -63,11 +63,10 @@ class ChatSerializer(serializers.ModelSerializer):
     user = serializers.IntegerField(write_only=True)
     last_message = serializers.SerializerMethodField(read_only=True)
     messages = MessageSerializer(many=True, read_only=True)
-    blockers = serializers.SerializerMethodField()
 
     class Meta:
         model = Chat
-        fields = ["id", "messages", "users", "last_message", "user", "blockers"]
+        fields = ["id", "messages", "users", "last_message", "user"]
         read_only_fields = ["messages", "last_message"]
 
     def get_last_message(self, obj: Chat):
