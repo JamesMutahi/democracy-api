@@ -1,20 +1,18 @@
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
-from django.db.models import QuerySet, Q
-from django.db.models.signals import post_save
+from django.db.models import QuerySet
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import CreateModelMixin, ListModelMixin
 from djangochannelsrestframework.observer import model_observer
-from djangochannelsrestframework.observer.generics import ObserverModelInstanceMixin, action
+from djangochannelsrestframework.observer.generics import action
 
-from users.serializers import UserSerializer
 from .models import Message, Chat
 from .serializers import MessageSerializer, ChatSerializer
 
 User = get_user_model()
 
 
-class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin, GenericAsyncAPIConsumer):
+class ChatConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
     serializer_class = ChatSerializer
     queryset = Chat.objects.all()
     lookup_field = "pk"
@@ -34,6 +32,35 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         chat_pks = await self.get_chat_pks()
         for pk in chat_pks:
             await self.join_chat(pk=pk, request_id='chats')
+
+    @model_observer(Chat)
+    async def chat_activity(self, message, observer=None, action=None, **kwargs):
+        message['data'] = await self.get_chat_serializer_data(pk=message['pk'])
+        await self.send_json(message)
+
+    @database_sync_to_async
+    def get_chat_serializer_data(self, pk):
+        chat = Chat.objects.get(pk=pk)
+        serializer = ChatSerializer(instance=chat, context={'scope': self.scope})
+        return serializer.data
+
+    @chat_activity.groups_for_signal
+    def chat_activity(self, instance: Chat, **kwargs):
+        yield f'chat__{instance.pk}'
+
+    @chat_activity.groups_for_consumer
+    def chat_activity(self, pk=None, **kwargs):
+        if pk is not None:
+            yield f'chat__{pk}'
+
+    @chat_activity.serializer
+    def chat_activity(self, instance: Chat, action, **kwargs):
+        return dict(
+            # data is overridden in model_observer
+            action=action.value,
+            pk=instance.pk,
+            response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
+        )
 
     @model_observer(Message)
     async def message_activity(
@@ -81,9 +108,7 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         )
 
     async def disconnect(self, code):
-        chat_pks = await self.get_chat_pks()
-        for pk in chat_pks:
-            await self.unsubscribe_instance(pk=pk)
+        await self.chat_activity.unsubscribe()
         await self.message_activity.unsubscribe()
         await super().disconnect(code)
 
@@ -95,7 +120,7 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, ObserverModelInstanceMixin,
         return response, status
 
     async def join_chat(self, pk, request_id, **kwargs):
-        await self.subscribe_instance(pk=pk, request_id=request_id)
+        await self.chat_activity.subscribe(pk=pk, request_id=request_id)
         await self.message_activity.subscribe(chat=pk, request_id=request_id)
 
     @database_sync_to_async
