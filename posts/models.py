@@ -20,7 +20,9 @@ class BaseModel(models.Model):
 
 class PublishedManager(models.Manager):
     def get_queryset(self):
-        return super(PublishedManager, self).get_queryset().filter(status='published', reply_to=None)
+        # returns posts, reposts and replies that are published
+        return super(PublishedManager, self).get_queryset().filter(status='published', is_deleted=False)
+
 
 class Post(BaseModel):
     STATUS_CHOICES = (

@@ -9,7 +9,7 @@ from django.db.models.signals import post_save
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import (
-    CreateModelMixin, ListModelMixin
+    CreateModelMixin, ListModelMixin, PatchModelMixin
 )
 from djangochannelsrestframework.observer import model_observer
 from rest_framework.authtoken.models import Token
@@ -47,6 +47,7 @@ def get_user(token):
 class PostConsumer(
     ListModelMixin,
     CreateModelMixin,
+    PatchModelMixin,
     GenericAsyncAPIConsumer
 ):
     queryset = Post.published.all()
@@ -61,7 +62,8 @@ class PostConsumer(
 
     @model_observer(Post)
     async def post_activity(self, message, observer=None, action=None, **kwargs):
-        message['data'] = await self.get_post_serializer_data(pk=message['pk'])
+        if message['action'] != 'delete':
+            message['data'] = await self.get_post_serializer_data(pk=message['pk'])
         await self.send_json(message)
 
     @database_sync_to_async
@@ -97,15 +99,14 @@ class PostConsumer(
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
+        queryset = queryset.filter(is_deleted=False)
         if kwargs.get('action') == 'list':
             search_term = kwargs.get('search_term', None)
             if search_term:
-                return queryset.filter(body__icontains=search_term).order_by('-created_at')[:500]
-            return queryset.order_by('-created_at')[:500]
-        if kwargs.get('action') == 'update' and kwargs.get('request_id') == 2:
-            return queryset.filter(author=self.scope.get("user"))
-        if kwargs.get('action') == 'delete':
-            return queryset.filter(author=self.scope.get("user"))
+                return queryset.filter(body__icontains=search_term).order_by('-created_at')
+            return queryset.order_by('-created_at')
+        if kwargs.get('action') == 'delete' or kwargs.get('action') == 'patch':
+            return queryset.filter(author=self.scope['user'])
         return queryset
 
     @action()
@@ -125,6 +126,29 @@ class PostConsumer(
 
     async def subscribe_to_posts(self, pk, request_id):
         await self.post_activity.subscribe(pk=pk, request_id=request_id)
+
+    @action()
+    async def delete(self, pk: int, request_id: str, **kwargs):
+        post = await database_sync_to_async(self.get_object)(pk=pk)
+        await self.delete_(post=post)
+        await self.post_activity.unsubscribe(pk=pk, request_id=request_id)
+
+    @database_sync_to_async
+    def delete_(self, post):
+        if post.reposts.exists():
+            post = self.mark_deleted(post)
+        elif post.reply_to is not None and post.replies.exists():
+            post = self.mark_deleted(post)
+        else:
+            post.delete()
+        return post
+
+    @staticmethod
+    def mark_deleted(post):
+        post.body = ''
+        post.is_deleted = True
+        post.save()
+        return post
 
     @action()
     async def like(self, **kwargs):

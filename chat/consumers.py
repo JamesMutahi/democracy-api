@@ -33,6 +33,11 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
         for pk in chat_pks:
             await self.join_chat(pk=pk, request_id='chats')
 
+    @database_sync_to_async
+    def get_chat_pks(self):
+        chat_pks = list(self.scope['user'].chats.all().values_list('pk', flat=True))
+        return chat_pks
+
     @model_observer(Chat)
     async def chat_activity(self, message, observer=None, action=None, **kwargs):
         message['data'] = await self.get_chat_serializer_data(pk=message['pk'])
@@ -122,11 +127,6 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
     async def join_chat(self, pk, request_id, **kwargs):
         await self.chat_activity.subscribe(pk=pk, request_id=request_id)
         await self.message_activity.subscribe(chat=pk, request_id=request_id)
-
-    @database_sync_to_async
-    def get_chat_pks(self):
-        chat_pks = list(self.scope['user'].chats.all().values_list('pk', flat=True))
-        return chat_pks
 
     @action()
     async def create_message(self, data, **kwargs):

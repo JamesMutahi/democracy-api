@@ -102,13 +102,16 @@ class UserConsumer(ListModelMixin, RetrieveModelMixin, PatchModelMixin, GenericA
             self.scope['user'].blocked.remove(user)
         else:
             self.scope['user'].blocked.add(user)
+            self.scope['user'].following.remove(user)
+            self.scope['user'].followers.remove(user)
         self.signal(user)
         return UserSerializer(user, context={'scope': self.scope}).data
 
     @action()
     async def follow(self, pk: int, **kwargs):
         user = await database_sync_to_async(self.get_object)(pk=pk)
-        await self.follow_(user=user)
+        data = await self.follow_(user=user)
+        return await self.reply(data=data, action='update', status=200)
 
     @database_sync_to_async
     def follow_(self, user: User):
@@ -117,9 +120,13 @@ class UserConsumer(ListModelMixin, RetrieveModelMixin, PatchModelMixin, GenericA
         else:
             self.scope['user'].following.add(user)
         self.signal(user)
-        return user
+        return UserSerializer(user, context={'scope': self.scope}).data
 
     def signal(self, user: User):
         post_save.send(sender=User, instance=self.scope['user'], created=False)
         post_save.send(sender=User, instance=user, created=False)
         return
+
+    @action()
+    async def unsubscribe(self, pk: int, request_id: str, **kwargs):
+        await self.user_activity.unsubscribe(pk=pk, request_id=request_id)
