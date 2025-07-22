@@ -13,6 +13,12 @@ class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     queryset = Poll.objects.all()
     lookup_field = "pk"
 
+    async def connect(self):
+        if self.scope['user'].is_authenticated:
+            await self.accept()
+        else:
+            await self.close()
+
     async def accept(self, **kwargs):
         await super().accept(**kwargs)
         await self.poll_activity.subscribe()

@@ -9,10 +9,11 @@ from django.db.models.signals import post_save
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import (
-    CreateModelMixin, ListModelMixin, PatchModelMixin
+    CreateModelMixin, ListModelMixin, PatchModelMixin, StreamedPaginatedListMixin
 )
 from djangochannelsrestframework.observer import model_observer
 from rest_framework.authtoken.models import Token
+from rest_framework.pagination import PageNumberPagination
 
 from posts.models import Post
 from posts.serializers import PostSerializer, ReportSerializer
@@ -34,6 +35,11 @@ class TokenAuthMiddleware(BaseMiddleware):
             scope['user'] = AnonymousUser()
             return await super().__call__(scope, receive, send)
 
+class PostListPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 20
+
 
 @database_sync_to_async
 def get_user(token):
@@ -45,14 +51,16 @@ def get_user(token):
 
 
 class PostConsumer(
-    ListModelMixin,
+    StreamedPaginatedListMixin,
+    # ListModelMixin,
     CreateModelMixin,
     PatchModelMixin,
     GenericAsyncAPIConsumer
 ):
-    queryset = Post.published.all()
+    queryset = Post.objects.all()
     serializer_class = PostSerializer
     lookup_field = "pk"
+    pagination_class = PostListPagination
 
     async def connect(self):
         if self.scope['user'].is_authenticated:
@@ -103,8 +111,9 @@ class PostConsumer(
         if kwargs.get('action') == 'list':
             search_term = kwargs.get('search_term', None)
             if search_term:
-                return queryset.filter(body__icontains=search_term).order_by('-created_at')
-            return queryset.order_by('-created_at')
+                return queryset.filter(reply_to=None, status='published', body__icontains=search_term).order_by(
+                    '-created_at')
+            return queryset.filter(reply_to=None, status='published').order_by('-created_at')
         if kwargs.get('action') == 'delete' or kwargs.get('action') == 'patch':
             return queryset.filter(author=self.scope['user'])
         return queryset
@@ -113,19 +122,17 @@ class PostConsumer(
     async def create(self, data: dict, request_id: str, **kwargs):
         response, status = await super().create(data, **kwargs)
         pk = response["id"]
-        await self.subscribe_to_posts(pk, request_id)
+        await self.post_activity.subscribe(pk=pk, request_id=request_id)
         return response, status
 
     @action()
     async def list(self, request_id: str, **kwargs):
-        response, status = await super().list()
+        response, status = await super().list(request_id=request_id, **kwargs)
         for post in response:
             pk = post["id"]
-            await self.subscribe_to_posts(pk, request_id)
+            await self.post_activity.subscribe(pk=pk, request_id=request_id)
         return response, status
 
-    async def subscribe_to_posts(self, pk, request_id):
-        await self.post_activity.subscribe(pk=pk, request_id=request_id)
 
     @action()
     async def delete(self, pk: int, request_id: str, **kwargs):
@@ -136,16 +143,31 @@ class PostConsumer(
     @database_sync_to_async
     def delete_(self, post):
         if post.reposts.exists():
-            post = self.mark_deleted(post)
+            post.reposts.filter(body='').delete()
+            if post.reposts.exists():
+                post = self.mark_deleted(post)
         elif post.reply_to is not None and post.replies.exists():
             post = self.mark_deleted(post)
         else:
             post.delete()
+            if post.reply_to is not None:
+                post_save.send(sender=Post, instance=post.reply_to, created=False)
         return post
 
     @staticmethod
     def mark_deleted(post):
         post.body = ''
+        post.poll = None
+        post.survey = None
+        post.image1 = None
+        post.image2 = None
+        post.image3 = None
+        post.image4 = None
+        post.image5 = None
+        post.image6 = None
+        post.video1 = None
+        post.video2 = None
+        post.video3 = None
         post.is_deleted = True
         post.save()
         return post
@@ -181,7 +203,7 @@ class PostConsumer(
         data = await self.replies_(pk)
         for reply in data:
             pk = reply["id"]
-            await self.subscribe_to_posts(pk, request_id)
+            await self.post_activity.subscribe(pk=pk, request_id=request_id)
         return data, 200
 
     @database_sync_to_async
@@ -205,7 +227,7 @@ class PostConsumer(
         data = await self.bookmarks_()
         for post in data:
             pk = post["id"]
-            await self.subscribe_to_posts(pk, request_id)
+            await self.post_activity.subscribe(pk=pk, request_id=request_id)
         return data, 200
 
     @database_sync_to_async
@@ -219,7 +241,7 @@ class PostConsumer(
         data = await self.liked_posts_(user)
         for post in data:
             pk = post["id"]
-            await self.subscribe_to_posts(pk, f'user_{request_id}')
+            await self.post_activity.subscribe(pk=pk, request_id=f'user_{request_id}')
         return data, 200
 
     @database_sync_to_async
@@ -233,7 +255,7 @@ class PostConsumer(
         data = await self.user_posts_(user)
         for post in data:
             pk = post["id"]
-            await self.subscribe_to_posts(pk, f'user_{request_id}')
+            await self.post_activity.subscribe(pk=pk, request_id=f'user_{request_id}')
         return data, 200
 
     @database_sync_to_async
@@ -247,7 +269,7 @@ class PostConsumer(
         data = await self.user_replies_(user)
         for post in data:
             pk = post["id"]
-            await self.subscribe_to_posts(pk, f'user_{request_id}')
+            await self.post_activity.subscribe(pk=pk, request_id=f'user_{request_id}')
         return data, 200
 
     @database_sync_to_async

@@ -18,12 +18,6 @@ class BaseModel(models.Model):
         abstract = True
 
 
-class PublishedManager(models.Manager):
-    def get_queryset(self):
-        # returns posts, reposts and replies that are published
-        return super(PublishedManager, self).get_queryset().filter(status='published', is_deleted=False)
-
-
 class Post(BaseModel):
     STATUS_CHOICES = (
         ('draft', 'Draft'),
@@ -55,8 +49,6 @@ class Post(BaseModel):
     is_edited = models.BooleanField(_('edited'), default=False)
     is_deleted = models.BooleanField(_('deleted'), default=False)
     is_active = models.BooleanField(_('active'), default=True)
-    objects = models.Manager()  # Default manager.
-    published = PublishedManager()  # Custom manager.
 
     class Meta:
         ordering = ['-published_at']

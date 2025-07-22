@@ -149,7 +149,10 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
     def delete_message_(self, message):
         if self.scope['user'] == message.user:
             if message.is_read:
-                message.text = 'Deleted'
+                message.text = ''
+                message.post = None
+                message.poll = None
+                message.survey = None
                 message.is_deleted = True
                 message.save()
             else:
