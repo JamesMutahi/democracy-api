@@ -84,7 +84,7 @@ class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         option = Option.objects.get(pk=pk)
         user = self.scope['user']
         for o in option.poll.options.all():
-            if o.votes.filter(id=user.id).exists():
+            if o.votes.contains(user):
                 if o.id != pk:
                     o.votes.remove(user)
                     Reason.objects.filter(poll=o.poll, user=user).delete()
