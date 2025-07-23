@@ -17,10 +17,6 @@ class CustomUserAdmin(UserAdmin):
     form = CustomUserChangeForm
     model = CustomUser
 
-    def full_name(self, obj):
-        return obj.get_full_name()
-
-    full_name.short_description = 'Name'
     list_display = ('id', 'name', 'username', 'email', 'is_active')
     list_filter = ['is_active']
     fieldsets = (

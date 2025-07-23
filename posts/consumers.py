@@ -9,7 +9,7 @@ from django.db.models.signals import post_save
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import (
-    CreateModelMixin, ListModelMixin, PatchModelMixin, StreamedPaginatedListMixin
+    CreateModelMixin, PatchModelMixin, StreamedPaginatedListMixin
 )
 from djangochannelsrestframework.observer import model_observer
 from rest_framework.authtoken.models import Token
@@ -35,11 +35,6 @@ class TokenAuthMiddleware(BaseMiddleware):
             scope['user'] = AnonymousUser()
             return await super().__call__(scope, receive, send)
 
-class PostListPagination(PageNumberPagination):
-    page_size = 20
-    page_size_query_param = 'page_size'
-    max_page_size = 20
-
 
 @database_sync_to_async
 def get_user(token):
@@ -50,9 +45,14 @@ def get_user(token):
     return user
 
 
+class PostListPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 35
+
+
 class PostConsumer(
     StreamedPaginatedListMixin,
-    # ListModelMixin,
     CreateModelMixin,
     PatchModelMixin,
     GenericAsyncAPIConsumer
@@ -132,7 +132,6 @@ class PostConsumer(
             pk = post["id"]
             await self.post_activity.subscribe(pk=pk, request_id=request_id)
         return response, status
-
 
     @action()
     async def delete(self, pk: int, request_id: str, **kwargs):
