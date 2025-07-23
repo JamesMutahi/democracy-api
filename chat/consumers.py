@@ -68,24 +68,10 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
         )
 
     @model_observer(Message)
-    async def message_activity(
-            self,
-            message,
-            observer=None,
-            subscribing_request_ids=[],
-            **kwargs
-    ):
-        """
-        This is evaluated once for each subscribed consumer.
-        The result of `@message_activity.serializer` is provided here as the message.
-        """
+    async def message_activity(self, message, observer=None, action=None, **kwargs):
         if message['action'] != 'delete':
             message['data'] = await self.get_message_serializer_data(pk=message['pk'])
-        # Since we provide the request_id when subscribing, we can just loop over them here.
-        for request_id in subscribing_request_ids:
-            message_body = dict(request_id=request_id)
-            message_body.update(message)
-            await self.send_json(message_body)
+        await self.send_json(message)
 
     @database_sync_to_async
     def get_message_serializer_data(self, pk):

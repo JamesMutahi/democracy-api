@@ -80,7 +80,7 @@ class PostSerializer(serializers.ModelSerializer):
         return count
 
     def get_is_liked(self, obj):
-        is_liked = obj.likes.filter(id=self.context['scope']['user'].id).exists()
+        is_liked = obj.likes.contains(self.context['scope']['user'])
         return is_liked
 
     @staticmethod
@@ -89,7 +89,7 @@ class PostSerializer(serializers.ModelSerializer):
         return count
 
     def get_is_bookmarked(self, obj):
-        is_bookmarked = obj.bookmarks.filter(id=self.context['scope']['user'].id).exists()
+        is_bookmarked = obj.bookmarks.contains(self.context['scope']['user'])
         return is_bookmarked
 
     @staticmethod
