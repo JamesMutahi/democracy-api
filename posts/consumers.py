@@ -4,6 +4,7 @@ from channels.db import database_sync_to_async
 from channels.middleware import BaseMiddleware
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
+from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from django.db.models import QuerySet
 from django.db.models.signals import post_save
 from djangochannelsrestframework.decorators import action
@@ -107,15 +108,14 @@ class PostConsumer(
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
-        queryset = queryset.filter(is_deleted=False)
         if kwargs.get('action') == 'list':
             search_term = kwargs.get('search_term', None)
             if search_term:
-                return queryset.filter(reply_to=None, status='published', body__icontains=search_term).order_by(
+                return queryset.filter(is_deleted=False, reply_to=None, status='published', body__icontains=search_term).order_by(
                     '-created_at')
-            return queryset.filter(reply_to=None, status='published').order_by('-created_at')
+            return queryset.filter(is_deleted=False, reply_to=None, status='published').order_by('-created_at')
         if kwargs.get('action') == 'delete' or kwargs.get('action') == 'patch':
-            return queryset.filter(author=self.scope['user'])
+            return queryset.filter(is_deleted=False, author=self.scope['user'])
         return queryset
 
     @action()
@@ -125,13 +125,36 @@ class PostConsumer(
         await self.post_activity.subscribe(pk=pk, request_id=request_id)
         return response, status
 
+    # @action()
+    # async def list(self, request_id: str, **kwargs):
+    #     response, status = await super().list(request_id=request_id, **kwargs)
+    #     for post in response:
+    #         pk = post["id"]
+    #         await self.post_activity.subscribe(pk=pk, request_id=request_id)
+    #     return response, status
+
     @action()
-    async def list(self, request_id: str, **kwargs):
-        response, status = await super().list(request_id=request_id, **kwargs)
-        for post in response:
-            pk = post["id"]
-            await self.post_activity.subscribe(pk=pk, request_id=request_id)
-        return response, status
+    async def list(self, request_id, page=1, page_size=10, **kwargs):
+        data = await self.list_(page, page_size, **kwargs)
+        await self.reply(
+            action='list',
+            data=data,
+            request_id=request_id
+        )
+
+    @database_sync_to_async
+    def list_(self, page=1, page_size=10, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        paginator = Paginator(queryset, page_size)
+        try:
+            page_obj = paginator.page(page)
+        except PageNotAnInteger:
+            page_obj = paginator.page(1)
+        except EmptyPage:
+            page_obj = paginator.page(paginator.num_pages)
+        serializer = PostSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
+        return dict(results=serializer.data, count=paginator.count, num_pages=paginator.num_pages,
+                    current_page=page_obj.number, has_next=page_obj.has_next(), has_previous=page_obj.has_previous())
 
     @action()
     async def delete(self, pk: int, request_id: str, **kwargs):
