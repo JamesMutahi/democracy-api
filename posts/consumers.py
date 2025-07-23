@@ -12,7 +12,7 @@ from djangochannelsrestframework.consumers import AsyncAPIConsumer
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import (
-    CreateModelMixin, PatchModelMixin, StreamedPaginatedListMixin
+    CreateModelMixin, PatchModelMixin, StreamedPaginatedListMixin, ListModelMixin
 )
 from djangochannelsrestframework.observer import model_observer
 from rest_framework.authtoken.models import Token
@@ -55,7 +55,8 @@ class PostListPagination(PageNumberPagination):
 
 
 class PostConsumer(
-    StreamedPaginatedListMixin,
+    ListModelMixin,
+    # StreamedPaginatedListMixin,
     CreateModelMixin,
     PatchModelMixin,
     GenericAsyncAPIConsumer
@@ -136,12 +137,13 @@ class PostConsumer(
     #     return response, status
 
     @action(detached=True)
-    async def list(self, request_id, page=1, page_size=10, timer=300, **kwargs):
+    async def list(self, request_id: str, page=1, page_size=10, timer=300, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        pks = await self.get_post_pks(queryset)
+        for pk in pks:
+            await self.post_activity.subscribe(pk=pk, request_id=request_id)
         while not asyncio.current_task().cancelled():
-            data = await self.list_(page, page_size, **kwargs)
-            for post in data['results']:
-                pk = post["id"]
-                await self.post_activity.subscribe(pk=pk, request_id=request_id)
+            data = await self.list_(queryset, page, page_size, **kwargs)
             await self.reply(action='list', data=data, status=200, request_id=request_id)
             has_next = data.get('has_next', False)
             # Go to next page if more or stop when there are no more pages to fetch
@@ -152,8 +154,11 @@ class PostConsumer(
                 break
 
     @database_sync_to_async
-    def list_(self, page, page_size, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+    def get_post_pks(self, queryset):
+        return list(queryset.values_list('pk', flat=True))
+
+    @database_sync_to_async
+    def list_(self, queryset, page, page_size, **kwargs):
         paginator = Paginator(queryset, page_size)
         try:
             page_obj = paginator.page(page)
@@ -164,6 +169,16 @@ class PostConsumer(
         serializer = PostSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
         return dict(results=serializer.data, count=paginator.count, num_pages=paginator.num_pages,
                     current_page=page_obj.number, has_next=page_obj.has_next(), has_previous=page_obj.has_previous())
+
+    @action()
+    async def list_cancel(self: AsyncAPIConsumer, request_id, **kwargs):
+        """
+        Action that will stop all pending streaming list requests.
+        """
+        for task in self.detached_tasks:
+            task.cancel()
+            await self.handle_detached_task_completion(task)
+        await self.reply(action='list_cancel', status=200, request_id=request_id)
 
     @action()
     async def delete(self, pk: int, request_id: str, **kwargs):
