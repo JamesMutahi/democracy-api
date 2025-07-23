@@ -1,3 +1,4 @@
+import asyncio
 from typing import Dict, Any
 
 from channels.db import database_sync_to_async
@@ -7,6 +8,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from django.db.models import QuerySet
 from django.db.models.signals import post_save
+from djangochannelsrestframework.consumers import AsyncAPIConsumer
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import (
@@ -133,17 +135,24 @@ class PostConsumer(
     #         await self.post_activity.subscribe(pk=pk, request_id=request_id)
     #     return response, status
 
-    @action()
-    async def list(self, request_id, page=1, page_size=10, **kwargs):
-        data = await self.list_(page, page_size, **kwargs)
-        await self.reply(
-            action='list',
-            data=data,
-            request_id=request_id
-        )
+    @action(detached=True)
+    async def list(self, request_id, page=1, page_size=10, timer=300, **kwargs):
+        while not asyncio.current_task().cancelled():
+            data = await self.list_(page, page_size, **kwargs)
+            for post in data['results']:
+                pk = post["id"]
+                await self.post_activity.subscribe(pk=pk, request_id=request_id)
+            await self.reply(action='list', data=data, status=200, request_id=request_id)
+            has_next = data.get('has_next', False)
+            # Go to next page if more or stop when there are no more pages to fetch
+            if has_next:
+                page += 1
+                await asyncio.sleep(timer)
+            else:
+                break
 
     @database_sync_to_async
-    def list_(self, page=1, page_size=10, **kwargs):
+    def list_(self, page, page_size, **kwargs):
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         paginator = Paginator(queryset, page_size)
         try:
