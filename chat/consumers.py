@@ -45,7 +45,7 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
 
     @database_sync_to_async
     def get_chat_serializer_data(self, pk):
-        chat = Chat.objects.get(pk=pk)
+        chat = Chat.objects.get(pk=pk), None
         serializer = ChatSerializer(instance=chat, context={'scope': self.scope})
         return serializer.data
 
@@ -122,7 +122,8 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
     def create_message_(self, data: dict):
         serializer = MessageSerializer(data=data, context={'scope': self.scope})
         serializer.is_valid(raise_exception=True)
-        return serializer.save()
+        serializer.save()
+        return serializer.data
 
     @action()
     async def delete_message(self, request_id, pk, **kwargs):
@@ -184,9 +185,9 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
     async def direct_message(self, user_pks: list, data, request_id, **kwargs):
         for pk in user_pks:
             chat = await self.get_or_create_chat(pk)
-            await self.join_chat(pk=chat, request_id=request_id)
-            data['chat'] = chat
+            data['chat'] = chat['id']
             await self.create_message_(data)
+            await self.join_chat(pk=chat, request_id=request_id)
         return {}, 200
 
     @database_sync_to_async
@@ -194,4 +195,4 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
         serializer = ChatSerializer(data={'user': pk}, context={'scope': self.scope})
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return serializer.data['id']
+        return serializer.data

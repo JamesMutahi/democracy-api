@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db.models import Count
 from rest_framework import serializers
 
 from chat.models import Message, Chat
@@ -76,21 +77,18 @@ class ChatSerializer(serializers.ModelSerializer):
         else:
             return None
 
-    @staticmethod
-    def get_blockers(instance: Chat):
-        blockers = []
-        users = instance.users.all()
-        for user in users:
-            blocked_users = user.blocked.all()
-            if any(x in users for x in blocked_users):
-                blockers.append(user.id)
-        return blockers
-
     def create(self, validated_data):
         user = User.objects.get(id=validated_data.pop('user'))
+        if self.context['scope']['user'].id == user.id:
+            chat_qs = Chat.objects.annotate(num_users=Count('users')).filter(users=user, num_users=1)
+            if chat_qs.exists():
+                return chat_qs.first()
+            else:
+                validated_data['users'] = [self.context['scope']['user'], user]
+                return super().create(validated_data)
         chats = self.context['scope']['user'].chats.prefetch_related('users')
         for chat in chats:
-            if chat.users.all().contains(user):
+            if chat.users.contains(user):
                 return chat
         validated_data['users'] = [self.context['scope']['user'], user]
         return super().create(validated_data)
