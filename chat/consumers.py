@@ -40,12 +40,13 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
 
     @model_observer(Chat)
     async def chat_activity(self, message, observer=None, action=None, **kwargs):
-        message['data'] = await self.get_chat_serializer_data(pk=message['pk'])
+        if message['action'] != 'delete':
+            message['data'] = await self.get_chat_serializer_data(pk=message['pk'])
         await self.send_json(message)
 
     @database_sync_to_async
     def get_chat_serializer_data(self, pk):
-        chat = Chat.objects.get(pk=pk), None
+        chat = Chat.objects.get(pk=pk)
         serializer = ChatSerializer(instance=chat, context={'scope': self.scope})
         return serializer.data
 

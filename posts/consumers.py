@@ -1,6 +1,7 @@
 import asyncio
 from typing import Dict, Any
 
+from asgiref.sync import sync_to_async
 from channels.db import database_sync_to_async
 from channels.middleware import BaseMiddleware
 from django.contrib.auth import get_user_model
@@ -12,7 +13,7 @@ from djangochannelsrestframework.consumers import AsyncAPIConsumer
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import (
-    CreateModelMixin, PatchModelMixin, StreamedPaginatedListMixin, ListModelMixin
+    CreateModelMixin, PatchModelMixin, ListModelMixin
 )
 from djangochannelsrestframework.observer import model_observer
 from rest_framework.authtoken.models import Token
@@ -75,14 +76,16 @@ class PostConsumer(
     @model_observer(Post)
     async def post_activity(self, message, observer=None, action=None, **kwargs):
         if message['action'] != 'delete':
-            message['data'] = await self.get_post_serializer_data(pk=message['pk'])
+            message = await self.get_post_serializer_data(message)
         await self.send_json(message)
 
-    @database_sync_to_async
-    def get_post_serializer_data(self, pk):
-        post = Post.objects.get(pk=pk)
-        serializer = PostSerializer(instance=post, context={'scope': self.scope})
-        return serializer.data
+    @sync_to_async
+    def get_post_serializer_data(self, message):
+        message['data']['is_liked'] = self.scope['user'].id in message['data']['likes']
+        message['data']['is_bookmarked'] = self.scope['user'].id in message['data']['bookmarks']
+        message['data']['likes'] = len(message['data']['likes'])
+        message['data']['bookmarks'] = len(message['data']['bookmarks'])
+        return message
 
     @post_activity.groups_for_signal
     def post_activity(self, instance: Post, **kwargs):
@@ -96,7 +99,10 @@ class PostConsumer(
     @post_activity.serializer
     def post_activity(self, instance: Post, action, **kwargs):
         return dict(
-            # data is overridden in model_observer
+            data=dict(body=instance.body, likes=instance.likes.values_list('id', flat=True),
+                      bookmarks=instance.bookmarks.values_list('id', flat=True), replies=instance.replies.count(),
+                      reposts=instance.reposts.count(), views=instance.views.count(), is_edited=instance.is_edited,
+                      is_deleted=instance.is_deleted, is_active=instance.is_active),
             action=action.value,
             pk=instance.pk,
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
@@ -114,12 +120,13 @@ class PostConsumer(
         if kwargs.get('action') == 'list':
             search_term = kwargs.get('search_term', None)
             if search_term:
-                return queryset.filter(is_deleted=False, reply_to=None, status='published', body__icontains=search_term).order_by(
+                return queryset.filter(is_deleted=False, reply_to=None, status='published',
+                                       body__icontains=search_term).order_by(
                     '-created_at')
             return queryset.filter(is_deleted=False, reply_to=None, status='published').order_by('-created_at')
         if kwargs.get('action') == 'delete' or kwargs.get('action') == 'patch':
             return queryset.filter(is_deleted=False, author=self.scope['user'])
-        return queryset
+        return queryset.filter(is_deleted=False)
 
     @action()
     async def create(self, data: dict, request_id: str, **kwargs):
@@ -155,7 +162,12 @@ class PostConsumer(
 
     @database_sync_to_async
     def get_post_pks(self, queryset):
-        return list(queryset.values_list('pk', flat=True))
+        pks = []
+        for post in queryset:
+            pks.append(post.id)
+            if post.repost_of:
+                pks.append(post.repost_of.id)
+        return pks
 
     @database_sync_to_async
     def list_(self, queryset, page, page_size, **kwargs):
@@ -192,12 +204,16 @@ class PostConsumer(
             post.reposts.filter(body='').delete()
             if post.reposts.exists():
                 post = self.mark_deleted(post)
+            else:
+                post.delete()
         elif post.reply_to is not None and post.replies.exists():
             post = self.mark_deleted(post)
         else:
             post.delete()
-            if post.reply_to is not None:
+            if post.reply_to:
                 post_save.send(sender=Post, instance=post.reply_to, created=False)
+            if post.repost_of:
+                post_save.send(sender=Post, instance=post.repost_of, created=False)
         return post
 
     @staticmethod
@@ -216,6 +232,10 @@ class PostConsumer(
         post.video3 = None
         post.is_deleted = True
         post.save()
+        post.bookmarks.clear()
+        post.likes.clear()
+        post.views.clear()
+        post.tagged_users.clear()
         return post
 
     @action()
@@ -245,11 +265,25 @@ class PostConsumer(
         return post_save.send(sender=Post, instance=post, created=False)
 
     @action()
+    async def following(self, request_id, **kwargs):
+        data = await self.following_()
+        for post in data:
+            pk = post["id"]
+            await self.post_activity.subscribe(pk=pk, request_id=request_id)
+        return data, 200
+
+    @database_sync_to_async
+    def following_(self):
+        posts = Post.objects.filter(author__in=self.scope['user'].following.all())
+        serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
+        return serializer.data
+
+    @action()
     async def replies(self, pk, request_id, **kwargs):
         data = await self.replies_(pk)
         for reply in data:
             pk = reply["id"]
-            await self.post_activity.subscribe(pk=pk, request_id=request_id)
+            await self.post_activity.subscribe(pk=pk, request_id=f'reply_{request_id}')
         return data, 200
 
     @database_sync_to_async
@@ -262,7 +296,7 @@ class PostConsumer(
     async def unsubscribe_replies(self, request_id, pk, **kwargs):
         reply_pks = await self.get_reply_pks(pk=pk)
         for pk in reply_pks:
-            await self.post_activity.unsubscribe(pk=pk, request_id=request_id)
+            await self.post_activity.unsubscribe(pk=pk, request_id=f'reply_{request_id}')
 
     @database_sync_to_async
     def get_reply_pks(self, pk):

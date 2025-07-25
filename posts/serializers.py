@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db.models.signals import post_save
 from rest_framework import serializers
 
 from poll.models import Poll
@@ -109,20 +110,25 @@ class PostSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data['author'] = self.context['scope']['user']
-        if validated_data['reply_to_id'] is not None:
+        if validated_data['reply_to_id']:
             validated_data['reply_to'] = Post.objects.get(id=validated_data['reply_to_id'])
-        if validated_data['repost_of_id'] is not None:
+        if validated_data['repost_of_id']:
             validated_data['repost_of'] = Post.objects.get(id=validated_data['repost_of_id'])
-        if validated_data['poll_id'] is not None:
+        if validated_data['poll_id']:
             validated_data['poll'] = Poll.objects.get(id=validated_data['poll_id'])
-        if validated_data['survey_id'] is not None:
+        if validated_data['survey_id']:
             validated_data['survey'] = Survey.objects.get(id=validated_data['survey_id'])
         tagged_user_ids = validated_data.pop('tagged_user_ids')
         validated_data['tagged_users'] = []
         for tagged_user_id in tagged_user_ids:
             user = User.objects.get(id=tagged_user_id)
             validated_data['tagged_users'].append(user)
-        return super().create(validated_data)
+        post = super().create(validated_data)
+        if post.reply_to:
+            post_save.send(sender=Post, instance=post.reply_to, created=False)
+        if post.repost_of:
+            post_save.send(sender=Post, instance=post.repost_of, created=False)
+        return post
 
 
 class ReportSerializer(serializers.ModelSerializer):
