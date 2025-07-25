@@ -98,11 +98,14 @@ class PostConsumer(
 
     @post_activity.serializer
     def post_activity(self, instance: Post, action, **kwargs):
+        data = {}
+        if action.value != 'delete':
+            data = dict(body=instance.body, likes=instance.likes.values_list('id', flat=True),
+                        bookmarks=instance.bookmarks.values_list('id', flat=True), replies=instance.replies.count(),
+                        reposts=instance.reposts.count(), views=instance.views.count(), is_edited=instance.is_edited,
+                        is_deleted=instance.is_deleted, is_active=instance.is_active)
         return dict(
-            data=dict(body=instance.body, likes=instance.likes.values_list('id', flat=True),
-                      bookmarks=instance.bookmarks.values_list('id', flat=True), replies=instance.replies.count(),
-                      reposts=instance.reposts.count(), views=instance.views.count(), is_edited=instance.is_edited,
-                      is_deleted=instance.is_deleted, is_active=instance.is_active),
+            data=data,
             action=action.value,
             pk=instance.pk,
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
