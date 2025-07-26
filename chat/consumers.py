@@ -114,9 +114,9 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
 
     @action()
     async def create(self, data: dict, request_id: str, **kwargs):
-        chat_data = await self.get_chat_data_if_exists()
+        chat_data = await self.get_chat_data_if_exists(data)
         if chat_data:
-            return chat_data, 200
+            return chat_data, 201
         response, status = await super().create(data, **kwargs)
         pk = response["id"]
         await self.join_chat(pk=pk, request_id=request_id)
@@ -224,15 +224,10 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
     @action()
     async def direct_message(self, user_pks: list, data, request_id, **kwargs):
         for pk in user_pks:
-            chat = await self.get_or_create_chat(pk)
-            data['chat'] = chat['id']
+            chat_data = await self.get_chat_data_if_exists(dict(user=pk))
+            if not chat_data:
+                chat_data, status = await super().create(dict(user=pk), **kwargs)
+                await self.join_chat(pk=chat_data["id"], request_id=request_id)
+            data['chat'] = chat_data['id']
             await self.create_message_(data)
-            await self.join_chat(pk=chat, request_id=request_id)
         return {}, 200
-
-    @database_sync_to_async
-    def get_or_create_chat(self, pk):
-        serializer = ChatSerializer(data={'user': pk}, context={'scope': self.scope})
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return serializer.data
