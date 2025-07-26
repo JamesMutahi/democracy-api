@@ -12,6 +12,7 @@ class NotificationSerializer(serializers.ModelSerializer):
     poll = PollSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
     chat = ChatSerializer(read_only=True)
+    message = MessageSerializer(read_only=True)
 
     class Meta:
         model = Notification
@@ -23,6 +24,7 @@ class NotificationSerializer(serializers.ModelSerializer):
             'poll',
             'survey',
             'chat',
+            'message',
             'created_at',
         ]
         read_only_fields = ['text']

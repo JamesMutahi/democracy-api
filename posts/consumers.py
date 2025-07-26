@@ -13,11 +13,11 @@ from djangochannelsrestframework.consumers import AsyncAPIConsumer
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import (
-    CreateModelMixin, PatchModelMixin, ListModelMixin
+    CreateModelMixin, PatchModelMixin, StreamedPaginatedListMixin
 )
 from djangochannelsrestframework.observer import model_observer
+from djangochannelsrestframework.pagination import WebsocketLimitOffsetPagination
 from rest_framework.authtoken.models import Token
-from rest_framework.pagination import PageNumberPagination
 
 from posts.models import Post
 from posts.serializers import PostSerializer, ReportSerializer
@@ -49,15 +49,18 @@ def get_user(token):
     return user
 
 
-class PostListPagination(PageNumberPagination):
-    page_size = 20
+class CustomStreamedPaginatedListMixin(StreamedPaginatedListMixin):
+    sleep_time_between_pages = 100
+
+
+class PostListPagination(WebsocketLimitOffsetPagination):
+    page_size = 10
     page_size_query_param = 'page_size'
-    max_page_size = 35
+    max_page_size = 20
 
 
 class PostConsumer(
-    ListModelMixin,
-    # StreamedPaginatedListMixin,
+    # CustomStreamedPaginatedListMixin,
     CreateModelMixin,
     PatchModelMixin,
     GenericAsyncAPIConsumer
@@ -147,7 +150,7 @@ class PostConsumer(
     #     return response, status
 
     @action(detached=True)
-    async def list(self, request_id: str, page=1, page_size=10, timer=300, **kwargs):
+    async def list(self, request_id: str, page=1, page_size=10, timer=100, **kwargs):
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         pks = await self.get_post_pks(queryset)
         for pk in pks:

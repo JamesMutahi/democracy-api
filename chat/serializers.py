@@ -63,12 +63,11 @@ class ChatSerializer(serializers.ModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     user = serializers.IntegerField(write_only=True)
     last_message = serializers.SerializerMethodField(read_only=True)
-    messages = MessageSerializer(many=True, read_only=True)
 
     class Meta:
         model = Chat
-        fields = ["id", "messages", "users", "last_message", "user"]
-        read_only_fields = ["messages", "last_message"]
+        fields = ['id', 'users', 'last_message', 'user']
+        read_only_fields = ['last_message']
 
     def get_last_message(self, obj: Chat):
         if obj.messages.exists():
@@ -79,16 +78,5 @@ class ChatSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         user = User.objects.get(id=validated_data.pop('user'))
-        if self.context['scope']['user'].id == user.id:
-            chat_qs = Chat.objects.annotate(num_users=Count('users')).filter(users=user, num_users=1)
-            if chat_qs.exists():
-                return chat_qs.first()
-            else:
-                validated_data['users'] = [self.context['scope']['user'], user]
-                return super().create(validated_data)
-        chats = self.context['scope']['user'].chats.prefetch_related('users')
-        for chat in chats:
-            if chat.users.contains(user):
-                return chat
         validated_data['users'] = [self.context['scope']['user'], user]
         return super().create(validated_data)

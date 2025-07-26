@@ -30,25 +30,25 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
 
     @model_observer(Notification)
     async def notification_activity(self, message, observer=None, action=None, **kwargs):
-        if await self.check_notification_is_for_user(pk=message['data']['user']):
+        instance: Notification = message.pop('data')
+        if await self.check_notification_is_for_user(instance):
             if message['action'] != 'delete':
-                message['data'] = await self.get_notification_serializer_data(pk=message['pk'])
+                message['data'] = await self.get_notification_serializer_data(notification=instance)
             await self.send_json(message)
 
     @database_sync_to_async
-    def check_notification_is_for_user(self, pk: int):
-        return self.scope['user'].id == pk
+    def check_notification_is_for_user(self, instance: Notification):
+        return self.scope['user'].id == instance.user.id
 
     @database_sync_to_async
-    def get_notification_serializer_data(self, pk):
-        notification = Notification.objects.get(pk=pk)
+    def get_notification_serializer_data(self, notification: Notification):
         serializer = NotificationSerializer(instance=notification, context={'scope': self.scope})
         return serializer.data
 
     @notification_activity.serializer
     def notification_activity(self, instance: Notification, action, **kwargs):
         return dict(
-            data={'user': instance.user.pk},
+            data=instance,
             action=action.value,
             pk=instance.pk,
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200

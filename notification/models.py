@@ -17,6 +17,7 @@ class Notification(models.Model):
     poll = models.ForeignKey(Poll, on_delete=models.CASCADE, null=True, blank=True)
     survey = models.ForeignKey(Survey, on_delete=models.CASCADE, null=True, blank=True)
     chat = models.ForeignKey(Chat, on_delete=models.CASCADE, null=True, blank=True)
+    message = models.ForeignKey(Message, on_delete=models.CASCADE, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
