@@ -70,7 +70,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         await super().disconnect(code)
 
     @action()
-    def list(self, page=1, page_size=2, **kwargs):
+    def list(self, page=1, page_size=20, **kwargs):
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         page_obj = list_paginator(queryset, page, page_size)
         serializer = UserSerializer(page_obj.object_list, many=True, context={'scope': self.scope})

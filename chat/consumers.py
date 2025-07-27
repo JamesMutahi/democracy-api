@@ -1,6 +1,6 @@
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
-from django.db.models import QuerySet, Count
+from django.db.models import QuerySet, Count, Min, Max
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import CreateModelMixin
 from djangochannelsrestframework.observer import model_observer
@@ -21,7 +21,8 @@ class ChatConsumer(CreateModelMixin, GenericAsyncAPIConsumer):
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
-        return queryset.filter(users=self.scope['user'])
+        return queryset.annotate(latest_message_id=Max('messages__id')).filter(users=self.scope['user']).order_by(
+            '-latest_message_id')
 
     async def connect(self):
         if self.scope['user'].is_authenticated:
@@ -143,30 +144,36 @@ class ChatConsumer(CreateModelMixin, GenericAsyncAPIConsumer):
         await self.subscribe(pk=pk, request_id=request_id)
 
     @action()
-    async def list(self, request_id, page=1, page_size=20, **kwargs):
-        if page == 1:
+    async def list(self, request_id, since: int = None, page_size=20, **kwargs):
+        if not since:
             await self.unsubscribe()
-        queryset, data = await self.list_(page, page_size, **kwargs)
+        queryset, data = await self.list_(page_size=page_size, since=since, **kwargs)
         pks = await database_sync_to_async(list)(queryset.values_list('id', flat=True))
         for pk in pks:
             await self.subscribe(pk=pk, request_id=request_id)
         await self.reply(action='list', data=data, request_id=request_id)
 
     @database_sync_to_async
-    def list_(self, page, page_size, **kwargs):
+    def list_(self, page_size, since, **kwargs):
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        page_obj = list_paginator(queryset, page, page_size)
+        if since:
+            chat = self.get_object(pk=since)
+            last_message = chat.messages.order_by('created_at').last()
+            queryset = queryset.filter(latest_message_id__lt=last_message.id)
+        page_obj = list_paginator(queryset=queryset, page=1, page_size=page_size)
         serializer = ChatSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
-        return page_obj.object_list, dict(results=serializer.data, current_page=page_obj.number,
-                                          has_next=page_obj.has_next())
+        return page_obj.object_list, dict(results=serializer.data, since=since, has_next=page_obj.has_next())
 
     @action()
-    def messages(self, pk: int, page=1, page_size=20, **kwargs):
-        chat = self.get_object(pk=pk)
-        queryset = chat.messages.all()
-        page_obj = list_paginator(queryset, page, page_size)
+    def messages(self, chat: int, since: int = None, page_size=20, **kwargs):
+        chat = self.get_object(pk=chat)
+        if since:
+            queryset = chat.messages.filter(id__lt=since)
+        else:
+            queryset = chat.messages.all()
+        page_obj = list_paginator(queryset=queryset, page=1, page_size=page_size)
         serializer = MessageSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
-        data = dict(results=serializer.data, current_page=page_obj.number, has_next=page_obj.has_next())
+        data = dict(results=serializer.data, since=since, has_next=page_obj.has_next())
         return data, 200
 
     @action()
