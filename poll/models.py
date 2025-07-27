@@ -21,6 +21,7 @@ class Poll(BaseModel):
 
     class Meta:
         db_table = 'Poll'
+        ordering = ['-start_time']
 
     def __str__(self):
         return self.name

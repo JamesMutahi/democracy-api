@@ -1,4 +1,6 @@
 from channels.db import database_sync_to_async
+from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
+from django.db.models.signals import post_save
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import ListModelMixin
@@ -19,27 +21,32 @@ class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         else:
             await self.close()
 
-    async def accept(self, **kwargs):
-        await super().accept(**kwargs)
-        await self.poll_activity.subscribe()
-        await self.option_activity.subscribe()
-
     @model_observer(Poll)
     async def poll_activity(self, message, observer=None, action=None, **kwargs):
+        instance = message.pop('data')
         if message['action'] != 'delete':
-            message['data'] = await self.get_poll_serializer_data(pk=message['pk'])
+            message['data'] = await self.get_poll_serializer_data(poll=instance)
         await self.send_json(message)
 
     @database_sync_to_async
-    def get_poll_serializer_data(self, pk):
-        poll = Poll.objects.get(pk=pk)
+    def get_poll_serializer_data(self, poll: Poll):
         serializer = PollSerializer(instance=poll, context={'scope': self.scope})
         return serializer.data
+
+    @poll_activity.groups_for_signal
+    def poll_activity(self, instance: Poll, **kwargs):
+        yield f'poll__{instance.pk}'
+
+    @poll_activity.groups_for_consumer
+    def poll_activity(self, pk=None, **kwargs):
+        if pk is not None:
+            yield f'poll__{pk}'
 
     @poll_activity.serializer
     def poll_activity(self, instance: Poll, action, **kwargs):
         return dict(
             # data is overridden in model_observer
+            data=instance,
             action=action.value,
             pk=instance.pk,
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
@@ -47,33 +54,69 @@ class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
 
     @model_observer(Option)
     async def option_activity(self, message, observer=None, action=None, **kwargs):
-        data = await self.get_option_activity_data(pk=message['pk'])
-        if data is not None:
-            message['data'] = data
-            await self.send_json(message)
+        instance = message.pop('data')
+        message['data'] = await self.get_poll_serializer_data(poll=instance)
+        await self.send_json(message)
 
-    @database_sync_to_async
-    def get_option_activity_data(self, pk):
-        option_qs = Option.objects.filter(pk=pk)
-        if not option_qs.exists():
-            return None
-        poll = option_qs.first().poll
-        serializer = PollSerializer(instance=poll, context={'scope': self.scope})
-        return serializer.data
+    @option_activity.groups_for_signal
+    def option_activity(self, instance: Option, **kwargs):
+        yield f'poll__{instance.poll.id}'
+
+    @option_activity.groups_for_consumer
+    def option_activity(self, poll=None, **kwargs):
+        if poll is not None:
+            yield f'poll__{poll}'
 
     @option_activity.serializer
     def option_activity(self, instance: Option, action, **kwargs):
         return dict(
             # data is overridden in model_observer
+            data=instance.poll,
             action='update',
             pk=instance.pk,
             response_status=200,
         )
 
     async def disconnect(self, code):
+        await self.unsubscribe()
+        await super().disconnect(code)
+
+    @action()
+    async def subscribe(self, pk, request_id, **kwargs):
+        await self.poll_activity.subscribe(pk=pk, request_id=request_id)
+        await self.option_activity.subscribe(poll=pk, request_id=request_id)
+
+    async def unsubscribe(self):
         await self.poll_activity.unsubscribe()
         await self.option_activity.unsubscribe()
-        await super().disconnect(code)
+
+    @action()
+    async def list(self, request_id, page, page_size=5, **kwargs):
+        if page == 1:
+            await self.unsubscribe()
+        object_list, data = await self.list_(page, page_size, **kwargs)
+        pks = await self.get_poll_pks(object_list)
+        for pk in pks:
+            await self.subscribe(pk=pk, request_id=request_id)
+        await self.reply(action='list', data=data, request_id=request_id)
+
+    @database_sync_to_async
+    def list_(self, page, page_size, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        paginator = Paginator(queryset, page_size)
+        try:
+            page_obj = paginator.page(page)
+        except PageNotAnInteger:
+            page_obj = paginator.page(1)
+        except EmptyPage:
+            page_obj = paginator.page(paginator.num_pages)
+        serializer = PollSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
+        return page_obj.object_list, dict(results=serializer.data, current_page=page_obj.number,
+                                          has_next=page_obj.has_next())
+
+    @database_sync_to_async
+    def get_poll_pks(self, queryset):
+        return list(queryset.values_list('id', flat=True))
 
     @action()
     async def vote(self, option: int, **kwargs):
@@ -89,10 +132,9 @@ class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
                     o.votes.remove(user)
                     Reason.objects.filter(poll=o.poll, user=user).delete()
                 else:
-                    option.poll.save()
-                    return option
+                    return self.signal(option.poll)
         option.votes.add(user)
-        option.poll.save()
+        self.signal(option.poll)
         return option
 
     @action()
@@ -113,3 +155,7 @@ class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         else:
             Reason.objects.create(poll=poll, user=user, text=text)
             return PollSerializer(poll, context={'scope': self.scope}).data
+
+    @staticmethod
+    def signal(poll: Poll):
+        return post_save.send(sender=Poll, instance=poll, created=False)
