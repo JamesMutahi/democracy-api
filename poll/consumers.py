@@ -1,16 +1,15 @@
 from channels.db import database_sync_to_async
-from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.db.models.signals import post_save
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
-from djangochannelsrestframework.mixins import ListModelMixin
 from djangochannelsrestframework.observer import model_observer
 
+from chat.utils.list_paginator import list_paginator
 from poll.models import Poll, Option, Reason
 from poll.serializers import PollSerializer
 
 
-class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
+class PollConsumer(GenericAsyncAPIConsumer):
     serializer_class = PollSerializer
     queryset = Poll.objects.all()
     lookup_field = "pk"
@@ -91,7 +90,7 @@ class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         await self.option_activity.unsubscribe()
 
     @action()
-    async def list(self, request_id, page, page_size=5, **kwargs):
+    async def list(self, request_id, page=1, page_size=20, **kwargs):
         if page == 1:
             await self.unsubscribe()
         object_list, data = await self.list_(page, page_size, **kwargs)
@@ -103,13 +102,7 @@ class PollConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     @database_sync_to_async
     def list_(self, page, page_size, **kwargs):
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        paginator = Paginator(queryset, page_size)
-        try:
-            page_obj = paginator.page(page)
-        except PageNotAnInteger:
-            page_obj = paginator.page(1)
-        except EmptyPage:
-            page_obj = paginator.page(paginator.num_pages)
+        page_obj = list_paginator(queryset, page, page_size)
         serializer = PollSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
         return page_obj.object_list, dict(results=serializer.data, current_page=page_obj.number,
                                           has_next=page_obj.has_next())

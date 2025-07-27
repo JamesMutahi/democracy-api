@@ -2,18 +2,19 @@ from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from django.db.models import QuerySet, Count
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
-from djangochannelsrestframework.mixins import CreateModelMixin, ListModelMixin
+from djangochannelsrestframework.mixins import CreateModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import action
 
 from notification.models import Notification
 from .models import Message, Chat
 from .serializers import MessageSerializer, ChatSerializer
+from .utils.list_paginator import list_paginator
 
 User = get_user_model()
 
 
-class ChatConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
+class ChatConsumer(CreateModelMixin, GenericAsyncAPIConsumer):
     serializer_class = ChatSerializer
     queryset = Chat.objects.all()
     lookup_field = "pk"
@@ -27,12 +28,6 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
             await self.accept()
         else:
             await self.close()
-
-    async def accept(self, **kwargs):
-        await super().accept(**kwargs)
-        chat_pks = await self.get_chat_pks()
-        for pk in chat_pks:
-            await self.join_chat(pk=pk, request_id='chats')
 
     @database_sync_to_async
     def get_chat_pks(self):
@@ -104,13 +99,16 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
         )
 
     async def disconnect(self, code):
-        await self.chat_activity.unsubscribe()
-        await self.message_activity.unsubscribe()
+        await self.unsubscribe()
         await super().disconnect(code)
 
-    async def join_chat(self, pk, request_id, **kwargs):
+    async def subscribe(self, pk, request_id, **kwargs):
         await self.chat_activity.subscribe(pk=pk, request_id=request_id)
         await self.message_activity.subscribe(chat=pk, request_id=request_id)
+
+    async def unsubscribe(self):
+        await self.chat_activity.unsubscribe()
+        await self.message_activity.unsubscribe()
 
     @action()
     async def create(self, data: dict, request_id: str, **kwargs):
@@ -119,7 +117,7 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
             return chat_data, 201
         response, status = await super().create(data, **kwargs)
         pk = response["id"]
-        await self.join_chat(pk=pk, request_id=request_id)
+        await self.subscribe(pk=pk, request_id=request_id)
         return response, status
 
     @database_sync_to_async
@@ -140,9 +138,31 @@ class ChatConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
         return chat_data
 
     @action()
-    async def subscribe(self, pk: int, request_id: str, **kwargs):
+    async def join_chat(self, pk: int, request_id: str, **kwargs):
         await database_sync_to_async(self.get_object)(pk=pk)
-        await self.join_chat(pk=pk, request_id=request_id)
+        await self.subscribe(pk=pk, request_id=request_id)
+
+    @action()
+    async def list(self, request_id, page=1, page_size=20, **kwargs):
+        if page == 1:
+            await self.unsubscribe()
+        object_list, data = await self.list_(page, page_size, **kwargs)
+        pks = await self.get_pks(object_list)
+        for pk in pks:
+            await self.subscribe(pk=pk, request_id=request_id)
+        await self.reply(action='list', data=data, request_id=request_id)
+
+    @database_sync_to_async
+    def list_(self, page, page_size, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        page_obj = list_paginator(queryset, page, page_size)
+        serializer = ChatSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
+        return page_obj.object_list, dict(results=serializer.data, current_page=page_obj.number,
+                                          has_next=page_obj.has_next())
+
+    @database_sync_to_async
+    def get_pks(self, queryset):
+        return list(queryset.values_list('id', flat=True))
 
     @action()
     def messages(self, pk: int, **kwargs):
