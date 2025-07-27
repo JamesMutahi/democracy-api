@@ -161,10 +161,13 @@ class ChatConsumer(CreateModelMixin, GenericAsyncAPIConsumer):
                                           has_next=page_obj.has_next())
 
     @action()
-    def messages(self, pk: int, **kwargs):
+    def messages(self, pk: int, page=1, page_size=20, **kwargs):
         chat = self.get_object(pk=pk)
-        serializer = MessageSerializer(chat.messages.all(), many=True, context={'scope': self.scope})
-        return serializer.data, 200
+        queryset = chat.messages.all()
+        page_obj = list_paginator(queryset, page, page_size)
+        serializer = MessageSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
+        data = dict(results=serializer.data, current_page=page_obj.number, has_next=page_obj.has_next())
+        return data, 200
 
     @action()
     async def create_message(self, data, **kwargs):
