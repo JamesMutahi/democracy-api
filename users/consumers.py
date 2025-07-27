@@ -3,16 +3,17 @@ from django.contrib.auth import get_user_model
 from django.db.models import QuerySet, Q
 from django.db.models.signals import post_save
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
-from djangochannelsrestframework.mixins import ListModelMixin, RetrieveModelMixin, PatchModelMixin
+from djangochannelsrestframework.mixins import RetrieveModelMixin, PatchModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import action
 
+from chat.utils.list_paginator import list_paginator
 from users.serializers import UserSerializer
 
 User = get_user_model()
 
 
-class UserConsumer(ListModelMixin, RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer):
+class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer):
     serializer_class = UserSerializer
     queryset = User.objects.all()
     lookup_field = "pk"
@@ -67,6 +68,14 @@ class UserConsumer(ListModelMixin, RetrieveModelMixin, PatchModelMixin, GenericA
     async def disconnect(self, code):
         await self.user_activity.unsubscribe()
         await super().disconnect(code)
+
+    @action()
+    def list(self, page=1, page_size=2, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        page_obj = list_paginator(queryset, page, page_size)
+        serializer = UserSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
+        data = dict(results=serializer.data, current_page=page_obj.number, has_next=page_obj.has_next())
+        return data, 200
 
     @action()
     async def retrieve(self, request_id: str, **kwargs):

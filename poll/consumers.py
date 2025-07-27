@@ -93,8 +93,8 @@ class PollConsumer(GenericAsyncAPIConsumer):
     async def list(self, request_id, page=1, page_size=20, **kwargs):
         if page == 1:
             await self.unsubscribe()
-        object_list, data = await self.list_(page, page_size, **kwargs)
-        pks = await self.get_poll_pks(object_list)
+        queryset, data = await self.list_(page, page_size, **kwargs)
+        pks = await database_sync_to_async(list)(queryset.values_list('id', flat=True))
         for pk in pks:
             await self.subscribe(pk=pk, request_id=request_id)
         await self.reply(action='list', data=data, request_id=request_id)
@@ -106,10 +106,6 @@ class PollConsumer(GenericAsyncAPIConsumer):
         serializer = PollSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
         return page_obj.object_list, dict(results=serializer.data, current_page=page_obj.number,
                                           has_next=page_obj.has_next())
-
-    @database_sync_to_async
-    def get_poll_pks(self, queryset):
-        return list(queryset.values_list('id', flat=True))
 
     @action()
     async def vote(self, option: int, **kwargs):
