@@ -19,6 +19,7 @@ from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.pagination import WebsocketLimitOffsetPagination
 from rest_framework.authtoken.models import Token
 
+from chat.utils.list_paginator import list_paginator
 from posts.models import Post
 from posts.serializers import PostSerializer, ReportSerializer
 
@@ -69,6 +70,7 @@ class PostConsumer(
     serializer_class = PostSerializer
     lookup_field = "pk"
     pagination_class = PostListPagination
+    page_size = 20
 
     async def connect(self):
         if self.scope['user'].is_authenticated:
@@ -271,32 +273,30 @@ class PostConsumer(
         return post_save.send(sender=Post, instance=post, created=False)
 
     @action()
-    async def following(self, request_id, **kwargs):
-        data = await self.following_()
-        for post in data:
+    async def following(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
+        posts = await self.following_()
+        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
+        for post in data['results']:
             pk = post["id"]
             await self.post_activity.subscribe(pk=pk, request_id=request_id)
         return data, 200
 
     @database_sync_to_async
     def following_(self):
-        posts = Post.objects.filter(author__in=self.scope['user'].following.all())
-        serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
-        return serializer.data
+        return Post.objects.filter(author__in=self.scope['user'].following.all())
 
     @action()
-    async def replies(self, pk, request_id, **kwargs):
-        data = await self.replies_(pk)
-        for reply in data:
+    async def replies(self, pk, request_id, last_post: int = None, page_size=page_size,  **kwargs):
+        posts = await self.replies_(pk)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
+        for reply in data['results']:
             pk = reply["id"]
             await self.post_activity.subscribe(pk=pk, request_id=f'reply_{request_id}')
         return data, 200
 
     @database_sync_to_async
     def replies_(self, pk):
-        replies = Post.objects.get(pk=pk).replies.all()
-        serializer = PostSerializer(replies, many=True, context={'scope': self.scope})
-        return serializer.data
+        return Post.objects.get(pk=pk).replies.all()
 
     @action()
     async def unsubscribe_replies(self, request_id, pk, **kwargs):
@@ -309,60 +309,56 @@ class PostConsumer(
         return list(Post.objects.get(pk=pk).replies.values_list('pk', flat=True))
 
     @action()
-    async def bookmarks(self, request_id, **kwargs):
-        data = await self.bookmarks_()
-        for post in data:
+    async def bookmarks(self, request_id, last_post: int = None, page_size=page_size,  **kwargs):
+        posts = await self.bookmarks_()
+        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
+        for post in data['results']:
             pk = post["id"]
             await self.post_activity.subscribe(pk=pk, request_id=request_id)
         return data, 200
 
     @database_sync_to_async
     def bookmarks_(self, **kwargs):
-        posts = self.scope["user"].bookmarked_posts.all()
-        serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
-        return serializer.data
+        return self.scope["user"].bookmarked_posts.all()
 
     @action()
-    async def liked_posts(self, user: int, request_id, **kwargs):
-        data = await self.liked_posts_(user)
-        for post in data:
+    async def liked_posts(self, user: int, request_id, last_post: int = None, page_size=page_size, **kwargs):
+        posts = await self.liked_posts_(user)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
+        for post in data['results']:
             pk = post["id"]
             await self.post_activity.subscribe(pk=pk, request_id=f'user_{request_id}')
         return data, 200
 
     @database_sync_to_async
     def liked_posts_(self, user: int, **kwargs):
-        posts = User.objects.get(pk=user).liked_posts.all()
-        serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
-        return serializer.data
+        return User.objects.get(pk=user).liked_posts.all()
 
     @action()
-    async def user_posts(self, user: int, request_id, **kwargs):
-        data = await self.user_posts_(user)
-        for post in data:
+    async def user_posts(self, user: int, request_id: str, last_post: int = None, page_size=page_size, **kwargs):
+        posts = await self.user_posts_(user)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
+        for post in data['results']:
             pk = post["id"]
             await self.post_activity.subscribe(pk=pk, request_id=f'user_{request_id}')
         return data, 200
 
     @database_sync_to_async
     def user_posts_(self, user: int, **kwargs):
-        posts = User.objects.get(pk=user).posts.filter(reply_to=None)
-        serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
-        return serializer.data
+        return User.objects.get(pk=user).posts.filter(reply_to=None)
 
     @action()
-    async def user_replies(self, user: int, request_id, **kwargs):
-        data = await self.user_replies_(user)
-        for post in data:
+    async def user_replies(self, user: int, request_id: str, last_post: int = None, page_size=page_size, **kwargs):
+        posts = await self.user_replies_(user)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
+        for post in data['results']:
             pk = post["id"]
             await self.post_activity.subscribe(pk=pk, request_id=f'user_{request_id}')
         return data, 200
 
     @database_sync_to_async
     def user_replies_(self, user: int, **kwargs):
-        posts = User.objects.get(pk=user).posts.exclude(reply_to=None)
-        serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
-        return serializer.data
+        return User.objects.get(pk=user).posts.exclude(reply_to=None)
 
     @action()
     async def unsubscribe_user_profile_posts(self, request_id, user, **kwargs):
@@ -384,3 +380,12 @@ class PostConsumer(
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return serializer.data, 200
+
+    @database_sync_to_async
+    def posts_paginator(self, posts, page_size, last_post: int = None, **kwargs):
+        if last_post:
+            post = Post.objects.get(pk=last_post)
+            posts = posts.filter(id__lt=post.id)
+        page_obj = list_paginator(queryset=posts, page=1, page_size=page_size, )
+        serializer = PostSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
+        return dict(results=serializer.data, last_post=last_post, has_next=page_obj.has_next())

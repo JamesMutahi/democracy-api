@@ -13,6 +13,7 @@ class PollConsumer(GenericAsyncAPIConsumer):
     serializer_class = PollSerializer
     queryset = Poll.objects.all()
     lookup_field = "pk"
+    page_size = 20
 
     async def connect(self):
         if self.scope['user'].is_authenticated:
@@ -90,24 +91,24 @@ class PollConsumer(GenericAsyncAPIConsumer):
         await self.option_activity.unsubscribe()
 
     @action()
-    async def list(self, request_id, since: int = None, page_size=20, **kwargs):
-        if not since:
+    async def list(self, request_id, last_poll: int = None, page_size=page_size, **kwargs):
+        if not last_poll:
             await self.unsubscribe()
-        queryset, data = await self.list_(page_size=page_size, since=since, **kwargs)
-        pks = await database_sync_to_async(list)(queryset.values_list('id', flat=True))
-        for pk in pks:
+        data = await self.list_(page_size=page_size, last_poll=last_poll, **kwargs)
+        for poll in data['results']:
+            pk = poll["id"]
             await self.subscribe(pk=pk, request_id=request_id)
         await self.reply(action='list', data=data, request_id=request_id)
 
     @database_sync_to_async
-    def list_(self, page_size, since: int = None, **kwargs):
+    def list_(self, page_size, last_poll: int = None, **kwargs):
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        if since:
-            poll = Poll.objects.get(pk=since)
+        if last_poll:
+            poll = Poll.objects.get(pk=last_poll)
             queryset = queryset.filter(start_time__lt=poll.start_time)
         page_obj = list_paginator(queryset=queryset, page=1, page_size=page_size, )
         serializer = PollSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
-        return page_obj.object_list, dict(results=serializer.data, since=since, has_next=page_obj.has_next())
+        return dict(results=serializer.data, last_poll=last_poll, has_next=page_obj.has_next())
 
     @action()
     async def vote(self, option: int, **kwargs):

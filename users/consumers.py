@@ -17,6 +17,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     serializer_class = UserSerializer
     queryset = User.objects.all()
     lookup_field = "pk"
+    page_size = 20
 
     async def connect(self):
         if self.scope['user'].is_authenticated:
@@ -70,7 +71,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         await super().disconnect(code)
 
     @action()
-    def list(self, page=1, page_size=20, **kwargs):
+    def list(self, page=1, page_size=page_size, **kwargs):
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         page_obj = list_paginator(queryset, page, page_size)
         serializer = UserSerializer(page_obj.object_list, many=True, context={'scope': self.scope})

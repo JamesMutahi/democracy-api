@@ -13,6 +13,7 @@ class SurveyConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPI
     serializer_class = SurveySerializer
     queryset = Survey.objects.all()
     lookup_field = "pk"
+    page_size = 20
 
     async def connect(self):
         if self.scope['user'].is_authenticated:
@@ -120,24 +121,24 @@ class SurveyConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPI
         await self.choice_activity.unsubscribe()
 
     @action()
-    async def list(self, request_id, since: int = None, page_size=20, **kwargs):
-        if not since:
+    async def list(self, request_id, last_survey: int = None, page_size=page_size, **kwargs):
+        if not last_survey:
             await self.unsubscribe()
-        queryset, data = await self.list_(page_size=page_size, since=since, **kwargs)
-        pks = await database_sync_to_async(list)(queryset.values_list('id', flat=True))
-        for pk in pks:
+        data = await self.list_(page_size=page_size, last_survey=last_survey, **kwargs)
+        for survey in data['results']:
+            pk = survey["id"]
             await self.subscribe(pk=pk, request_id=request_id)
         await self.reply(action='list', data=data, request_id=request_id)
 
     @database_sync_to_async
-    def list_(self, page_size, since: int = None, **kwargs):
+    def list_(self, page_size, last_survey: int = None, **kwargs):
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        if since:
-            survey = Survey.objects.get(pk=since)
+        if last_survey:
+            survey = Survey.objects.get(pk=last_survey)
             queryset = queryset.filter(start_time__lt=survey.start_time)
         page_obj = list_paginator(queryset=queryset, page=1, page_size=page_size, )
         serializer = SurveySerializer(page_obj.object_list, many=True, context={'scope': self.scope})
-        return page_obj.object_list, dict(results=serializer.data, since=since, has_next=page_obj.has_next())
+        return dict(results=serializer.data, last_survey=last_survey, has_next=page_obj.has_next())
 
     @action()
     async def create_response(self, data: dict, request_id: str, **kwargs):
