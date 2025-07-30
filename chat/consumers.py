@@ -1,6 +1,6 @@
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
-from django.db.models import QuerySet, Count, Min, Max
+from django.db.models import QuerySet, Count, Max
 from django.db.models.signals import post_save
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import CreateModelMixin
@@ -23,6 +23,19 @@ class ChatConsumer(CreateModelMixin, GenericAsyncAPIConsumer):
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
+        search_term = kwargs.get('search_term', None)
+        if search_term:
+            search_term = search_term.lower()
+            queryset = queryset.annotate(latest_message_id=Max('messages__id')).filter(
+                users=self.scope['user']).order_by(
+                '-latest_message_id').prefetch_related('users')
+            users_in_chats = []
+            for chat in queryset:
+                for user in chat.users.all():
+                    if user != self.scope['user']:
+                        if search_term in user.username.lower() or search_term in user.name.lower():
+                            users_in_chats.append(user)
+            return queryset.filter(users__in=users_in_chats)
         return queryset.annotate(latest_message_id=Max('messages__id')).filter(users=self.scope['user']).order_by(
             '-latest_message_id')
 

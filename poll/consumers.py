@@ -1,4 +1,5 @@
 from channels.db import database_sync_to_async
+from django.db.models import QuerySet, Q
 from django.db.models.signals import post_save
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
@@ -89,6 +90,13 @@ class PollConsumer(GenericAsyncAPIConsumer):
     async def unsubscribe(self):
         await self.poll_activity.unsubscribe()
         await self.option_activity.unsubscribe()
+
+    def filter_queryset(self, queryset: QuerySet, **kwargs):
+        queryset = super().filter_queryset(queryset=queryset, **kwargs)
+        search_term = kwargs.get('search_term', None)
+        if search_term:
+            return queryset.filter(Q(name__icontains=search_term) | Q(description__icontains=search_term)).distinct()
+        return queryset
 
     @action()
     async def list(self, request_id, last_poll: int = None, page_size=page_size, **kwargs):

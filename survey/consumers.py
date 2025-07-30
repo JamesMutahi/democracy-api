@@ -1,4 +1,5 @@
 from channels.db import database_sync_to_async
+from django.db.models import QuerySet, Q
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import ListModelMixin
 from djangochannelsrestframework.observer import model_observer
@@ -119,6 +120,13 @@ class SurveyConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPI
         await self.survey_activity.unsubscribe()
         await self.question_activity.unsubscribe()
         await self.choice_activity.unsubscribe()
+
+    def filter_queryset(self, queryset: QuerySet, **kwargs):
+        queryset = super().filter_queryset(queryset=queryset, **kwargs)
+        search_term = kwargs.get('search_term', None)
+        if search_term:
+            return queryset.filter(Q(name__icontains=search_term) | Q(description__icontains=search_term)).distinct()
+        return queryset
 
     @action()
     async def list(self, request_id, last_survey: int = None, page_size=page_size, **kwargs):
