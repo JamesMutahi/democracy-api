@@ -12,9 +12,7 @@ from django.db.models.signals import post_save
 from djangochannelsrestframework.consumers import AsyncAPIConsumer
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
-from djangochannelsrestframework.mixins import (
-    CreateModelMixin, PatchModelMixin, StreamedPaginatedListMixin
-)
+from djangochannelsrestframework.mixins import CreateModelMixin, PatchModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.pagination import WebsocketLimitOffsetPagination
 from rest_framework.authtoken.models import Token
@@ -50,10 +48,6 @@ def get_user(token):
     return user
 
 
-class CustomStreamedPaginatedListMixin(StreamedPaginatedListMixin):
-    sleep_time_between_pages = 100
-
-
 class PostListPagination(WebsocketLimitOffsetPagination):
     page_size = 10
     page_size_query_param = 'page_size'
@@ -61,7 +55,6 @@ class PostListPagination(WebsocketLimitOffsetPagination):
 
 
 class PostConsumer(
-    # CustomStreamedPaginatedListMixin,
     CreateModelMixin,
     PatchModelMixin,
     GenericAsyncAPIConsumer
@@ -128,10 +121,13 @@ class PostConsumer(
         if kwargs.get('action') == 'list':
             search_term = kwargs.get('search_term', None)
             if search_term:
-                return queryset.filter(is_deleted=False, reply_to=None, status='published',
-                                       body__icontains=search_term).order_by(
-                    '-created_at')
-            return queryset.filter(is_deleted=False, reply_to=None, status='published').order_by('-created_at')
+                return queryset.filter(is_deleted=False, reply_to=None, status='published', body__icontains=search_term)
+            return queryset.filter(is_deleted=False, reply_to=None, status='published')
+        if kwargs.get('action') == 'for_you':
+            return queryset.filter(is_deleted=False, reply_to=None, status='published')
+        if kwargs.get('action') == 'following':
+            return queryset.filter(author__in=self.scope['user'].following.all(), is_deleted=False, reply_to=None,
+                                   status='published')
         if kwargs.get('action') == 'delete' or kwargs.get('action') == 'patch':
             return queryset.filter(is_deleted=False, author=self.scope['user'])
         return queryset.filter(is_deleted=False)
@@ -143,23 +139,23 @@ class PostConsumer(
         await self.post_activity.subscribe(pk=pk, request_id=request_id)
         return response, status
 
-    # @action()
-    # async def list(self, request_id: str, **kwargs):
-    #     response, status = await super().list(request_id=request_id, **kwargs)
-    #     for post in response:
-    #         pk = post["id"]
-    #         await self.post_activity.subscribe(pk=pk, request_id=request_id)
-    #     return response, status
+    @action()
+    async def list(self, request_id: str, last_post: int = None, page_size=page_size, **kwargs):
+        posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
+        for post in data['results']:
+            pk = post["id"]
+            await self.post_activity.subscribe(pk=pk, request_id=request_id)
+        return data, 200
 
     @action(detached=True)
-    async def list(self, request_id: str, page=1, page_size=10, timer=100, **kwargs):
+    async def for_you(self, request_id: str, page=1, page_size=10, timer=100, **kwargs):
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        pks = await self.get_post_pks(queryset)
-        for pk in pks:
-            await self.post_activity.subscribe(pk=pk, request_id=request_id)
         while not asyncio.current_task().cancelled():
             data = await self.list_(queryset, page, page_size, **kwargs)
-            await self.reply(action='list', data=data, status=200, request_id=request_id)
+            for post in data['results']:
+                await self.post_activity.subscribe(pk=post['id'], request_id=request_id)
+            await self.reply(action='for_you', data=data, status=200, request_id=request_id)
             has_next = data.get('has_next', False)
             # Go to next page if more or stop when there are no more pages to fetch
             if has_next:
@@ -274,19 +270,15 @@ class PostConsumer(
 
     @action()
     async def following(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
-        posts = await self.following_()
+        posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
         for post in data['results']:
             pk = post["id"]
             await self.post_activity.subscribe(pk=pk, request_id=request_id)
         return data, 200
 
-    @database_sync_to_async
-    def following_(self):
-        return Post.objects.filter(author__in=self.scope['user'].following.all())
-
     @action()
-    async def replies(self, pk, request_id, last_post: int = None, page_size=page_size,  **kwargs):
+    async def replies(self, pk, request_id, last_post: int = None, page_size=page_size, **kwargs):
         posts = await self.replies_(pk)
         data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
         for reply in data['results']:
@@ -309,7 +301,7 @@ class PostConsumer(
         return list(Post.objects.get(pk=pk).replies.values_list('pk', flat=True))
 
     @action()
-    async def bookmarks(self, request_id, last_post: int = None, page_size=page_size,  **kwargs):
+    async def bookmarks(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
         posts = await self.bookmarks_()
         data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
         for post in data['results']:
