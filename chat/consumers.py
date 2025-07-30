@@ -1,6 +1,7 @@
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from django.db.models import QuerySet, Count, Min, Max
+from django.db.models.signals import post_save
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import CreateModelMixin
 from djangochannelsrestframework.observer import model_observer
@@ -207,6 +208,7 @@ class ChatConsumer(CreateModelMixin, GenericAsyncAPIConsumer):
                 message.save()
             else:
                 message.delete()
+        self.signal_chat(message.chat)
         return message
 
     @action()
@@ -221,6 +223,7 @@ class ChatConsumer(CreateModelMixin, GenericAsyncAPIConsumer):
         message.text = text
         message.is_edited = True
         message.save()
+        self.signal_chat(message.chat)
         return message
 
     @database_sync_to_async
@@ -246,6 +249,7 @@ class ChatConsumer(CreateModelMixin, GenericAsyncAPIConsumer):
             for notification in notifications:
                 notification.is_read = True
                 notification.save()
+        self.signal_chat(chat)
         return messages
 
     @action()
@@ -258,3 +262,7 @@ class ChatConsumer(CreateModelMixin, GenericAsyncAPIConsumer):
             data['chat'] = chat_data['id']
             await self.create_message_(data)
         return {}, 200
+
+    @staticmethod
+    def signal_chat(chat: Chat):
+        return post_save.send(sender=Chat, instance=chat, created=False)

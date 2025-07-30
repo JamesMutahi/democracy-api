@@ -1,5 +1,5 @@
 from django.contrib.auth import get_user_model
-from django.db.models import Count
+from django.db.models.signals import post_save
 from rest_framework import serializers
 
 from chat.models import Message, Chat
@@ -56,17 +56,20 @@ class MessageSerializer(serializers.ModelSerializer):
             validated_data['poll'] = Poll.objects.get(id=validated_data['poll_id'])
         if validated_data['survey_id'] is not None:
             validated_data['survey'] = Survey.objects.get(id=validated_data['survey_id'])
-        return super().create(validated_data)
+        message = super().create(validated_data)
+        post_save.send(sender=Chat, instance=message.chat, created=False)
+        return message
 
 
 class ChatSerializer(serializers.ModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     user = serializers.IntegerField(write_only=True)
     last_message = serializers.SerializerMethodField(read_only=True)
+    unread_messages = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Chat
-        fields = ['id', 'users', 'last_message', 'user']
+        fields = ['id', 'users', 'last_message', 'unread_messages', 'user']
         read_only_fields = ['last_message']
 
     def get_last_message(self, obj: Chat):
@@ -75,6 +78,9 @@ class ChatSerializer(serializers.ModelSerializer):
             return serializer.data
         else:
             return None
+
+    def get_unread_messages(self, instance: Chat):
+        return instance.messages.filter(is_read=False).exclude(user=self.context['scope']['user']).count()
 
     def create(self, validated_data):
         user = User.objects.get(id=validated_data.pop('user'))
