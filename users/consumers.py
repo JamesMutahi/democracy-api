@@ -25,18 +25,6 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         else:
             await self.close()
 
-    def filter_queryset(self, queryset: QuerySet, **kwargs):
-        queryset = super().filter_queryset(queryset=queryset, **kwargs)
-        if kwargs.get('action') == 'list':
-            search_term = kwargs.get('search_term', None)
-            if search_term:
-                return queryset.filter(Q(username__icontains=search_term) |
-                                       Q(name__icontains=search_term)
-                                       ).distinct()
-        if kwargs.get('action') == 'patch' and self.scope['user'].id != kwargs.get('pk'):
-            return None
-        return queryset
-
     @model_observer(User)
     async def user_activity(self, message, observer=None, action=None, **kwargs):
         message['data'] = await self.get_user_serializer_data(pk=message['pk'])
@@ -70,12 +58,22 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         await self.user_activity.unsubscribe()
         await super().disconnect(code)
 
+    def filter_queryset(self, queryset: QuerySet, **kwargs):
+        queryset = super().filter_queryset(queryset=queryset, **kwargs)
+        if kwargs.get('action') == 'list':
+            search_term = kwargs.get('search_term', None)
+            if search_term:
+                return queryset.filter(Q(username__icontains=search_term) |
+                                       Q(name__icontains=search_term)
+                                       ).distinct()
+        if kwargs.get('action') == 'patch' and self.scope['user'].id != kwargs.get('pk'):
+            return None
+        return queryset
+
     @action()
     def list(self, page=1, page_size=page_size, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        page_obj = list_paginator(queryset, page, page_size)
-        serializer = UserSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
-        data = dict(results=serializer.data, current_page=page_obj.number, has_next=page_obj.has_next())
+        users = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        data = self.users_paginator(users, page, page_size)
         return data, 200
 
     @action()
@@ -140,3 +138,35 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     @action()
     async def unsubscribe(self, pk: int, request_id: str, **kwargs):
         await self.user_activity.unsubscribe(pk=pk, request_id=request_id)
+
+    @action()
+    def following(self, pk: int, page=1, page_size=page_size, **kwargs):
+        user = self.get_object(pk=pk)
+        users = user.following.all()
+        data = self.users_paginator(users, page, page_size)
+        return data, 200
+
+    @action()
+    def followers(self, pk: int, page=1, page_size=page_size, **kwargs):
+        user = self.get_object(pk=pk)
+        users = user.followers.all()
+        data = self.users_paginator(users, page, page_size)
+        return data, 200
+
+    @action()
+    def muted(self, page=1, page_size=page_size, **kwargs):
+        users = self.scope['user'].muted.all()
+        data = self.users_paginator(users, page, page_size)
+        return data, 200
+
+    @action()
+    def blocked(self, page=1, page_size=page_size, **kwargs):
+        users = self.scope['user'].blocked.all()
+        data = self.users_paginator(users, page, page_size)
+        return data, 200
+
+    def users_paginator(self, users, page: int, page_size, **kwargs):
+        page_obj = list_paginator(users, page, page_size)
+        serializer = UserSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
+        data = dict(results=serializer.data, current_page=page_obj.number, has_next=page_obj.has_next())
+        return data

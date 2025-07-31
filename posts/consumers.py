@@ -165,15 +165,6 @@ class PostConsumer(
                 break
 
     @database_sync_to_async
-    def get_post_pks(self, queryset):
-        pks = []
-        for post in queryset:
-            pks.append(post.id)
-            if post.repost_of:
-                pks.append(post.repost_of.id)
-        return pks
-
-    @database_sync_to_async
     def list_(self, queryset, page, page_size, **kwargs):
         paginator = Paginator(queryset, page_size)
         try:
