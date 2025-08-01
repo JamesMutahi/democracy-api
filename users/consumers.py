@@ -27,12 +27,12 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
 
     @model_observer(User)
     async def user_activity(self, message, observer=None, action=None, **kwargs):
-        message['data'] = await self.get_user_serializer_data(pk=message['pk'])
+        instance = message.pop('data')
+        message['data'] = await self.get_user_serializer_data(user=instance)
         await self.send_json(message)
 
     @database_sync_to_async
-    def get_user_serializer_data(self, pk):
-        user = User.objects.get(pk=pk)
+    def get_user_serializer_data(self, user: User):
         serializer = UserSerializer(instance=user, context={'scope': self.scope})
         return serializer.data
 
@@ -49,6 +49,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     def user_activity(self, instance: User, action, **kwargs):
         return dict(
             # data is overridden in model_observer
+            data=instance,
             action=action.value,
             pk=instance.pk,
             response_status=200

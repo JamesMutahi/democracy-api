@@ -7,7 +7,7 @@ from channels.middleware import BaseMiddleware
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
-from django.db.models import QuerySet
+from django.db.models import QuerySet, Case, When
 from django.db.models.signals import post_save
 from djangochannelsrestframework.consumers import AsyncAPIConsumer
 from djangochannelsrestframework.decorators import action
@@ -121,16 +121,26 @@ class PostConsumer(
         if kwargs.get('action') == 'list':
             search_term = kwargs.get('search_term', None)
             if search_term:
-                return queryset.filter(is_deleted=False, reply_to=None, status='published', body__icontains=search_term)
-            return queryset.filter(is_deleted=False, reply_to=None, status='published')
+                return queryset.filter(is_deleted=False, reply_to=None, status='published',
+                                       body__icontains=search_term).order_by('-published_at')
+            return queryset.filter(is_deleted=False, reply_to=None, status='published').order_by('-published_at')
         if kwargs.get('action') == 'for_you':
-            return queryset.filter(is_deleted=False, reply_to=None, status='published')
+            return queryset.filter(is_deleted=False, reply_to=None, status='published').order_by('-published_at')
         if kwargs.get('action') == 'following':
             return queryset.filter(author__in=self.scope['user'].following.all(), is_deleted=False, reply_to=None,
-                                   status='published')
+                                   status='published').order_by('-published_at')
+        if kwargs.get('action') == 'replies':
+            queryset = queryset.filter(reply_to=kwargs['pk'], is_deleted=False, status='published').order_by(
+                Case(
+                    When(author=kwargs['author_pk'], then=0),
+                    default=1,
+                ),
+                'published_at'
+            )
+            return queryset
         if kwargs.get('action') == 'delete' or kwargs.get('action') == 'patch':
-            return queryset.filter(is_deleted=False, author=self.scope['user'])
-        return queryset.filter(is_deleted=False)
+            return queryset.filter(is_deleted=False, author=self.scope['user']).order_by('-published_at')
+        return queryset.filter(is_deleted=False).order_by('-published_at')
 
     @action()
     async def create(self, data: dict, request_id: str, **kwargs):
@@ -269,8 +279,9 @@ class PostConsumer(
         return data, 200
 
     @action()
-    async def replies(self, pk, request_id, last_post: int = None, page_size=page_size, **kwargs):
-        posts = await self.replies_(pk)
+    async def replies(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
+        kwargs['author_pk'] = await self.get_author_pk(post_pk=kwargs['pk'])
+        posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
         for reply in data['results']:
             pk = reply["id"]
@@ -278,8 +289,8 @@ class PostConsumer(
         return data, 200
 
     @database_sync_to_async
-    def replies_(self, pk):
-        return Post.objects.get(pk=pk).replies.all()
+    def get_author_pk(self, post_pk: int):
+        return Post.objects.get(pk=post_pk).author.pk
 
     @action()
     async def unsubscribe_replies(self, request_id, pk, **kwargs):
