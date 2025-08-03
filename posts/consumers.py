@@ -245,7 +245,7 @@ class PostConsumer(
 
     @action()
     async def like(self, **kwargs):
-        await self.like_post(pk=kwargs['data']['pk'], user=self.scope["user"])
+        await self.like_post(pk=kwargs['pk'], user=self.scope["user"])
 
     @database_sync_to_async
     def like_post(self, pk, user):
@@ -258,7 +258,7 @@ class PostConsumer(
 
     @action()
     async def bookmark(self, **kwargs):
-        await self.bookmark_post(pk=kwargs['data']['pk'], user=self.scope["user"])
+        await self.bookmark_post(pk=kwargs['pk'], user=self.scope["user"])
 
     @database_sync_to_async
     def bookmark_post(self, pk, user):
@@ -300,7 +300,7 @@ class PostConsumer(
 
     @database_sync_to_async
     def get_reply_pks(self, pk):
-        return list(Post.objects.get(pk=pk).replies.values_list('pk', flat=True))
+        return list(Post.objects.filter(reply_to=pk).values_list('pk', flat=True))
 
     @action()
     async def bookmarks(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
@@ -339,7 +339,7 @@ class PostConsumer(
 
     @database_sync_to_async
     def user_posts_(self, user: int, **kwargs):
-        return User.objects.get(pk=user).posts.filter(reply_to=None)
+        return Post.objects.filter(author=user).filter(reply_to=None)
 
     @action()
     async def user_replies(self, user: int, request_id: str, last_post: int = None, page_size=page_size, **kwargs):
@@ -352,7 +352,27 @@ class PostConsumer(
 
     @database_sync_to_async
     def user_replies_(self, user: int, **kwargs):
-        return User.objects.get(pk=user).posts.exclude(reply_to=None)
+        return Post.objects.filter(author=user).exclude(reply_to=None)
+
+    @action()
+    async def draft_posts(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
+        posts = await database_sync_to_async(Post.objects.filter)(author=self.scope['user'], status='draft')
+        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
+        for post in data['results']:
+            pk = post["id"]
+            await self.post_activity.subscribe(pk=pk, request_id=request_id)
+        return data, 200
+
+    @action()
+    async def unsubscribe_draft_posts(self, request_id, user, **kwargs):
+        pks = await self.get_draft_posts_pks(pk=user)
+        for pk in pks:
+            await self.post_activity.unsubscribe(pk=pk, request_id=request_id)
+
+    @database_sync_to_async
+    def get_draft_posts_pks(self, pk):
+        pks = list(Post.objects.filter(author=self.scope['user'], status='draft').values_list('pk', flat=True))
+        return pks
 
     @action()
     async def unsubscribe_user_profile_posts(self, request_id, user, **kwargs):
@@ -362,10 +382,9 @@ class PostConsumer(
 
     @database_sync_to_async
     def get_user_profile_posts_pks(self, pk):
-        posts = User.objects.get(pk=pk).posts.all()
-        liked_posts = User.objects.get(pk=pk).liked_posts.all()
-        pks = list(posts.values_list('pk', flat=True))
-        pks.append(list(liked_posts.values_list('pk', flat=True)))
+        pks = list(Post.objects.filter(author=pk).values_list('pk', flat=True))
+        liked_pks = list(User.objects.get(pk=pk).liked_posts.all().values_list('pk', flat=True))
+        pks.append(liked_pks)
         return pks
 
     @action()
