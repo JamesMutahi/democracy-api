@@ -44,7 +44,7 @@ class Post(BaseModel):
     survey = models.ForeignKey(Survey, on_delete=models.SET_NULL, null=True, blank=True)
     likes = models.ManyToManyField(User, blank=True, related_name='liked_posts')
     bookmarks = models.ManyToManyField(User, blank=True, related_name='bookmarked_posts')
-    views = models.ManyToManyField(User, blank=True)
+    views = models.ManyToManyField(User, blank=True, related_name='viewed_posts')
     tagged_users = models.ManyToManyField(User, blank=True, related_name='tagged_in_posts')
     is_edited = models.BooleanField(_('edited'), default=False)
     is_deleted = models.BooleanField(_('deleted'), default=False)

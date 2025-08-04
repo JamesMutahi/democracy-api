@@ -183,6 +183,9 @@ class PostConsumer(
             page_obj = paginator.page(1)
         except EmptyPage:
             page_obj = paginator.page(paginator.num_pages)
+        self.scope['user'].viewed_posts.add(*page_obj.object_list)
+        reposts_ofs = page_obj.object_list.values_list('repost_of', flat=True)
+        self.scope['user'].viewed_posts.add(*[post for post in reposts_ofs if post is not None])
         serializer = PostSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
         return dict(results=serializer.data, count=paginator.count, num_pages=paginator.num_pages,
                     current_page=page_obj.number, has_next=page_obj.has_next(), has_previous=page_obj.has_previous())
@@ -364,13 +367,13 @@ class PostConsumer(
         return data, 200
 
     @action()
-    async def unsubscribe_draft_posts(self, request_id, user, **kwargs):
-        pks = await self.get_draft_posts_pks(pk=user)
+    async def unsubscribe_draft_posts(self, request_id, **kwargs):
+        pks = await self.get_draft_posts_pks()
         for pk in pks:
             await self.post_activity.unsubscribe(pk=pk, request_id=request_id)
 
     @database_sync_to_async
-    def get_draft_posts_pks(self, pk):
+    def get_draft_posts_pks(self):
         pks = list(Post.objects.filter(author=self.scope['user'], status='draft').values_list('pk', flat=True))
         return pks
 
@@ -399,6 +402,9 @@ class PostConsumer(
         if last_post:
             post = Post.objects.get(pk=last_post)
             posts = posts.filter(id__lt=post.id)
-        page_obj = list_paginator(queryset=posts, page=1, page_size=page_size, )
+        page_obj = list_paginator(queryset=posts, page=1, page_size=page_size)
+        self.scope['user'].viewed_posts.add(*page_obj.object_list)
+        reposts_ofs = page_obj.object_list.values_list('repost_of', flat=True)
+        self.scope['user'].viewed_posts.add(*[post for post in reposts_ofs if post is not None])
         serializer = PostSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
         return dict(results=serializer.data, last_post=last_post, has_next=page_obj.has_next())
