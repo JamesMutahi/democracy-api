@@ -342,7 +342,7 @@ class PostConsumer(
 
     @database_sync_to_async
     def user_posts_(self, user: int, **kwargs):
-        return Post.objects.filter(author=user).filter(reply_to=None)
+        return Post.objects.filter(author=user).filter(reply_to=None, status='published')
 
     @action()
     async def user_replies(self, user: int, request_id: str, last_post: int = None, page_size=page_size, **kwargs):

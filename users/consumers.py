@@ -111,6 +111,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
             self.scope['user'].blocked.remove(user)
         else:
             self.scope['user'].blocked.add(user)
+            self.scope['user'].muted.remove(user)
             self.scope['user'].following.remove(user)
             self.scope['user'].followers.remove(user)
         self.signal(user)
@@ -137,34 +138,67 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         return
 
     @action()
-    async def unsubscribe(self, pk: int, request_id: str, **kwargs):
-        await self.user_activity.unsubscribe(pk=pk, request_id=request_id)
+    async def unsubscribe(self, pks: list, request_id: str, **kwargs):
+        for pk in pks:
+            await self.user_activity.unsubscribe(pk=pk, request_id=request_id)
 
     @action()
-    def following(self, pk: int, page=1, page_size=page_size, **kwargs):
-        user = self.get_object(pk=pk)
+    async def following(self, request_id: str, pk: int, page=1, page_size=page_size, **kwargs):
+        data = await self.following_(pk, page, page_size)
+        for user in data['results']:
+            pk = user["id"]
+            await self.user_activity.subscribe(pk=pk, request_id=request_id)
+        return data, 200
+
+    @database_sync_to_async
+    def following_(self, pk: int, page, page_size, **kwargs):
+        user = User.objects.get(pk=pk)
         users = user.following.all()
         data = self.users_paginator(users, page, page_size)
-        return data, 200
+        return data
 
     @action()
-    def followers(self, pk: int, page=1, page_size=page_size, **kwargs):
-        user = self.get_object(pk=pk)
+    async def followers(self, request_id: str, pk: int, page=1, page_size=page_size, **kwargs):
+        data = await self.followers_(pk, page, page_size)
+        for user in data['results']:
+            pk = user["id"]
+            await self.user_activity.subscribe(pk=pk, request_id=request_id)
+        return data, 200
+
+    @database_sync_to_async
+    def followers_(self, pk: int, page, page_size, **kwargs):
+        user = User.objects.get(pk=pk)
         users = user.followers.all()
         data = self.users_paginator(users, page, page_size)
-        return data, 200
+        return data
 
     @action()
-    def muted(self, page=1, page_size=page_size, **kwargs):
+    async def muted(self, request_id: str, page=1, page_size=page_size, **kwargs):
+        data = await self.muted_(page, page_size)
+        for user in data['results']:
+            pk = user["id"]
+            await self.user_activity.subscribe(pk=pk, request_id=request_id)
+        return data, 200
+
+    @database_sync_to_async
+    def muted_(self, page, page_size, **kwargs):
         users = self.scope['user'].muted.all()
         data = self.users_paginator(users, page, page_size)
-        return data, 200
+        return data
 
     @action()
-    def blocked(self, page=1, page_size=page_size, **kwargs):
+    async def blocked(self, request_id: str, page=1, page_size=page_size, **kwargs):
+        data = await self.blocked_(page, page_size)
+        for user in data['results']:
+            pk = user["id"]
+            await self.user_activity.subscribe(pk=pk, request_id=request_id)
+        return data, 200
+
+    @database_sync_to_async
+    def blocked_(self, page, page_size):
         users = self.scope['user'].blocked.all()
         data = self.users_paginator(users, page, page_size)
-        return data, 200
+        return data
 
     def users_paginator(self, users, page: int, page_size, **kwargs):
         page_obj = list_paginator(users, page, page_size)
