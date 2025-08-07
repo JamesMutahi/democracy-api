@@ -22,6 +22,7 @@ class Notification(models.Model):
 
     class Meta:
         db_table = 'Notification'
+        ordering = ['-id']
 
     def __str__(self):
         return self.text
