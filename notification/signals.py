@@ -5,6 +5,7 @@ from django.dispatch import receiver
 from chat.models import Message
 from notification.models import Notification
 from poll.models import Poll
+from posts.models import Post
 from survey.models import Survey
 
 User = get_user_model()
@@ -13,6 +14,7 @@ User = get_user_model()
 @receiver(post_save, sender=Poll)
 @receiver(post_save, sender=Survey)
 @receiver(post_save, sender=Message)
+@receiver(post_save, sender=Post)
 def create_notification_on_creation(sender, instance, created, **kwargs):
     if created:
         users = User.objects.all()
@@ -39,15 +41,26 @@ def create_notification_on_creation(sender, instance, created, **kwargs):
                     chat=instance.chat,
                     message=instance,
                 )
-
-
-@receiver(pre_delete, sender=Poll)
-@receiver(pre_delete, sender=Survey)
-@receiver(pre_delete, sender=Message)
-def delete_notification_on_deletion(sender, instance, **kwargs):
-    if sender == Poll:
-        Notification.objects.filter(poll=instance).delete()
-    if sender == Survey:
-        Notification.objects.filter(survey=instance).delete()
-    if sender == Message:
-        Notification.objects.filter(message=instance).delete()
+        if sender == Post:
+            if instance.repost_of:
+                if instance.repost_of.author != instance.author:
+                    Notification.objects.create(
+                        user=instance.repost_of.author,
+                        text=f'{instance.author} reposted your post',
+                        post=instance,
+                    )
+            if instance.reply_to:
+                if instance.reply_to.author != instance.author:
+                    Notification.objects.create(
+                        user=instance.reply_to.author,
+                        text=f'{instance.author} replied to your post',
+                        post=instance,
+                    )
+            if instance.tagged_users.exists():
+                for user in instance.tagged_users.all():
+                    if user != instance.author:
+                        Notification.objects.create(
+                            user=user,
+                            text=f'{instance.author} tagged you in a post',
+                            post=instance,
+                        )
