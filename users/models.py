@@ -1,7 +1,5 @@
 from __future__ import unicode_literals
 
-from enum import unique
-
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin
 from django.core.mail import send_mail
@@ -16,15 +14,15 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     name = models.CharField(_('name'), max_length=255)
     id_number = models.IntegerField(_('ID number'), unique=True)
     email = models.EmailField(_('email'), unique=True, null=True, blank=True)
-    date_joined = models.DateTimeField(_('date joined'), auto_now_add=True)
-    is_staff = models.BooleanField(_('staff status'), default=False)
-    is_active = models.BooleanField(_('active'), default=True)
-    muted = models.ManyToManyField('self', symmetrical=False, blank=True)
-    blocked = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='blockers')
     status = models.TextField(_('status'), blank=True)
     image = models.ImageField(upload_to='profile_pics/', default='profile_pics/default.jpg')
     cover_photo = models.ImageField(upload_to='cover_photos/', default='cover_photos/default.jpg')
     following = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='followers')
+    muted = models.ManyToManyField('self', symmetrical=False, blank=True)
+    blocked = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='blockers')
+    is_staff = models.BooleanField(_('staff status'), default=False)
+    is_active = models.BooleanField(_('active'), default=True)
+    date_joined = models.DateTimeField(_('date joined'), auto_now_add=True)
 
     objects = UserManager()
 

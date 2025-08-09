@@ -5,9 +5,8 @@ from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import ListModelMixin
 from djangochannelsrestframework.observer import model_observer
 
-from chat.utils.list_paginator import list_paginator
-from notification.models import Notification
-from notification.serializers import NotificationSerializer
+from notification.models import Notification, Preferences
+from notification.serializers import NotificationSerializer, PreferencesSerializer
 
 
 class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
@@ -67,3 +66,21 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         notification.save()
         serializer = NotificationSerializer(notification, context={'scope': self.scope})
         return serializer.data
+
+    @action()
+    def preferences(self, **kwargs):
+        preferences, created = Preferences.objects.get_or_create(user=self.scope['user'])
+        serializer = PreferencesSerializer(preferences, context={'scope': self.scope})
+        return serializer.data, 200
+
+    @action()
+    def update_preferences(self, **kwargs):
+        preferences = Preferences.objects.get(user=self.scope['user'])
+        serializer = PreferencesSerializer(preferences, data=kwargs['data'], partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return serializer.data, 200
+
+    def mute_post(self, pk: int, **kwargs):
+        # Disable notifications for the post
+        pass

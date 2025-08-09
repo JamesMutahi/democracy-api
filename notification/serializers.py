@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from chat.serializers import ChatSerializer, MessageSerializer
-from notification.models import Notification
+from notification.models import Notification, Preferences
 from poll.serializers import PollSerializer
 from posts.serializers import PostSerializer
 from survey.serializers import SurveySerializer
@@ -28,3 +28,17 @@ class NotificationSerializer(serializers.ModelSerializer):
             'created_at',
         ]
         read_only_fields = ['text']
+
+
+class PreferencesSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Preferences
+        fields = [
+            'allow_notifications',
+            'follow_notifications',
+            'like_notifications',
+            'tag_notifications',
+            'reply_notifications',
+            'repost_notifications',
+            'message_notifications',
+        ]

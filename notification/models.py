@@ -26,3 +26,22 @@ class Notification(models.Model):
 
     def __str__(self):
         return self.text
+
+
+class Preferences(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='preferences')
+    allow_notifications = models.BooleanField(default=True)
+    allowed_users = models.ManyToManyField(User, blank=True, related_name='allowed_notifications')  # Notification bell
+    follow_notifications = models.BooleanField(default=True)
+    tag_notifications = models.BooleanField(default=True)
+    like_notifications = models.BooleanField(default=True)
+    reply_notifications = models.BooleanField(default=True)
+    repost_notifications = models.BooleanField(default=True)
+    message_notifications = models.BooleanField(default=True)
+    muted_posts = models.ManyToManyField(Post, blank=True)  # For muting conversations/threads
+
+    class Meta:
+        db_table = 'Preferences'
+
+    def __str__(self):
+        return self.user.username
