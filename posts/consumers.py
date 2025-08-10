@@ -71,7 +71,7 @@ class PostConsumer(
         else:
             await self.close()
 
-    @model_observer(Post)
+    @model_observer(Post, many_to_many=True)
     async def post_activity(self, message, observer=None, action=None, **kwargs):
         if message['action'] != 'delete':
             message = await self.get_post_serializer_data(message)
@@ -153,9 +153,7 @@ class PostConsumer(
     async def list(self, request_id: str, last_post: int = None, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
-        for post in data['results']:
-            pk = post["id"]
-            await self.post_activity.subscribe(pk=pk, request_id=request_id)
+        await self.subscribe_to_posts(posts=data['results'], request_id=request_id)
         return data, 200
 
     @action(detached=True)
@@ -163,8 +161,7 @@ class PostConsumer(
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         while not asyncio.current_task().cancelled():
             data = await self.list_(queryset, page, page_size, **kwargs)
-            for post in data['results']:
-                await self.post_activity.subscribe(pk=post['id'], request_id=request_id)
+            await self.subscribe_to_posts(posts=data['results'], request_id=request_id)
             await self.reply(action='for_you', data=data, status=200, request_id=request_id)
             has_next = data.get('has_next', False)
             # Go to next page if more or stop when there are no more pages to fetch
@@ -248,37 +245,41 @@ class PostConsumer(
 
     @action()
     async def like(self, **kwargs):
-        await self.like_post(pk=kwargs['pk'], user=self.scope["user"])
+        message = await self.like_post(pk=kwargs['pk'], user=self.scope["user"])
+        return message, 200
 
     @database_sync_to_async
     def like_post(self, pk, user):
         post = Post.objects.get(pk=pk)
         if post.likes.filter(pk=user.id).exists():
             post.likes.remove(user)
+            message = 'Like removed'
         else:
             post.likes.add(user)
-        return post_save.send(sender=Post, instance=post, created=False)
+            message = 'Like added'
+        return {'message': message}
 
     @action()
     async def bookmark(self, **kwargs):
-        await self.bookmark_post(pk=kwargs['pk'], user=self.scope["user"])
+        message = await self.bookmark_post(pk=kwargs['pk'], user=self.scope["user"])
+        return message, 200
 
     @database_sync_to_async
     def bookmark_post(self, pk, user):
         post = Post.objects.get(pk=pk)
         if post.bookmarks.filter(pk=user.pk).exists():
             post.bookmarks.remove(user)
+            message = 'Bookmark removed'
         else:
             post.bookmarks.add(user)
-        return post_save.send(sender=Post, instance=post, created=False)
+            message = 'Bookmark added'
+        return {'message': message}
 
     @action()
     async def following(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
-        for post in data['results']:
-            pk = post["id"]
-            await self.post_activity.subscribe(pk=pk, request_id=request_id)
+        await self.subscribe_to_posts(posts=data['results'], request_id=request_id)
         return data, 200
 
     @action()
@@ -300,6 +301,7 @@ class PostConsumer(
         reply_pks = await self.get_reply_pks(pk=pk)
         for pk in reply_pks:
             await self.post_activity.unsubscribe(pk=pk, request_id=f'reply_{request_id}')
+        return {}, 200
 
     @database_sync_to_async
     def get_reply_pks(self, pk):
@@ -322,9 +324,7 @@ class PostConsumer(
     async def liked_posts(self, user: int, request_id, last_post: int = None, page_size=page_size, **kwargs):
         posts = await self.liked_posts_(user)
         data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
-        for post in data['results']:
-            pk = post["id"]
-            await self.post_activity.subscribe(pk=pk, request_id=f'user_{request_id}')
+        await self.subscribe_to_posts(posts=data['results'], request_id=request_id)
         return data, 200
 
     @database_sync_to_async
@@ -335,9 +335,7 @@ class PostConsumer(
     async def user_posts(self, user: int, request_id: str, last_post: int = None, page_size=page_size, **kwargs):
         posts = await self.user_posts_(user)
         data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
-        for post in data['results']:
-            pk = post["id"]
-            await self.post_activity.subscribe(pk=pk, request_id=f'user_{request_id}')
+        await self.subscribe_to_posts(posts=data['results'], request_id=request_id)
         return data, 200
 
     @database_sync_to_async
@@ -361,9 +359,7 @@ class PostConsumer(
     async def draft_posts(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
         posts = await database_sync_to_async(Post.objects.filter)(author=self.scope['user'], status='draft')
         data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
-        for post in data['results']:
-            pk = post["id"]
-            await self.post_activity.subscribe(pk=pk, request_id=request_id)
+        await self.subscribe_to_posts(posts=data['results'], request_id=request_id)
         return data, 200
 
     @action()
@@ -371,6 +367,7 @@ class PostConsumer(
         pks = await self.get_draft_posts_pks()
         for pk in pks:
             await self.post_activity.unsubscribe(pk=pk, request_id=request_id)
+        return {}, 200
 
     @database_sync_to_async
     def get_draft_posts_pks(self):
@@ -382,6 +379,7 @@ class PostConsumer(
         pks = await self.get_user_profile_posts_pks(pk=user)
         for pk in pks:
             await self.post_activity.unsubscribe(pk=pk, request_id=f'user_{request_id}')
+        return {}, 200
 
     @database_sync_to_async
     def get_user_profile_posts_pks(self, pk):
@@ -408,3 +406,9 @@ class PostConsumer(
         self.scope['user'].viewed_posts.add(*[post for post in reposts_ofs if post is not None])
         serializer = PostSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
         return dict(results=serializer.data, last_post=last_post, has_next=page_obj.has_next())
+
+    async def subscribe_to_posts(self, posts: dict, request_id: str):
+        for post in posts:
+            await self.post_activity.subscribe(pk=post['id'], request_id=request_id)
+            if post['repost_of']:
+                await self.post_activity.subscribe(pk=post['repost_of']['id'], request_id=request_id)

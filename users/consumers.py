@@ -1,7 +1,6 @@
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from django.db.models import QuerySet, Q
-from django.db.models.signals import post_save
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin, PatchModelMixin
 from djangochannelsrestframework.observer import model_observer
@@ -25,7 +24,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         else:
             await self.close()
 
-    @model_observer(User)
+    @model_observer(User, many_to_many=True)
     async def user_activity(self, message, observer=None, action=None, **kwargs):
         instance = message.pop('data')
         message['data'] = await self.get_user_serializer_data(user=instance)
@@ -96,7 +95,6 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
             self.scope['user'].muted.remove(user)
         else:
             self.scope['user'].muted.add(user)
-        self.signal(user)
         return UserSerializer(user, context={'scope': self.scope}).data
 
     @action()
@@ -114,7 +112,6 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
             self.scope['user'].muted.remove(user)
             self.scope['user'].following.remove(user)
             self.scope['user'].followers.remove(user)
-        self.signal(user)
         return UserSerializer(user, context={'scope': self.scope}).data
 
     @action()
@@ -131,7 +128,6 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         else:
             self.scope['user'].following.add(user)
             self.scope['user'].preferences.allowed_users.add(user)
-        self.signal(user)
         return UserSerializer(user, context={'scope': self.scope}).data
 
     @action()
@@ -148,11 +144,6 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
             self.scope['user'].preferences.allowed_users.add(user)
         serializer = UserSerializer(user, context={'scope': self.scope})
         return serializer.data
-
-    def signal(self, user: User):
-        post_save.send(sender=User, instance=self.scope['user'], created=False)
-        post_save.send(sender=User, instance=user, created=False)
-        return
 
     @action()
     async def unsubscribe(self, pks: list, request_id: str, **kwargs):
