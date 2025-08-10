@@ -1,6 +1,9 @@
+from trace import Trace
+
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from django.db.models import QuerySet, Q
+from django.db.models.signals import post_save
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin, PatchModelMixin
 from djangochannelsrestframework.observer import model_observer
@@ -24,7 +27,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         else:
             await self.close()
 
-    @model_observer(User, many_to_many=True)
+    @model_observer(User, many_to_many=True) # many_to_many may be failing due to the nature of user model
     async def user_activity(self, message, observer=None, action=None, **kwargs):
         instance = message.pop('data')
         message['data'] = await self.get_user_serializer_data(user=instance)
@@ -83,11 +86,17 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         await self.user_activity.subscribe(pk=pk, request_id=request_id)
         return response, status
 
+    def signal(self, user: User):
+        # Setting many_to_many on model observer is failing
+        post_save.send(sender=User, instance=self.scope['user'], created=False)
+        post_save.send(sender=User, instance=user, created=False)
+        return
+
     @action()
     async def mute(self, pk: int, **kwargs):
         user = await database_sync_to_async(self.get_object)(pk=pk)
         data = await self.mute_(user=user)
-        return await self.reply(data=data, action='update', status=200)
+        return data, 200
 
     @database_sync_to_async
     def mute_(self, user: User):
@@ -112,13 +121,14 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
             self.scope['user'].muted.remove(user)
             self.scope['user'].following.remove(user)
             self.scope['user'].followers.remove(user)
+        self.signal(user)
         return UserSerializer(user, context={'scope': self.scope}).data
 
     @action()
     async def follow(self, pk: int, **kwargs):
         user = await database_sync_to_async(self.get_object)(pk=pk)
         data = await self.follow_(user=user)
-        return await self.reply(data=data, action='update', status=200)
+        return data, 200
 
     @database_sync_to_async
     def follow_(self, user: User):
@@ -128,6 +138,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         else:
             self.scope['user'].following.add(user)
             self.scope['user'].preferences.allowed_users.add(user)
+        self.signal(user)
         return UserSerializer(user, context={'scope': self.scope}).data
 
     @action()
@@ -153,9 +164,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     @action()
     async def following(self, request_id: str, pk: int, page=1, page_size=page_size, **kwargs):
         data = await self.following_(pk, page, page_size)
-        for user in data['results']:
-            pk = user["id"]
-            await self.user_activity.subscribe(pk=pk, request_id=request_id)
+        await self.subscribe_to_users(users=data['results'], request_id=request_id)
         return data, 200
 
     @database_sync_to_async
@@ -168,9 +177,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     @action()
     async def followers(self, request_id: str, pk: int, page=1, page_size=page_size, **kwargs):
         data = await self.followers_(pk, page, page_size)
-        for user in data['results']:
-            pk = user["id"]
-            await self.user_activity.subscribe(pk=pk, request_id=request_id)
+        await self.subscribe_to_users(users=data['results'], request_id=request_id)
         return data, 200
 
     @database_sync_to_async
@@ -183,9 +190,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     @action()
     async def muted(self, request_id: str, page=1, page_size=page_size, **kwargs):
         data = await self.muted_(page, page_size)
-        for user in data['results']:
-            pk = user["id"]
-            await self.user_activity.subscribe(pk=pk, request_id=request_id)
+        await self.subscribe_to_users(users=data['results'], request_id=request_id)
         return data, 200
 
     @database_sync_to_async
@@ -197,9 +202,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     @action()
     async def blocked(self, request_id: str, page=1, page_size=page_size, **kwargs):
         data = await self.blocked_(page, page_size)
-        for user in data['results']:
-            pk = user["id"]
-            await self.user_activity.subscribe(pk=pk, request_id=request_id)
+        await self.subscribe_to_users(users=data['results'], request_id=request_id)
         return data, 200
 
     @database_sync_to_async
@@ -213,3 +216,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         serializer = UserSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
         data = dict(results=serializer.data, current_page=page_obj.number, has_next=page_obj.has_next())
         return data
+
+    async def subscribe_to_users(self, users: dict, request_id: str):
+        for user in users:
+            await self.user_activity.subscribe(pk=user['id'], request_id=request_id)
