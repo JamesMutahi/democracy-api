@@ -126,11 +126,28 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     @database_sync_to_async
     def follow_(self, user: User):
         if user in self.scope['user'].following.all():
+            self.scope['user'].preferences.allowed_users.remove(user)
             self.scope['user'].following.remove(user)
         else:
             self.scope['user'].following.add(user)
+            self.scope['user'].preferences.allowed_users.add(user)
         self.signal(user)
         return UserSerializer(user, context={'scope': self.scope}).data
+
+    @action()
+    async def notify(self, pk: int, **kwargs):
+        user = await database_sync_to_async(self.get_object)(pk=pk)
+        data = await self.notify_(user=user)
+        return await self.reply(data=data, action='update', status=200)
+
+    @action()
+    def notify_(self, user: User):
+        if user in self.scope['user'].preferences.allowed_users.all():
+            self.scope['user'].preferences.allowed_users.remove(user)
+        else:
+            self.scope['user'].preferences.allowed_users.add(user)
+        serializer = UserSerializer(user, context={'scope': self.scope})
+        return serializer.data
 
     def signal(self, user: User):
         post_save.send(sender=User, instance=self.scope['user'], created=False)

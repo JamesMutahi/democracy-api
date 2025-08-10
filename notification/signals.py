@@ -3,7 +3,7 @@ from django.db.models.signals import post_save, pre_delete
 from django.dispatch import receiver
 
 from chat.models import Message
-from notification.models import Notification
+from notification.models import Notification, Preferences
 from poll.models import Poll
 from posts.models import Post
 from survey.models import Survey
@@ -15,10 +15,13 @@ User = get_user_model()
 @receiver(post_save, sender=Survey)
 @receiver(post_save, sender=Message)
 @receiver(post_save, sender=Post)
-def create_notification_on_creation(sender, instance, created, **kwargs):
+@receiver(post_save, sender=User)
+def create_notification(sender, instance, created, **kwargs):
     if created:
-        users = User.objects.all()
+        if sender == User:
+            Preferences.objects.create(user=instance)
         if sender == Poll:
+            users = User.objects.all()
             for user in users:
                 Notification.objects.get_or_create(
                     user=user,
@@ -26,6 +29,7 @@ def create_notification_on_creation(sender, instance, created, **kwargs):
                     poll=instance,
                 )
         if sender == Survey:
+            users = User.objects.all()
             for user in users:
                 Notification.objects.create(
                     user=user,
@@ -42,6 +46,12 @@ def create_notification_on_creation(sender, instance, created, **kwargs):
                     message=instance,
                 )
         if sender == Post:
+            for user in instance.author.followers_notified.all():
+                Notification.objects.create(
+                    user=user,
+                    text=f'{instance.author} just posted',
+                    post=instance,
+                )
             if instance.repost_of:
                 if instance.repost_of.author != instance.author:
                     Notification.objects.create(

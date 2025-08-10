@@ -35,10 +35,10 @@ class PreferencesSerializer(serializers.ModelSerializer):
         model = Preferences
         fields = [
             'allow_notifications',
-            'follow_notifications',
-            'like_notifications',
-            'tag_notifications',
-            'reply_notifications',
-            'repost_notifications',
-            'message_notifications',
+            'allow_follow_notifications',
+            'allow_like_notifications',
+            'allow_tag_notifications',
+            'allow_reply_notifications',
+            'allow_repost_notifications',
+            'allow_message_notifications',
         ]

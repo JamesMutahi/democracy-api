@@ -28,8 +28,8 @@ services:
      DB_NAME: ${DB_NAME}
      DB_USER: ${DB_USER}
      DB_PASSWORD: ${DB_PASSWORD}
-     DB_HOST: "db" # The postgres database no longer runs at localhost. "db" is the name of the database container.
-     DB_PORT: ${DB_PORT}
+     DB_HOST: "db" # Name of the database container above.
+     DB_PORT: "5432" # Port set in the database container above.
    env_file:
      - .env
 volumes:
