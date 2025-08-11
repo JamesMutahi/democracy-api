@@ -22,6 +22,7 @@ class Survey(BaseModel):
 
     class Meta:
         db_table = 'Survey'
+        ordering = ['-start_time']
 
     def __str__(self):
         return self.name

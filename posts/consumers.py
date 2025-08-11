@@ -202,8 +202,6 @@ class PostConsumer(
     async def delete(self, pk: int, request_id: str, **kwargs):
         post = await database_sync_to_async(self.get_object)(pk=pk)
         await self.delete_(post=post)
-        await self.post_activity.unsubscribe(pk=pk, request_id=request_id)
-        return {'message': 'Post has been deleted'}, 204
 
     @database_sync_to_async
     def delete_(self, post):

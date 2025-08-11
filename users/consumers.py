@@ -108,7 +108,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     async def block(self, pk: int, **kwargs):
         user = await database_sync_to_async(self.get_object)(pk=pk)
         data = await self.block_(user=user)
-        return await self.reply(data=data, action='update', status=200)
+        return data, 200
 
     @database_sync_to_async
     def block_(self, user: User):

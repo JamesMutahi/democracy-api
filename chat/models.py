@@ -44,4 +44,4 @@ class Message(BaseModel):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f"Message({self.user} {self.chat})"
+        return f"Message({self.user.username} {self.chat})"
