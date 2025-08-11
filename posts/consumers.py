@@ -12,7 +12,7 @@ from django.db.models.signals import post_save
 from djangochannelsrestframework.consumers import AsyncAPIConsumer
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
-from djangochannelsrestframework.mixins import CreateModelMixin, PatchModelMixin
+from djangochannelsrestframework.mixins import CreateModelMixin, PatchModelMixin, RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.pagination import WebsocketLimitOffsetPagination
 from rest_framework.authtoken.models import Token
@@ -56,6 +56,7 @@ class PostListPagination(WebsocketLimitOffsetPagination):
 
 class PostConsumer(
     CreateModelMixin,
+    RetrieveModelMixin,
     PatchModelMixin,
     GenericAsyncAPIConsumer
 ):
