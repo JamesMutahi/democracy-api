@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.db.models import QuerySet, Count, Max
 from django.db.models.signals import post_save
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
-from djangochannelsrestframework.mixins import CreateModelMixin
+from djangochannelsrestframework.mixins import CreateModelMixin, RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import action
 
@@ -15,7 +15,7 @@ from .utils.list_paginator import list_paginator
 User = get_user_model()
 
 
-class ChatConsumer(CreateModelMixin, GenericAsyncAPIConsumer):
+class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer):
     serializer_class = ChatSerializer
     queryset = Chat.objects.all()
     lookup_field = "pk"
@@ -267,6 +267,7 @@ class ChatConsumer(CreateModelMixin, GenericAsyncAPIConsumer):
 
     @action()
     async def direct_message(self, user_pks: list, data, request_id, **kwargs):
+        chats = []
         for pk in user_pks:
             chat_data = await self.get_chat_data_if_exists(dict(user=pk))
             if not chat_data:
@@ -274,7 +275,8 @@ class ChatConsumer(CreateModelMixin, GenericAsyncAPIConsumer):
                 await self.join_chat(pk=chat_data["id"], request_id=request_id)
             data['chat'] = chat_data['id']
             await self.create_message_(data)
-        return {}, 200
+            chats.append(chat_data)
+        return chats, 200
 
     @staticmethod
     def signal_chat(chat: Chat):

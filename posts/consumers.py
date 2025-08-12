@@ -309,9 +309,7 @@ class PostConsumer(
     async def bookmarks(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
         posts = await self.bookmarks_()
         data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
-        for post in data['results']:
-            pk = post["id"]
-            await self.post_activity.subscribe(pk=pk, request_id=f'user_{request_id}')
+        await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
     @database_sync_to_async
