@@ -159,3 +159,9 @@ class PollConsumer(GenericAsyncAPIConsumer):
     @staticmethod
     def signal(poll: Poll):
         return post_save.send(sender=Poll, instance=poll, created=False)
+
+    @action()
+    async def resubscribe(self, pks: list, request_id: str, **kwargs):
+        for pk in pks:
+            await self.subscribe(pk=pk, request_id=request_id)
+        return {}, 200

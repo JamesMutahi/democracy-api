@@ -128,7 +128,7 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
 
     @action()
     async def create(self, data: dict, request_id: str, **kwargs):
-        chat_data = await self.get_chat_data_if_exists(data)
+        chat_data = await self.get_chat_data(data)
         if chat_data:
             return chat_data, 201
         response, status = await super().create(data, **kwargs)
@@ -137,7 +137,7 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
         return response, status
 
     @database_sync_to_async
-    def get_chat_data_if_exists(self, data: dict):
+    def get_chat_data(self, data: dict):
         chat_data = None
         user = User.objects.get(id=data['user'])
         if self.scope['user'].id == user.id:
@@ -269,7 +269,7 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
     async def direct_message(self, user_pks: list, data, request_id, **kwargs):
         chats = []
         for pk in user_pks:
-            chat_data = await self.get_chat_data_if_exists(dict(user=pk))
+            chat_data = await self.get_chat_data(dict(user=pk))
             if not chat_data:
                 chat_data, status = await super().create(dict(user=pk), **kwargs)
                 await self.join_chat(pk=chat_data["id"], request_id=request_id)
@@ -281,3 +281,9 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
     @staticmethod
     def signal_chat(chat: Chat):
         return post_save.send(sender=Chat, instance=chat, created=False)
+
+    @action()
+    async def resubscribe(self, pks: list, request_id: str, **kwargs):
+        for pk in pks:
+            await self.subscribe(pk=pk, request_id=request_id)
+        return {}, 200

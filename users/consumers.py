@@ -25,7 +25,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         else:
             await self.close()
 
-    @model_observer(User, many_to_many=True) # many_to_many may be failing due to the nature of user model
+    @model_observer(User, many_to_many=True)  # many_to_many may be failing due to the nature of user model
     async def user_activity(self, message, observer=None, action=None, **kwargs):
         instance = message.pop('data')
         message['data'] = await self.get_user_serializer_data(user=instance)
@@ -218,3 +218,9 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     async def subscribe_to_users(self, users: dict, request_id: str):
         for user in users:
             await self.user_activity.subscribe(pk=user['id'], request_id=request_id)
+
+    @action()
+    async def resubscribe(self, pks: list, request_id: str, **kwargs):
+        for pk in pks:
+            await self.user_activity.subscribe(pk=pk, request_id=request_id)
+        return {}, 200

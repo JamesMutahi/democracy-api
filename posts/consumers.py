@@ -398,3 +398,9 @@ class PostConsumer(
         for pk in pks:
             await self.post_activity.unsubscribe(pk=pk, request_id=f'user_{request_id}')
         return {}, 200
+
+    @action()
+    async def resubscribe(self, pks: list, request_id: str, **kwargs):
+        for pk in pks:
+            await self.post_activity.subscribe(pk=pk, request_id=request_id)
+        return {}, 200

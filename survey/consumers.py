@@ -160,3 +160,9 @@ class SurveyConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPI
         serializer.save()
         survey = Survey.objects.get(pk=data['survey'])
         return SurveySerializer(survey, context={'scope': self.scope}).data
+
+    @action()
+    async def resubscribe(self, pks: list, request_id: str, **kwargs):
+        for pk in pks:
+            await self.subscribe(pk=pk, request_id=request_id)
+        return {}, 200
