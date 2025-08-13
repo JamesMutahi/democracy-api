@@ -361,13 +361,6 @@ class PostConsumer(
         pks = list(Post.objects.filter(author=self.scope['user'], status='draft').values_list('pk', flat=True))
         return pks
 
-    @database_sync_to_async
-    def get_user_profile_posts_pks(self, pk):
-        pks = list(Post.objects.filter(author=pk).values_list('pk', flat=True))
-        liked_pks = list(User.objects.get(pk=pk).liked_posts.all().values_list('pk', flat=True))
-        pks.append(liked_pks)
-        return pks
-
     @action()
     def report(self, **kwargs):
         serializer = ReportSerializer(data=kwargs['data'], context={'scope': self.scope})
@@ -403,6 +396,12 @@ class PostConsumer(
     async def resubscribe(self, pks: list, request_id: str, **kwargs):
         for pk in pks:
             await self.post_activity.subscribe(pk=pk, request_id=request_id)
+        return {}, 200
+
+    @action()
+    async def resubscribe_replies(self, pks: list, request_id: str, **kwargs):
+        for pk in pks:
+            await self.post_activity.subscribe(pk=pk, request_id=f'reply_{request_id}')
         return {}, 200
 
     @action()
