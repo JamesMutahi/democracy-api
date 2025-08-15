@@ -356,11 +356,6 @@ class PostConsumer(
         await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
-    @database_sync_to_async
-    def get_draft_posts_pks(self):
-        pks = list(Post.objects.filter(author=self.scope['user'], status='draft').values_list('pk', flat=True))
-        return pks
-
     @action()
     def report(self, **kwargs):
         serializer = ReportSerializer(data=kwargs['data'], context={'scope': self.scope})

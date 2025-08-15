@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -26,6 +27,11 @@ class Survey(BaseModel):
 
     def __str__(self):
         return self.name
+
+    def clean(self):
+        super().clean()
+        if self.end_time < self.start_time:
+            raise ValidationError("End time cannot be before start time.")
 
 
 class Question(models.Model):
