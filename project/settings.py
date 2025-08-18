@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'survey.apps.SurveyConfig',
     'poll.apps.PollConfig',
     'posts.apps.PostsConfig',
+    'petition.apps.PetitionConfig',
     'chat.apps.ChatConfig',
     'notification.apps.NotificationConfig',
     'rest_framework',
