@@ -24,6 +24,7 @@ from posts.consumers import PostConsumer, TokenAuthMiddleware
 from chat.consumers import ChatConsumer
 from poll.consumers import PollConsumer
 from survey.consumers import SurveyConsumer
+from petition.consumers import PetitionConsumer
 from notification.consumers import NotificationConsumer
 from users.consumers import UserConsumer
 
@@ -40,6 +41,7 @@ application = ProtocolTypeRouter({
                     chats=ChatConsumer.as_asgi(),
                     polls=PollConsumer.as_asgi(),
                     surveys=SurveyConsumer.as_asgi(),
+                    petitions=PetitionConsumer.as_asgi(),
                     notifications=NotificationConsumer.as_asgi(),
                     users=UserConsumer.as_asgi(),
                 )),

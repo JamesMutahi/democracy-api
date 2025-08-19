@@ -31,9 +31,9 @@ class Post(BaseModel):
     image4 = models.ImageField(upload_to='posts/images/', null=True, blank=True)
     image5 = models.ImageField(upload_to='posts/images/', null=True, blank=True)
     image6 = models.ImageField(upload_to='posts/images/', null=True, blank=True)
-    video1 = models.ImageField(upload_to='posts/videos/', null=True, blank=True)
-    video2 = models.ImageField(upload_to='posts/videos/', null=True, blank=True)
-    video3 = models.ImageField(upload_to='posts/videos/', null=True, blank=True)
+    video1 = models.FileField(upload_to='posts/videos/', null=True, blank=True)
+    video2 = models.FileField(upload_to='posts/videos/', null=True, blank=True)
+    video3 = models.FileField(upload_to='posts/videos/', null=True, blank=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='published')
     published_at = models.DateTimeField(default=timezone.now)
     reply_to = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,

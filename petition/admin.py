@@ -1,3 +1,9 @@
 from django.contrib import admin
 
-# Register your models here.
+from petition.models import Petition
+
+
+@admin.register(Petition)
+class PetitionAdmin(admin.ModelAdmin):
+    list_display = ['title', 'created_at', 'end_time']
+    filter_horizontal = ['supporters']
