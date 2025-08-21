@@ -8,6 +8,7 @@ from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import action
 
 from chat.utils.list_paginator import list_paginator
+from petition.models import Petition
 from users.serializers import UserSerializer
 
 User = get_user_model()
@@ -155,11 +156,6 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         return serializer.data
 
     @action()
-    async def unsubscribe(self, pks: list, request_id: str, **kwargs):
-        for pk in pks:
-            await self.user_activity.unsubscribe(pk=pk, request_id=request_id)
-
-    @action()
     async def following(self, request_id: str, pk: int, page=1, page_size=page_size, **kwargs):
         data = await self.following_(pk, page, page_size)
         await self.subscribe_to_users(users=data['results'], request_id=request_id)
@@ -209,6 +205,19 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         data = self.users_paginator(users, page, page_size)
         return data
 
+    @action()
+    async def petition_supporters(self, request_id: str, pk: int, page=1, page_size=page_size, **kwargs):
+        data = await self.petition_supporters_(pk, page, page_size)
+        await self.subscribe_to_users(users=data['results'], request_id=request_id)
+        return data, 200
+
+    @database_sync_to_async
+    def petition_supporters_(self, pk: int, page, page_size, **kwargs):
+        petition = Petition.objects.get(pk=pk)
+        users = petition.supporters.all()
+        data = self.users_paginator(users, page, page_size)
+        return data
+
     def users_paginator(self, users, page: int, page_size, **kwargs):
         page_obj = list_paginator(users, page, page_size)
         serializer = UserSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
@@ -224,3 +233,8 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         for pk in pks:
             await self.user_activity.subscribe(pk=pk, request_id=request_id)
         return {}, 200
+
+    @action()
+    async def unsubscribe(self, pks: list, request_id: str, **kwargs):
+        for pk in pks:
+            await self.user_activity.unsubscribe(pk=pk, request_id=request_id)

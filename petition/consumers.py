@@ -22,7 +22,7 @@ class PetitionConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncA
         else:
             await self.close()
 
-    @model_observer(Petition)
+    @model_observer(Petition, many_to_many=True)
     async def petition_activity(self, message, observer=None, action=None, **kwargs):
         instance = message.pop('data')
         if message['action'] != 'delete':
@@ -65,7 +65,7 @@ class PetitionConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncA
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
         search_term = kwargs.get('search_term', None)
         if search_term:
-            return queryset.filter(Q(name__icontains=search_term) | Q(description__icontains=search_term)).distinct()
+            return queryset.filter(Q(title__icontains=search_term) | Q(description__icontains=search_term)).distinct()
         return queryset
 
     @action()

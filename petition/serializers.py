@@ -5,6 +5,7 @@ from users.serializers import UserSerializer
 
 
 class PetitionSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
     supporters = serializers.SerializerMethodField(read_only=True)
     recent_supporters = serializers.SerializerMethodField(read_only=True)
 
@@ -22,12 +23,19 @@ class PetitionSerializer(serializers.ModelSerializer):
             'end_time',
         ]
 
+    def get_image(self, obj):
+        if 'scope' in self.context:
+            headers = dict(self.context['scope']['headers'])
+            host = headers[b'host'].decode()
+            return 'http://' + host + obj.image.url
+        return self.context.get('request').build_absolute_uri(obj.image.url)
+
     @staticmethod
     def get_supporters(instance: Petition):
         return instance.supporters.count()
 
     def get_recent_supporters(self, instance: Petition):
-        recent_supporters = None
+        recent_supporters = []
         if instance.supporters.exists():
             related = instance.supporters.through.objects.all().order_by('-id')[:5]
             petition_list = []

@@ -53,7 +53,7 @@ class PollConsumer(GenericAsyncAPIConsumer):
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
         )
 
-    @model_observer(Option)
+    @model_observer(Option, many_to_many=True)
     async def option_activity(self, message, observer=None, action=None, **kwargs):
         instance = message.pop('data')
         message['data'] = await self.get_poll_serializer_data(poll=instance)
@@ -131,10 +131,7 @@ class PollConsumer(GenericAsyncAPIConsumer):
                 if o.id != pk:
                     o.votes.remove(user)
                     Reason.objects.filter(poll=o.poll, user=user).delete()
-                else:
-                    return self.signal(option.poll)
         option.votes.add(user)
-        self.signal(option.poll)
         return option
 
     @action()
@@ -155,10 +152,6 @@ class PollConsumer(GenericAsyncAPIConsumer):
         else:
             Reason.objects.create(poll=poll, user=user, text=text)
             return PollSerializer(poll, context={'scope': self.scope}).data
-
-    @staticmethod
-    def signal(poll: Poll):
-        return post_save.send(sender=Poll, instance=poll, created=False)
 
     @action()
     async def resubscribe(self, pks: list, request_id: str, **kwargs):
