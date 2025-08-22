@@ -1,7 +1,10 @@
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from petition.models import Petition
 from users.serializers import UserSerializer
+
+User = get_user_model()
 
 
 class PetitionSerializer(serializers.ModelSerializer):
@@ -37,11 +40,12 @@ class PetitionSerializer(serializers.ModelSerializer):
     def get_recent_supporters(self, instance: Petition):
         recent_supporters = []
         if instance.supporters.exists():
-            related = instance.supporters.through.objects.all().order_by('-id')[:5]
-            petition_list = []
+            # Using through only returns object id
+            related = instance.supporters.through.objects.filter(petition_id=instance.id).order_by('-id')[:5]
+            user_list = []
             for obj in related:
-                petition = Petition.objects.get(id=obj.petition_id) # Using through only returns object id
-                petition_list.append(petition)
-            serializer = UserSerializer(petition_list, context=self.context)
+                user = User.objects.get(id=obj.customuser_id)
+                user_list.append(user)
+            serializer = UserSerializer(user_list, many=True, context=self.context)
             recent_supporters = serializer.data
         return recent_supporters
