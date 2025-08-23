@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from poll.models import Poll, Option, Reason
+from ballot.models import Ballot, Option, Reason
 
 
 class OptionSerializer(serializers.ModelSerializer):
@@ -10,7 +10,7 @@ class OptionSerializer(serializers.ModelSerializer):
         model = Option
         fields = [
             'id',
-            'poll',
+            'ballot',
             'text',
             'votes',
         ]
@@ -27,17 +27,17 @@ class ReasonSerializer(serializers.ModelSerializer):
         fields = ['text']
 
 
-class PollSerializer(serializers.ModelSerializer):
+class BallotSerializer(serializers.ModelSerializer):
     total_votes = serializers.SerializerMethodField(read_only=True)
     voted_option = serializers.SerializerMethodField(read_only=True)
     options = OptionSerializer(many=True)
     reason = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
-        model = Poll
+        model = Ballot
         fields = [
             'id',
-            'name',
+            'title',
             'description',
             'start_time',
             'end_time',
@@ -62,7 +62,7 @@ class PollSerializer(serializers.ModelSerializer):
         return voted_option
 
     def get_reason(self, obj):
-        reason_qs = Reason.objects.filter(poll=obj, user=self.context['scope']['user'])
+        reason_qs = Reason.objects.filter(ballot=obj, user=self.context['scope']['user'])
         if reason_qs.exists():
             reason = reason_qs.first()
             return ReasonSerializer(reason, context=self.context).data

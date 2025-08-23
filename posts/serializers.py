@@ -2,8 +2,8 @@ from django.contrib.auth import get_user_model
 from django.db.models.signals import post_save
 from rest_framework import serializers
 
-from poll.models import Poll
-from poll.serializers import PollSerializer
+from ballot.models import Ballot
+from ballot.serializers import BallotSerializer
 from posts.models import Post, Report
 from survey.models import Survey
 from survey.serializers import SurveySerializer
@@ -21,12 +21,12 @@ class PostSerializer(serializers.ModelSerializer):
     replies = serializers.SerializerMethodField(read_only=True)
     reposts = serializers.SerializerMethodField(read_only=True)
     views = serializers.SerializerMethodField(read_only=True)
-    poll = PollSerializer(read_only=True)
+    ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
     tagged_users = UserSerializer(read_only=True, many=True)
     reply_to_id = serializers.IntegerField(write_only=True, allow_null=True)
     repost_of_id = serializers.IntegerField(write_only=True, allow_null=True)
-    poll_id = serializers.IntegerField(write_only=True, allow_null=True)
+    ballot_id = serializers.IntegerField(write_only=True, allow_null=True)
     survey_id = serializers.IntegerField(write_only=True, allow_null=True)
     tagged_user_ids = serializers.ListField(write_only=True, allow_empty=True)
 
@@ -61,11 +61,11 @@ class PostSerializer(serializers.ModelSerializer):
             'reposts',
             'reply_to',
             'repost_of',
-            'poll',
+            'ballot',
             'survey',
             'reply_to_id',
             'repost_of_id',
-            'poll_id',
+            'ballot_id',
             'survey_id',
         )
 
@@ -114,8 +114,8 @@ class PostSerializer(serializers.ModelSerializer):
             validated_data['reply_to'] = Post.objects.get(id=validated_data['reply_to_id'])
         if validated_data['repost_of_id']:
             validated_data['repost_of'] = Post.objects.get(id=validated_data['repost_of_id'])
-        if validated_data['poll_id']:
-            validated_data['poll'] = Poll.objects.get(id=validated_data['poll_id'])
+        if validated_data['ballot_id']:
+            validated_data['ballot'] = Ballot.objects.get(id=validated_data['ballot_id'])
         if validated_data['survey_id']:
             validated_data['survey'] = Survey.objects.get(id=validated_data['survey_id'])
         tagged_user_ids = validated_data.pop('tagged_user_ids')

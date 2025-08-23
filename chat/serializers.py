@@ -3,8 +3,8 @@ from django.db.models.signals import post_save
 from rest_framework import serializers
 
 from chat.models import Message, Chat
-from poll.models import Poll
-from poll.serializers import PollSerializer
+from ballot.models import Ballot
+from ballot.serializers import BallotSerializer
 from posts.models import Post
 from posts.serializers import PostSerializer
 from survey.models import Survey
@@ -17,10 +17,10 @@ User = get_user_model()
 class MessageSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     post = PostSerializer(read_only=True)
-    poll = PollSerializer(read_only=True)
+    ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
     post_id = serializers.IntegerField(write_only=True, allow_null=True)
-    poll_id = serializers.IntegerField(write_only=True, allow_null=True)
+    ballot_id = serializers.IntegerField(write_only=True, allow_null=True)
     survey_id = serializers.IntegerField(write_only=True, allow_null=True)
 
     class Meta:
@@ -31,10 +31,10 @@ class MessageSerializer(serializers.ModelSerializer):
             'user',
             'text',
             'post',
-            'poll',
+            'ballot',
             'survey',
             'post_id',
-            'poll_id',
+            'ballot_id',
             'survey_id',
             'is_read',
             'is_edited',
@@ -52,8 +52,8 @@ class MessageSerializer(serializers.ModelSerializer):
         validated_data['user'] = self.context['scope']['user']
         if validated_data['post_id'] is not None:
             validated_data['post'] = Post.objects.get(id=validated_data['post_id'])
-        if validated_data['poll_id'] is not None:
-            validated_data['poll'] = Poll.objects.get(id=validated_data['poll_id'])
+        if validated_data['ballot_id'] is not None:
+            validated_data['ballot'] = Ballot.objects.get(id=validated_data['ballot_id'])
         if validated_data['survey_id'] is not None:
             validated_data['survey'] = Survey.objects.get(id=validated_data['survey_id'])
         message = super().create(validated_data)

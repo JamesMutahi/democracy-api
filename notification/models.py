@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from django.db import models
 
 from chat.models import Chat, Message
-from poll.models import Poll
+from ballot.models import Ballot
 from posts.models import Post
 from survey.models import Survey
 
@@ -14,7 +14,7 @@ class Notification(models.Model):
     text = models.TextField()
     is_read = models.BooleanField(default=False)
     post = models.ForeignKey(Post, on_delete=models.CASCADE, null=True, blank=True)
-    poll = models.ForeignKey(Poll, on_delete=models.CASCADE, null=True, blank=True)
+    ballot = models.ForeignKey(Ballot, on_delete=models.CASCADE, null=True, blank=True)
     survey = models.ForeignKey(Survey, on_delete=models.CASCADE, null=True, blank=True)
     chat = models.ForeignKey(Chat, on_delete=models.CASCADE, null=True, blank=True)
     message = models.ForeignKey(Message, on_delete=models.CASCADE, null=True, blank=True)

@@ -4,14 +4,14 @@ from django.dispatch import receiver
 
 from chat.models import Message
 from notification.models import Notification, Preferences
-from poll.models import Poll
+from ballot.models import Ballot
 from posts.models import Post
 from survey.models import Survey
 
 User = get_user_model()
 
 
-@receiver(post_save, sender=Poll)
+@receiver(post_save, sender=Ballot)
 @receiver(post_save, sender=Survey)
 @receiver(post_save, sender=Message)
 @receiver(post_save, sender=Post)
@@ -20,13 +20,13 @@ def create_notification(sender, instance, created, **kwargs):
     if created:
         if sender == User:
             Preferences.objects.create(user=instance)
-        if sender == Poll:
+        if sender == Ballot:
             users = User.objects.all()
             for user in users:
                 Notification.objects.get_or_create(
                     user=user,
-                    text='New poll',
-                    poll=instance,
+                    text='New ballot',
+                    ballot=instance,
                 )
         if sender == Survey:
             users = User.objects.all()

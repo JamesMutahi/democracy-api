@@ -22,7 +22,7 @@ django_asgi_app = get_asgi_application()
 
 from posts.consumers import PostConsumer, TokenAuthMiddleware
 from chat.consumers import ChatConsumer
-from poll.consumers import PollConsumer
+from ballot.consumers import BallotConsumer
 from survey.consumers import SurveyConsumer
 from petition.consumers import PetitionConsumer
 from notification.consumers import NotificationConsumer
@@ -39,7 +39,7 @@ application = ProtocolTypeRouter({
                 path("ws/", AsyncJsonWebsocketDemultiplexer.as_asgi(
                     posts=PostConsumer.as_asgi(),
                     chats=ChatConsumer.as_asgi(),
-                    polls=PollConsumer.as_asgi(),
+                    ballots=BallotConsumer.as_asgi(),
                     surveys=SurveyConsumer.as_asgi(),
                     petitions=PetitionConsumer.as_asgi(),
                     notifications=NotificationConsumer.as_asgi(),

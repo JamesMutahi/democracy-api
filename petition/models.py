@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 
 User = get_user_model()
 
@@ -25,5 +26,5 @@ class Petition(models.Model):
 
     def clean(self):
         super().clean()
-        if self.end_time < self.start_time:
+        if self.end_time < timezone.now():
             raise ValidationError("End time cannot be before current time.")

@@ -8,6 +8,7 @@ User = get_user_model()
 
 
 class PetitionSerializer(serializers.ModelSerializer):
+    author = UserSerializer(read_only=True)
     image = serializers.SerializerMethodField()
     supporters = serializers.SerializerMethodField(read_only=True)
     recent_supporters = serializers.SerializerMethodField(read_only=True)
@@ -16,6 +17,7 @@ class PetitionSerializer(serializers.ModelSerializer):
         model = Petition
         fields = [
             'id',
+            'author',
             'title',
             'description',
             'image',

@@ -14,18 +14,18 @@ class BaseModel(models.Model):
         abstract = True
 
 
-class Poll(BaseModel):
-    name = models.CharField(max_length=255)
+class Ballot(BaseModel):
+    title = models.CharField(max_length=255)
     description = models.TextField(null=True, blank=True)
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
 
     class Meta:
-        db_table = 'Poll'
+        db_table = 'Ballot'
         ordering = ['-start_time']
 
     def __str__(self):
-        return self.name
+        return self.title
 
     def clean(self):
         super().clean()
@@ -34,14 +34,14 @@ class Poll(BaseModel):
 
 
 class Option(models.Model):
-    poll = models.ForeignKey(Poll, on_delete=models.CASCADE, related_name='options')
+    ballot = models.ForeignKey(Ballot, on_delete=models.CASCADE, related_name='options')
     number = models.IntegerField()
     text = models.CharField(max_length=255)
     votes = models.ManyToManyField(User, blank=True)
 
     class Meta:
         ordering = ['id']
-        unique_together = ['poll', 'text']
+        unique_together = ['ballot', 'text']
         db_table = 'Option'
 
     def __str__(self):
@@ -50,7 +50,7 @@ class Option(models.Model):
 
 class Reason(BaseModel):
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
-    poll = models.ForeignKey(Poll, on_delete=models.CASCADE, related_name='reasons')
+    ballot = models.ForeignKey(Ballot, on_delete=models.CASCADE, related_name='reasons')
     text = models.TextField()
 
     class Meta:

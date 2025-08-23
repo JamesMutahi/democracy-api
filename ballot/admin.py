@@ -1,7 +1,7 @@
 from django.contrib import admin
 from grappelli.forms import GrappelliSortableHiddenMixin
 
-from poll.models import Option, Poll, Reason
+from ballot.models import Option, Ballot, Reason
 
 
 class ReasonInline(admin.TabularInline):
@@ -23,8 +23,8 @@ class OptionInline(GrappelliSortableHiddenMixin, admin.TabularInline):
     classes = ('grp-collapse grp-open',)
 
 
-@admin.register(Poll)
-class PollAdmin(admin.ModelAdmin):
-    list_display = ['name', 'start_time', 'end_time']
+@admin.register(Ballot)
+class BallotAdmin(admin.ModelAdmin):
+    list_display = ['title', 'start_time', 'end_time']
     inlines = [OptionInline, ReasonInline]
     readonly_fields = ['created_at', 'updated_at']

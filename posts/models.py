@@ -3,7 +3,7 @@ from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from poll.models import Poll
+from ballot.models import Ballot
 from survey.models import Survey
 
 User = get_user_model()
@@ -40,7 +40,7 @@ class Post(BaseModel):
                                  related_name='replies')
     repost_of = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
                                   related_name='reposts')
-    poll = models.ForeignKey(Poll, on_delete=models.SET_NULL, null=True, blank=True)
+    ballot = models.ForeignKey(Ballot, on_delete=models.SET_NULL, null=True, blank=True)
     survey = models.ForeignKey(Survey, on_delete=models.SET_NULL, null=True, blank=True)
     likes = models.ManyToManyField(User, blank=True, related_name='liked_posts')
     bookmarks = models.ManyToManyField(User, blank=True, related_name='bookmarked_posts')

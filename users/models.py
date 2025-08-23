@@ -12,7 +12,7 @@ from .managers import UserManager
 class CustomUser(AbstractBaseUser, PermissionsMixin):
     username = models.CharField(_('username'), max_length=30, unique=True)
     name = models.CharField(_('name'), max_length=50)
-    id_number = models.IntegerField(_('ID number'), unique=True)
+    id_number = models.IntegerField(_('ID number'), unique=True, null=True, blank=True)
     email = models.EmailField(_('email'), unique=True, null=True, blank=True)
     status = models.TextField(_('status'), blank=True)
     image = models.ImageField(upload_to='profile_pics/', default='profile_pics/default.jpg')

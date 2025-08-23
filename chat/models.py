@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from poll.models import Poll
+from ballot.models import Ballot
 from posts.models import Post
 from survey.models import Survey
 
@@ -33,7 +33,7 @@ class Message(BaseModel):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="messages")
     text = models.TextField(max_length=500, blank=True)
     post = models.ForeignKey(Post, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
-    poll = models.ForeignKey(Poll, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
+    ballot = models.ForeignKey(Ballot, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
     survey = models.ForeignKey(Survey, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
     is_read = models.BooleanField(_('read'), default=False)
     is_edited = models.BooleanField(_('edited'), default=False)

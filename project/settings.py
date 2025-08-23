@@ -45,7 +45,7 @@ INSTALLED_APPS = [
     'django.contrib.sites',
     'users.apps.UsersConfig',
     'survey.apps.SurveyConfig',
-    'poll.apps.PollConfig',
+    'ballot.apps.BallotConfig',
     'posts.apps.PostsConfig',
     'petition.apps.PetitionConfig',
     'chat.apps.ChatConfig',

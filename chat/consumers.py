@@ -215,7 +215,7 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
             if message.is_read:
                 message.text = ''
                 message.post = None
-                message.poll = None
+                message.ballot = None
                 message.survey = None
                 message.is_deleted = True
                 message.save()
