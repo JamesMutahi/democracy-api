@@ -12,6 +12,7 @@ class PetitionSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField()
     supporters = serializers.SerializerMethodField(read_only=True)
     recent_supporters = serializers.SerializerMethodField(read_only=True)
+    is_supported = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Petition
@@ -24,6 +25,7 @@ class PetitionSerializer(serializers.ModelSerializer):
             'video',
             'supporters',
             'recent_supporters',
+            'is_supported',
             'start_time',
             'end_time',
         ]
@@ -51,3 +53,7 @@ class PetitionSerializer(serializers.ModelSerializer):
             serializer = UserSerializer(user_list, many=True, context=self.context)
             recent_supporters = serializer.data
         return recent_supporters
+
+    def get_is_supported(self, instance: Petition):
+        is_supported = instance.supporters.contains(self.context['scope']['user'])
+        return is_supported
