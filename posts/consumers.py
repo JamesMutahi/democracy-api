@@ -366,8 +366,7 @@ class PostConsumer(
     @database_sync_to_async
     def posts_paginator(self, posts, page_size, last_post: int = None, **kwargs):
         if last_post:
-            post = Post.objects.get(pk=last_post)
-            posts = posts.filter(id__lt=post.id)
+            posts = posts.filter(id__lt=last_post)
         page_obj = list_paginator(queryset=posts, page=1, page_size=page_size)
         self.scope['user'].viewed_posts.add(*page_obj.object_list)
         reposts_ofs = page_obj.object_list.values_list('repost_of', flat=True)

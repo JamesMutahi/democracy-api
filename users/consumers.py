@@ -73,9 +73,9 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         return queryset
 
     @action()
-    def list(self, page=1, page_size=page_size, **kwargs):
+    def list(self, page=1, page_size=page_size, last_user: int = None, **kwargs):
         users = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = self.users_paginator(users, page, page_size)
+        data = self.users_paginator(users, page, page_size, last_user)
         return data, 200
 
     @action()
@@ -156,72 +156,75 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         return serializer.data
 
     @action()
-    async def following(self, request_id: str, pk: int, page=1, page_size=page_size, **kwargs):
-        data = await self.following_(pk, page, page_size)
+    async def following(self, request_id: str, pk: int, page=1, page_size=page_size, last_user: int = None, **kwargs):
+        data = await self.following_(pk, page, page_size, last_user)
         await self.subscribe_to_users(users=data['results'], request_id=request_id)
         return data, 200
 
     @database_sync_to_async
-    def following_(self, pk: int, page, page_size, **kwargs):
+    def following_(self, pk: int, page, page_size, last_user):
         user = User.objects.get(pk=pk)
         users = user.following.all()
-        data = self.users_paginator(users, page, page_size)
+        data = self.users_paginator(users, page, page_size, last_user)
         return data
 
     @action()
-    async def followers(self, request_id: str, pk: int, page=1, page_size=page_size, **kwargs):
-        data = await self.followers_(pk, page, page_size)
+    async def followers(self, request_id: str, pk: int, page=1, page_size=page_size, last_user: int = None, **kwargs):
+        data = await self.followers_(pk, page, page_size, last_user)
         await self.subscribe_to_users(users=data['results'], request_id=request_id)
         return data, 200
 
     @database_sync_to_async
-    def followers_(self, pk: int, page, page_size, **kwargs):
+    def followers_(self, pk: int, page, page_size, last_user):
         user = User.objects.get(pk=pk)
         users = user.followers.all()
-        data = self.users_paginator(users, page, page_size)
+        data = self.users_paginator(users, page, page_size, last_user)
         return data
 
     @action()
-    async def muted(self, request_id: str, page=1, page_size=page_size, **kwargs):
-        data = await self.muted_(page, page_size)
+    async def muted(self, request_id: str, page=1, page_size=page_size, last_user: int = None, **kwargs):
+        data = await self.muted_(page, page_size, last_user)
         await self.subscribe_to_users(users=data['results'], request_id=request_id)
         return data, 200
 
     @database_sync_to_async
-    def muted_(self, page, page_size, **kwargs):
+    def muted_(self, page, page_size, last_user):
         users = self.scope['user'].muted.all()
-        data = self.users_paginator(users, page, page_size)
+        data = self.users_paginator(users, page, page_size, last_user)
         return data
 
     @action()
-    async def blocked(self, request_id: str, page=1, page_size=page_size, **kwargs):
-        data = await self.blocked_(page, page_size)
+    async def blocked(self, request_id: str, page=1, page_size=page_size, last_user: int = None, **kwargs):
+        data = await self.blocked_(page, page_size, last_user)
         await self.subscribe_to_users(users=data['results'], request_id=request_id)
         return data, 200
 
     @database_sync_to_async
-    def blocked_(self, page, page_size):
+    def blocked_(self, page, page_size, last_user):
         users = self.scope['user'].blocked.all()
-        data = self.users_paginator(users, page, page_size)
+        data = self.users_paginator(users, page, page_size, last_user)
         return data
 
     @action()
-    async def petition_supporters(self, request_id: str, pk: int, page=1, page_size=page_size, **kwargs):
-        data = await self.petition_supporters_(pk, page, page_size)
+    async def petition_supporters(self, request_id: str, pk: int, page=1, page_size=page_size, last_user: int = None, **kwargs):
+        data = await self.petition_supporters_(pk, page, page_size, last_user)
         await self.subscribe_to_users(users=data['results'], request_id=request_id)
         return data, 200
 
     @database_sync_to_async
-    def petition_supporters_(self, pk: int, page, page_size, **kwargs):
+    def petition_supporters_(self, pk: int, page, page_size, last_user):
         petition = Petition.objects.get(pk=pk)
         users = petition.supporters.all()
-        data = self.users_paginator(users, page, page_size)
+        data = self.users_paginator(users, page, page_size, last_user)
         return data
 
-    def users_paginator(self, users, page: int, page_size, **kwargs):
+    def users_paginator(self, users, page: int, page_size, last_user: int = None, **kwargs):
+        if last_user:
+            user: User = User.objects.get(pk=last_user)
+            users = users.filter(name__gt=user.name)
         page_obj = list_paginator(users, page, page_size)
         serializer = UserSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
-        data = dict(results=serializer.data, current_page=page_obj.number, has_next=page_obj.has_next())
+        data = dict(results=serializer.data, last_user=last_user, has_next=page_obj.has_next())
         return data
 
     async def subscribe_to_users(self, users: dict, request_id: str):
