@@ -1,7 +1,5 @@
 from django.contrib.auth import get_user_model
-from django.core.exceptions import ValidationError
 from django.db import models
-from django.utils import timezone
 
 User = get_user_model()
 
@@ -13,18 +11,12 @@ class Petition(models.Model):
     image = models.ImageField(upload_to='petitions/images/')
     video = models.FileField(upload_to='petitions/videos/', null=True, blank=True)
     supporters = models.ManyToManyField(User, blank=True, related_name='supported_petitions')
-    start_time = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    end_time = models.DateTimeField()
 
     class Meta:
         db_table = 'Petition'
-        ordering = ['-start_time']
+        ordering = ['-created_at']
 
     def __str__(self):
         return self.title
-
-    def clean(self):
-        super().clean()
-        if self.end_time < timezone.now():
-            raise ValidationError("End time cannot be before current time.")

@@ -3,14 +3,14 @@ from django.db.models import QuerySet, Q
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import ListModelMixin
 from djangochannelsrestframework.observer import model_observer
-from djangochannelsrestframework.observer.generics import ObserverModelInstanceMixin, action
+from djangochannelsrestframework.observer.generics import action
 
 from chat.utils.list_paginator import list_paginator
 from survey.models import Survey, Question, Choice
 from survey.serializers import SurveySerializer, ResponseSerializer
 
 
-class SurveyConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPIConsumer):
+class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     serializer_class = SurveySerializer
     queryset = Survey.objects.all()
     lookup_field = "pk"

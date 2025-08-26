@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from petition.models import Petition
 from users.serializers import UserSerializer
+from users.utils.base64_image_field import Base64ImageField
 
 User = get_user_model()
 
@@ -13,6 +14,7 @@ class PetitionSerializer(serializers.ModelSerializer):
     supporters = serializers.SerializerMethodField(read_only=True)
     recent_supporters = serializers.SerializerMethodField(read_only=True)
     is_supported = serializers.SerializerMethodField(read_only=True)
+    image_base64 = Base64ImageField(write_only=True, max_length=None, use_url=True, allow_null=True)
 
     class Meta:
         model = Petition
@@ -26,8 +28,8 @@ class PetitionSerializer(serializers.ModelSerializer):
             'supporters',
             'recent_supporters',
             'is_supported',
-            'start_time',
-            'end_time',
+            'created_at',
+            'image_base64',
         ]
 
     def get_image(self, obj):
@@ -57,3 +59,9 @@ class PetitionSerializer(serializers.ModelSerializer):
     def get_is_supported(self, instance: Petition):
         is_supported = instance.supporters.contains(self.context['scope']['user'])
         return is_supported
+
+    def create(self, validated_data):
+        validated_data['author'] = self.context['scope']['user']
+        if 'image_base64' in validated_data:
+            validated_data['image'] = validated_data.pop('image_base64')
+        return super().create(validated_data)

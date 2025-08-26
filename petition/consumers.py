@@ -1,16 +1,16 @@
 from channels.db import database_sync_to_async
 from django.db.models import QuerySet, Q
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
-from djangochannelsrestframework.mixins import ListModelMixin
+from djangochannelsrestframework.mixins import ListModelMixin, CreateModelMixin
 from djangochannelsrestframework.observer import model_observer
-from djangochannelsrestframework.observer.generics import ObserverModelInstanceMixin, action
+from djangochannelsrestframework.observer.generics import action
 
 from chat.utils.list_paginator import list_paginator
 from petition.models import Petition
 from petition.serializers import PetitionSerializer
 
 
-class PetitionConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncAPIConsumer):
+class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
     serializer_class = PetitionSerializer
     queryset = Petition.objects.all()
     lookup_field = "pk"
@@ -67,6 +67,12 @@ class PetitionConsumer(ListModelMixin, ObserverModelInstanceMixin, GenericAsyncA
         if search_term:
             return queryset.filter(Q(title__icontains=search_term) | Q(description__icontains=search_term)).distinct()
         return queryset
+
+    @action()
+    async def create(self, data: dict, request_id: str, **kwargs):
+        response, status = await super().create(data, **kwargs)
+        await self.petition_activity.subscribe(pk=response["id"], request_id=request_id)
+        return response, status
 
     @action()
     async def list(self, request_id, last_petition: int = None, page_size=page_size, **kwargs):
