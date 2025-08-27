@@ -3,6 +3,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from ballot.models import Ballot
+from petition.models import Petition
 from posts.models import Post
 from survey.models import Survey
 
@@ -35,6 +36,7 @@ class Message(BaseModel):
     post = models.ForeignKey(Post, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
     ballot = models.ForeignKey(Ballot, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
     survey = models.ForeignKey(Survey, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
+    petition = models.ForeignKey(Petition, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
     is_read = models.BooleanField(_('read'), default=False)
     is_edited = models.BooleanField(_('edited'), default=False)
     is_deleted = models.BooleanField(_('deleted'), default=False)

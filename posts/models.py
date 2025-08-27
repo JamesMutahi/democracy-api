@@ -4,6 +4,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from ballot.models import Ballot
+from petition.models import Petition
 from survey.models import Survey
 
 User = get_user_model()
@@ -42,6 +43,7 @@ class Post(BaseModel):
                                   related_name='reposts')
     ballot = models.ForeignKey(Ballot, on_delete=models.SET_NULL, null=True, blank=True)
     survey = models.ForeignKey(Survey, on_delete=models.SET_NULL, null=True, blank=True)
+    petition = models.ForeignKey(Petition, on_delete=models.SET_NULL, null=True, blank=True)
     likes = models.ManyToManyField(User, blank=True, related_name='liked_posts')
     bookmarks = models.ManyToManyField(User, blank=True, related_name='bookmarked_posts')
     views = models.ManyToManyField(User, blank=True, related_name='viewed_posts')

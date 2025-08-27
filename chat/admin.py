@@ -6,7 +6,8 @@ from chat.models import Message, Chat
 class MessageInline(admin.TabularInline):
     model = Message
     fieldsets = [
-        (None, {'fields': ['id', 'user', 'text', 'post', 'ballot', 'survey','is_read', 'is_edited', 'is_deleted', 'created_at']}),
+        (None, {'fields': ['id', 'user', 'text', 'post', 'ballot', 'survey', 'petition', 'is_read', 'is_edited',
+                           'is_deleted', 'created_at']}),
     ]
     extra = 0
     classes = ('grp-collapse grp-open',)
@@ -18,5 +19,4 @@ class ChatAdmin(admin.ModelAdmin):
     list_display = ['id', 'created_at']
     inlines = [MessageInline]
     filter_horizontal = ['users']
-    readonly_fields = ['created_at',]
-
+    readonly_fields = ['created_at', ]

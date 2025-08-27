@@ -2,9 +2,11 @@ from django.contrib.auth import get_user_model
 from django.db.models.signals import post_save
 from rest_framework import serializers
 
-from chat.models import Message, Chat
 from ballot.models import Ballot
 from ballot.serializers import BallotSerializer
+from chat.models import Message, Chat
+from petition.models import Petition
+from petition.serializers import PetitionSerializer
 from posts.models import Post
 from posts.serializers import PostSerializer
 from survey.models import Survey
@@ -19,9 +21,11 @@ class MessageSerializer(serializers.ModelSerializer):
     post = PostSerializer(read_only=True)
     ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
+    petition = PetitionSerializer(read_only=True)
     post_id = serializers.IntegerField(write_only=True, allow_null=True)
     ballot_id = serializers.IntegerField(write_only=True, allow_null=True)
     survey_id = serializers.IntegerField(write_only=True, allow_null=True)
+    petition_id = serializers.IntegerField(write_only=True, allow_null=True)
 
     class Meta:
         model = Message
@@ -33,9 +37,11 @@ class MessageSerializer(serializers.ModelSerializer):
             'post',
             'ballot',
             'survey',
+            'petition',
             'post_id',
             'ballot_id',
             'survey_id',
+            'petition_id',
             'is_read',
             'is_edited',
             'is_deleted',
@@ -56,6 +62,8 @@ class MessageSerializer(serializers.ModelSerializer):
             validated_data['ballot'] = Ballot.objects.get(id=validated_data['ballot_id'])
         if validated_data['survey_id'] is not None:
             validated_data['survey'] = Survey.objects.get(id=validated_data['survey_id'])
+        if validated_data['petition_id'] is not None:
+            validated_data['petition'] = Petition.objects.get(id=validated_data['petition_id'])
         message = super().create(validated_data)
         post_save.send(sender=Chat, instance=message.chat, created=False)
         return message

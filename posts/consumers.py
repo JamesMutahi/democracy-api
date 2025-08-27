@@ -222,10 +222,11 @@ class PostConsumer(
         return post
 
     @staticmethod
-    def mark_deleted(post):
+    def mark_deleted(post: Post):
         post.body = ''
         post.ballot = None
         post.survey = None
+        post.petition = None
         post.image1 = None
         post.image2 = None
         post.image3 = None

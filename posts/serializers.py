@@ -4,6 +4,8 @@ from rest_framework import serializers
 
 from ballot.models import Ballot
 from ballot.serializers import BallotSerializer
+from petition.models import Petition
+from petition.serializers import PetitionSerializer
 from posts.models import Post, Report
 from survey.models import Survey
 from survey.serializers import SurveySerializer
@@ -23,11 +25,13 @@ class PostSerializer(serializers.ModelSerializer):
     views = serializers.SerializerMethodField(read_only=True)
     ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
+    petition = PetitionSerializer(read_only=True)
     tagged_users = UserSerializer(read_only=True, many=True)
     reply_to_id = serializers.IntegerField(write_only=True, allow_null=True)
     repost_of_id = serializers.IntegerField(write_only=True, allow_null=True)
     ballot_id = serializers.IntegerField(write_only=True, allow_null=True)
     survey_id = serializers.IntegerField(write_only=True, allow_null=True)
+    petition_id = serializers.IntegerField(write_only=True, allow_null=True)
     tagged_user_ids = serializers.ListField(write_only=True, allow_empty=True)
 
     class Meta:
@@ -63,10 +67,12 @@ class PostSerializer(serializers.ModelSerializer):
             'repost_of',
             'ballot',
             'survey',
+            'petition',
             'reply_to_id',
             'repost_of_id',
             'ballot_id',
             'survey_id',
+            'petition_id',
         )
 
     def get_fields(self):
@@ -118,6 +124,8 @@ class PostSerializer(serializers.ModelSerializer):
             validated_data['ballot'] = Ballot.objects.get(id=validated_data['ballot_id'])
         if validated_data['survey_id']:
             validated_data['survey'] = Survey.objects.get(id=validated_data['survey_id'])
+        if validated_data['petition_id']:
+            validated_data['petition'] = Petition.objects.get(id=validated_data['petition_id'])
         tagged_user_ids = validated_data.pop('tagged_user_ids')
         validated_data['tagged_users'] = []
         for tagged_user_id in tagged_user_ids:
