@@ -4,9 +4,9 @@ from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.observer import model_observer
 
-from chat.utils.list_paginator import list_paginator
 from ballot.models import Ballot, Option, Reason
 from ballot.serializers import BallotSerializer
+from chat.utils.list_paginator import list_paginator
 
 
 class BallotConsumer(GenericAsyncAPIConsumer):
@@ -21,6 +21,11 @@ class BallotConsumer(GenericAsyncAPIConsumer):
         else:
             await self.close()
 
+    async def accept(self, **kwargs):
+        await super().accept(**kwargs)
+        await self.ballot_activity.subscribe()
+        await self.option_activity.subscribe()
+
     @model_observer(Ballot)
     async def ballot_activity(self, message, observer=None, action=None, **kwargs):
         instance = message.pop('data')
@@ -32,15 +37,6 @@ class BallotConsumer(GenericAsyncAPIConsumer):
     def get_ballot_serializer_data(self, ballot: Ballot):
         serializer = BallotSerializer(instance=ballot, context={'scope': self.scope})
         return serializer.data
-
-    @ballot_activity.groups_for_signal
-    def ballot_activity(self, instance: Ballot, **kwargs):
-        yield f'ballot__{instance.pk}'
-
-    @ballot_activity.groups_for_consumer
-    def ballot_activity(self, pk=None, **kwargs):
-        if pk is not None:
-            yield f'ballot__{pk}'
 
     @ballot_activity.serializer
     def ballot_activity(self, instance: Ballot, action, **kwargs):
@@ -58,15 +54,6 @@ class BallotConsumer(GenericAsyncAPIConsumer):
         message['data'] = await self.get_ballot_serializer_data(ballot=instance)
         await self.send_json(message)
 
-    @option_activity.groups_for_signal
-    def option_activity(self, instance: Option, **kwargs):
-        yield f'ballot__{instance.ballot.id}'
-
-    @option_activity.groups_for_consumer
-    def option_activity(self, ballot=None, **kwargs):
-        if ballot is not None:
-            yield f'ballot__{ballot}'
-
     @option_activity.serializer
     def option_activity(self, instance: Option, action, **kwargs):
         return dict(
@@ -80,11 +67,6 @@ class BallotConsumer(GenericAsyncAPIConsumer):
     async def disconnect(self, code):
         await self.unsubscribe()
         await super().disconnect(code)
-
-    @action()
-    async def subscribe(self, pk, request_id, **kwargs):
-        await self.ballot_activity.subscribe(pk=pk, request_id=request_id)
-        await self.option_activity.subscribe(ballot=pk, request_id=request_id)
 
     async def unsubscribe(self):
         await self.ballot_activity.unsubscribe()
@@ -102,9 +84,6 @@ class BallotConsumer(GenericAsyncAPIConsumer):
         if not last_ballot:
             await self.unsubscribe()
         data = await self.list_(page_size=page_size, last_ballot=last_ballot, **kwargs)
-        for ballot in data['results']:
-            pk = ballot["id"]
-            await self.subscribe(pk=pk, request_id=request_id)
         await self.reply(action='list', data=data, request_id=request_id)
 
     @database_sync_to_async
@@ -151,9 +130,3 @@ class BallotConsumer(GenericAsyncAPIConsumer):
         else:
             Reason.objects.create(ballot=ballot, user=user, text=text)
             return BallotSerializer(ballot, context={'scope': self.scope}).data
-
-    @action()
-    async def resubscribe(self, pks: list, request_id: str, **kwargs):
-        for pk in pks:
-            await self.subscribe(pk=pk, request_id=request_id)
-        return {}, 200

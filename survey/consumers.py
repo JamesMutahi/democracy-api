@@ -22,6 +22,12 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         else:
             await self.close()
 
+    async def accept(self, **kwargs):
+        await super().accept(**kwargs)
+        await self.survey_activity.subscribe()
+        await self.question_activity.subscribe()
+        await self.choice_activity.subscribe()
+
     @model_observer(Survey)
     async def survey_activity(self, message, observer=None, action=None, **kwargs):
         instance = message.pop('data')
@@ -33,15 +39,6 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     def get_survey_serializer_data(self, survey: Survey):
         serializer = SurveySerializer(instance=survey, context={'scope': self.scope})
         return serializer.data
-
-    @survey_activity.groups_for_signal
-    def survey_activity(self, instance: Survey, **kwargs):
-        yield f'survey__{instance.pk}'
-
-    @survey_activity.groups_for_consumer
-    def survey_activity(self, pk=None, **kwargs):
-        if pk is not None:
-            yield f'survey__{pk}'
 
     @survey_activity.serializer
     def survey_activity(self, instance: Survey, action, **kwargs):
@@ -60,15 +57,6 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         message['data'] = await self.get_survey_serializer_data(survey=instance)
         await self.send_json(message)
 
-    @question_activity.groups_for_signal
-    def question_activity(self, instance: Question, **kwargs):
-        yield f'survey__{instance.survey.id}'
-
-    @question_activity.groups_for_consumer
-    def question_activity(self, survey=None, **kwargs):
-        if survey is not None:
-            yield f'survey__{survey}'
-
     @question_activity.serializer
     def question_activity(self, instance: Question, action, **kwargs):
         return dict(
@@ -86,15 +74,6 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         message['data'] = await self.get_survey_serializer_data(survey=instance)
         await self.send_json(message)
 
-    @choice_activity.groups_for_signal
-    def choice_activity(self, instance: Choice, **kwargs):
-        yield f'survey__{instance.question.survey.id}'
-
-    @choice_activity.groups_for_consumer
-    def choice_activity(self, survey=None, **kwargs):
-        if survey is not None:
-            yield f'survey__{survey}'
-
     @choice_activity.serializer
     def choice_activity(self, instance: Choice, action, **kwargs):
         return dict(
@@ -109,12 +88,6 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     async def disconnect(self, code):
         await self.unsubscribe()
         await super().disconnect(code)
-
-    @action()
-    async def subscribe(self, pk, request_id, **kwargs):
-        await self.survey_activity.subscribe(pk=pk, request_id=request_id)
-        await self.question_activity.subscribe(survey=pk, request_id=request_id)
-        await self.choice_activity.subscribe(survey=pk, request_id=request_id)
 
     async def unsubscribe(self):
         await self.survey_activity.unsubscribe()
@@ -133,9 +106,6 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         if not last_survey:
             await self.unsubscribe()
         data = await self.list_(page_size=page_size, last_survey=last_survey, **kwargs)
-        for survey in data['results']:
-            pk = survey["id"]
-            await self.subscribe(pk=pk, request_id=request_id)
         await self.reply(action='list', data=data, request_id=request_id)
 
     @database_sync_to_async
@@ -160,9 +130,3 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         serializer.save()
         survey = Survey.objects.get(pk=data['survey'])
         return SurveySerializer(survey, context={'scope': self.scope}).data
-
-    @action()
-    async def resubscribe(self, pks: list, request_id: str, **kwargs):
-        for pk in pks:
-            await self.subscribe(pk=pk, request_id=request_id)
-        return {}, 200
