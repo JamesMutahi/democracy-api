@@ -53,6 +53,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
             pk=instance.pk,
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
         )
+
     async def disconnect(self, code):
         await self.petition_activity.unsubscribe()
         await super().disconnect(code)
@@ -63,9 +64,15 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
-        search_term = kwargs.get('search_term', None)
-        if search_term:
-            return queryset.filter(Q(title__icontains=search_term) | Q(description__icontains=search_term)).distinct()
+        if kwargs.get('action') == 'list':
+            search_term = kwargs.get('search_term', None)
+            if search_term:
+                return queryset.filter(
+                    Q(title__icontains=search_term) | Q(description__icontains=search_term)).distinct()
+        if kwargs.get('action') == 'user_petitions':
+            return queryset.filter(author=kwargs.get('user'))
+        if kwargs.get('action') == 'delete' or kwargs.get('action') == 'patch':
+            return queryset.filter(author=self.scope['user'])
         return queryset
 
     @action()
@@ -78,15 +85,15 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
     async def list(self, request_id, last_petition: int = None, page_size=page_size, **kwargs):
         if not last_petition:
             await self.petition_activity.unsubscribe()
-        data = await self.list_(page_size=page_size, last_petition=last_petition, **kwargs)
+        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        data = await self.list_(queryset=queryset, page_size=page_size, last_petition=last_petition, **kwargs)
         for petition in data['results']:
             pk = petition["id"]
             await self.subscribe(pk=pk, request_id=request_id)
         await self.reply(action='list', data=data, request_id=request_id)
 
     @database_sync_to_async
-    def list_(self, page_size, last_petition: int = None, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+    def list_(self, queryset, page_size, last_petition: int = None, **kwargs):
         if last_petition:
             petition = Petition.objects.get(pk=last_petition)
             queryset = queryset.filter(start_time__lt=petition.start_time)
@@ -112,7 +119,28 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
         return {'message': message}
 
     @action()
+    async def user_petitions(self, request_id, last_petition: int = None, page_size=page_size, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        data = await self.list_(queryset=queryset, page_size=page_size, last_petition=last_petition, **kwargs)
+        for petition in data['results']:
+            pk = petition["id"]
+            await self.subscribe(pk=pk, request_id=request_id)
+        await self.reply(action='user_petitions', data=data, request_id=f'user_{request_id}')
+
+    @action()
+    async def unsubscribe_user_petitions(self, pks: list, request_id: str, **kwargs):
+        for pk in pks:
+            await self.petition_activity.unsubscribe(pk=pk, request_id=f'user_{request_id}')
+        return {}, 200
+
+    @action()
     async def resubscribe(self, pks: list, request_id: str, **kwargs):
         for pk in pks:
             await self.subscribe(pk=pk, request_id=request_id)
+        return {}, 200
+
+    @action()
+    async def resubscribe_user_petitions(self, pks: list, request_id: str, **kwargs):
+        for pk in pks:
+            await self.petition_activity.subscribe(pk=pk, request_id=f'user_{request_id}')
         return {}, 200
