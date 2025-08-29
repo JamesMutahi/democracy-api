@@ -141,6 +141,16 @@ class PostConsumer(
             return queryset
         if kwargs.get('action') == 'delete' or kwargs.get('action') == 'patch':
             return queryset.filter(is_deleted=False, author=self.scope['user']).order_by('-published_at')
+        if kwargs.get('action') == 'bookmarks':
+            return self.scope["user"].bookmarked_posts.all()
+        if kwargs.get('action') == 'user_posts':
+            return queryset.filter(author=kwargs['user'], reply_to=None, status='published')
+        if kwargs.get('action') == 'liked_posts':
+            return queryset.filter(likes__id=kwargs['user'])
+        if kwargs.get('action') == 'user_replies':
+            return queryset.filter(author=kwargs['user']).exclude(reply_to=None)
+        if kwargs.get('action') == 'drafts':
+            return queryset.filter(author=self.scope['user'], status='draft')
         return queryset.filter(is_deleted=False).order_by('-published_at')
 
     @action()
@@ -308,51 +318,35 @@ class PostConsumer(
 
     @action()
     async def bookmarks(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
-        posts = await self.bookmarks_()
+        posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
-    @database_sync_to_async
-    def bookmarks_(self, **kwargs):
-        return self.scope["user"].bookmarked_posts.all()
-
     @action()
-    async def liked_posts(self, user: int, request_id, last_post: int = None, page_size=page_size, **kwargs):
-        posts = await self.liked_posts_(user)
+    async def liked_posts(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
+        posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
-    @database_sync_to_async
-    def liked_posts_(self, user: int, **kwargs):
-        return User.objects.get(pk=user).liked_posts.all()
-
     @action()
-    async def user_posts(self, user: int, request_id: str, last_post: int = None, page_size=page_size, **kwargs):
-        posts = await self.user_posts_(user)
+    async def user_posts(self, request_id: str, last_post: int = None, page_size=page_size, **kwargs):
+        posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
-    @database_sync_to_async
-    def user_posts_(self, user: int, **kwargs):
-        return Post.objects.filter(author=user).filter(reply_to=None, status='published')
-
     @action()
-    async def user_replies(self, user: int, request_id: str, last_post: int = None, page_size=page_size, **kwargs):
-        posts = await self.user_replies_(user)
+    async def user_replies(self, request_id: str, last_post: int = None, page_size=page_size, **kwargs):
+        posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
-    @database_sync_to_async
-    def user_replies_(self, user: int, **kwargs):
-        return Post.objects.filter(author=user).exclude(reply_to=None)
-
     @action()
-    async def draft_posts(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
-        posts = await database_sync_to_async(Post.objects.filter)(author=self.scope['user'], status='draft')
+    async def drafts(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
+        posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
