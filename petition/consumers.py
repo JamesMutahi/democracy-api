@@ -1,5 +1,6 @@
 from channels.db import database_sync_to_async
 from django.db.models import QuerySet, Q
+from django.template.context_processors import request
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import ListModelMixin, CreateModelMixin
 from djangochannelsrestframework.observer import model_observer
@@ -124,8 +125,8 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
         data = await self.list_(queryset=queryset, page_size=page_size, last_petition=last_petition, **kwargs)
         for petition in data['results']:
             pk = petition["id"]
-            await self.subscribe(pk=pk, request_id=request_id)
-        await self.reply(action='user_petitions', data=data, request_id=f'user_{request_id}')
+            await self.subscribe(pk=pk, request_id=f'user_{request_id}')
+        return data, 200
 
     @action()
     async def unsubscribe_user_petitions(self, pks: list, request_id: str, **kwargs):

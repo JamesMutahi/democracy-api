@@ -5,6 +5,7 @@ from django.dispatch import receiver
 from chat.models import Message
 from notification.models import Notification, Preferences
 from ballot.models import Ballot
+from petition.models import Petition
 from posts.models import Post
 from survey.models import Survey
 
@@ -36,6 +37,13 @@ def create_notification(sender, instance, created, **kwargs):
                     text='New survey',
                     survey=instance,
                 )
+        if sender == Petition:
+            for user in instance.author.followers_notified.all():
+                Notification.objects.create(
+                    user=user,
+                    text=f'New petition from {instance.author}',
+                    petition=instance,
+                )
         if sender == Message:
             users = instance.chat.users.exclude(id=instance.user.id)
             for user in users:
@@ -49,7 +57,7 @@ def create_notification(sender, instance, created, **kwargs):
             for user in instance.author.followers_notified.all():
                 Notification.objects.create(
                     user=user,
-                    text=f'{instance.author} just posted',
+                    text=f'New post from {instance.author}',
                     post=instance,
                 )
             if instance.repost_of:

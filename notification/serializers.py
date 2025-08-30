@@ -1,8 +1,9 @@
 from rest_framework import serializers
 
+from ballot.serializers import BallotSerializer
 from chat.serializers import ChatSerializer, MessageSerializer
 from notification.models import Notification, Preferences
-from ballot.serializers import BallotSerializer
+from petition.serializers import PetitionSerializer
 from posts.serializers import PostSerializer
 from survey.serializers import SurveySerializer
 
@@ -11,6 +12,7 @@ class NotificationSerializer(serializers.ModelSerializer):
     post = PostSerializer(read_only=True)
     ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
+    petition = PetitionSerializer(read_only=True)
     chat = ChatSerializer(read_only=True)
     message = MessageSerializer(read_only=True)
 
@@ -23,6 +25,7 @@ class NotificationSerializer(serializers.ModelSerializer):
             'post',
             'ballot',
             'survey',
+            'petition',
             'chat',
             'message',
             'created_at',
