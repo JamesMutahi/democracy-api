@@ -16,17 +16,18 @@ class BaseModel(models.Model):
 
 
 class Survey(BaseModel):
-    name = models.CharField(max_length=255)
+    title = models.CharField(max_length=255)
     description = models.TextField(null=True, blank=True)
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
+    is_active = models.BooleanField(_('active'), default=True)
 
     class Meta:
         db_table = 'Survey'
         ordering = ['-start_time']
 
     def __str__(self):
-        return self.name
+        return self.title
 
     def clean(self):
         super().clean()

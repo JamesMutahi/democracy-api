@@ -25,7 +25,7 @@ class QuestionInline(GrappelliSortableHiddenMixin, admin.TabularInline):
 
 @admin.register(Survey)
 class SurveyAdmin(admin.ModelAdmin):
-    list_display = ['name', 'start_time', 'end_time']
+    list_display = ['title', 'start_time', 'end_time', 'is_active']
     inlines = [QuestionInline]
 
 

@@ -96,17 +96,20 @@ class ResponseSerializer(serializers.ModelSerializer):
 class SurveySerializer(serializers.ModelSerializer):
     questions = QuestionSerializer(many=True)
     response = serializers.SerializerMethodField(read_only=True)
+    total_responses = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Survey
         fields = [
             'id',
-            'name',
+            'title',
             'description',
             'start_time',
             'end_time',
+            'is_active',
             'questions',
             'response',
+            'total_responses',
         ]
 
     def get_response(self, instance: Survey):
@@ -114,3 +117,7 @@ class SurveySerializer(serializers.ModelSerializer):
         if response_qs.exists():
             return ResponseSerializer(response_qs.first(), context=self.context).data
         return None
+
+    @staticmethod
+    def get_total_responses(instance: Survey):
+        return instance.responses.count()

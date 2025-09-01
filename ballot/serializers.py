@@ -41,6 +41,7 @@ class BallotSerializer(serializers.ModelSerializer):
             'description',
             'start_time',
             'end_time',
+            'is_active',
             'total_votes',
             'voted_option',
             'options',

@@ -29,6 +29,7 @@ class PetitionSerializer(serializers.ModelSerializer):
             'recent_supporters',
             'is_supported',
             'created_at',
+            'is_active',
             'image_base64',
         ]
 

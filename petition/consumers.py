@@ -1,6 +1,5 @@
 from channels.db import database_sync_to_async
 from django.db.models import QuerySet, Q
-from django.template.context_processors import request
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import ListModelMixin, CreateModelMixin
 from djangochannelsrestframework.observer import model_observer
@@ -104,7 +103,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
 
     @action()
     async def support(self, pk: int, request_id: str, **kwargs):
-        petition = await database_sync_to_async(self.get_object)(pk=pk)
+        petition = await database_sync_to_async(self.get_object)(pk=pk, is_active=True)
         data = await self.support_(petition=petition)
         return data, 200
 

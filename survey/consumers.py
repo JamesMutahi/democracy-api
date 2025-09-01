@@ -98,7 +98,7 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
         search_term = kwargs.get('search_term', None)
         if search_term:
-            return queryset.filter(Q(name__icontains=search_term) | Q(description__icontains=search_term)).distinct()
+            return queryset.filter(Q(title__icontains=search_term) | Q(description__icontains=search_term)).distinct()
         return queryset
 
     @action()
@@ -120,6 +120,7 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
 
     @action()
     async def create_response(self, data: dict, request_id: str, **kwargs):
+        await database_sync_to_async(self.get_object)(pk=data['survey'], is_active=True)
         data = await self.create_response_(data=data)
         return await self.reply(data=data, action='create', request_id=request_id, status=201)
 

@@ -15,7 +15,7 @@ class ReasonInline(admin.TabularInline):
 class OptionInline(GrappelliSortableHiddenMixin, admin.TabularInline):
     model = Option
     fieldsets = [
-        (None, {'fields': ['number', 'text', 'votes']}),
+        (None, {'fields': ['number', 'text', 'votes', 'is_active']}),
     ]
     extra = 0
     filter_horizontal = ['votes']

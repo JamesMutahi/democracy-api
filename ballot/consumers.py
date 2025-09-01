@@ -97,16 +97,16 @@ class BallotConsumer(GenericAsyncAPIConsumer):
         return dict(results=serializer.data, last_ballot=last_ballot, has_next=page_obj.has_next())
 
     @action()
-    async def vote(self, option: int, **kwargs):
-        await self.vote_(pk=option)
+    async def vote(self, pk: int, **kwargs):
+        option: Option = await database_sync_to_async(Option.objects.get)(pk=pk, poll__is_active=True)
+        await self.vote_(option=option)
 
     @database_sync_to_async
-    def vote_(self, pk: int):
-        option = Option.objects.get(pk=pk)
+    def vote_(self, option):
         user = self.scope['user']
         for o in option.ballot.options.all():
             if o.votes.contains(user):
-                if o.id != pk:
+                if o.id != option.id:
                     o.votes.remove(user)
                     Reason.objects.filter(ballot=o.ballot, user=user).delete()
         option.votes.add(user)

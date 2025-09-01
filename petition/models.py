@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 User = get_user_model()
 
@@ -20,6 +21,7 @@ class Petition(BaseModel):
     image = models.ImageField(upload_to='petitions/images/')
     video = models.FileField(upload_to='petitions/videos/', null=True, blank=True)
     supporters = models.ManyToManyField(User, blank=True, related_name='supported_petitions')
+    is_active = models.BooleanField(_('active'), default=True)
 
     class Meta:
         db_table = 'Petition'
