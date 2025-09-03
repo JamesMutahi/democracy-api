@@ -1,30 +1,32 @@
 from django.contrib import admin
 from grappelli.forms import GrappelliSortableHiddenMixin
-from nested_admin import nested
+from nested_admin.nested import NestedModelAdmin, NestedTabularInline
 
 from survey.models import *
 
 
-class ChoiceInline(GrappelliSortableHiddenMixin, admin.TabularInline):
+class ChoiceInline(GrappelliSortableHiddenMixin, NestedTabularInline):
     model = Choice
     extra = 0
     sortable_field_name = 'number'
+    classes = ('grp-collapse grp-closed',)
 
 
 @admin.register(Question)
-class QuestionAdmin(nested.ModelAdmin):
+class QuestionAdmin(NestedModelAdmin):
     list_display = ['survey', 'page', 'number', 'text', 'is_required']
     inlines = [ChoiceInline]
 
 
-class QuestionInline(GrappelliSortableHiddenMixin, admin.TabularInline):
+class QuestionInline(GrappelliSortableHiddenMixin, NestedTabularInline):
     model = Question
     extra = 0
     sortable_field_name = 'number'
+    inlines = [ChoiceInline]
 
 
 @admin.register(Survey)
-class SurveyAdmin(admin.ModelAdmin):
+class SurveyAdmin(NestedModelAdmin):
     list_display = ['title', 'start_time', 'end_time', 'is_active']
     inlines = [QuestionInline]
 

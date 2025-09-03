@@ -98,7 +98,7 @@ class BallotConsumer(GenericAsyncAPIConsumer):
 
     @action()
     async def vote(self, pk: int, **kwargs):
-        option: Option = await database_sync_to_async(Option.objects.get)(pk=pk, poll__is_active=True)
+        option: Option = await database_sync_to_async(Option.objects.get)(pk=pk, ballot__is_active=True)
         await self.vote_(option=option)
 
     @database_sync_to_async

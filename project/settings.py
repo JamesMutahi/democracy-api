@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'petition.apps.PetitionConfig',
     'chat.apps.ChatConfig',
     'notification.apps.NotificationConfig',
+    'constitution.apps.ConstitutionConfig',
     'rest_framework',
     'rest_framework.authtoken',
     'corsheaders',

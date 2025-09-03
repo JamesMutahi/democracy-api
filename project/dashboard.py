@@ -22,7 +22,14 @@ class CustomIndexDashboard(Dashboard):
             column=1,
             collapsible=True,
             models=(
-            'posts.models.Post', 'petition.models.Petition', 'chat.models.Chat', 'notification.models.Notification',),
+                'posts.models.Post', 'petition.models.Petition', 'chat.models.Chat',
+                'notification.models.Notification',),
+        ))
+        self.children.append(modules.ModelList(
+            title=_('Constitution'),
+            column=1,
+            collapsible=True,
+            models=('constitution.models.Chapter', 'constitution.models.Article', 'constitution.models.Schedule'),
         ))
         # append a recent actions module
         self.children.append(modules.RecentActions(
