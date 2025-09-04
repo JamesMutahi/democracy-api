@@ -35,6 +35,18 @@ class Survey(BaseModel):
             raise ValidationError("End time cannot be before start time.")
 
 
+class Page(models.Model):
+    survey = models.ForeignKey(Survey, on_delete=models.CASCADE, related_name='pages')
+    number = models.IntegerField()
+
+    class Meta:
+        ordering = ['number']
+        db_table = 'Page'
+
+    def __str__(self):
+        return self.number
+
+
 class Question(models.Model):
     TYPES = {
         "Number": "Number",
@@ -42,9 +54,8 @@ class Question(models.Model):
         "Single Choice": "Single Choice",  # Requires choices
         "Multiple Choice": "Multiple Choice",  # Requires choices
     }
-    page = models.IntegerField()
+    page = models.ForeignKey(Page, on_delete=models.CASCADE, related_name='questions')
     number = models.IntegerField()
-    survey = models.ForeignKey(Survey, on_delete=models.CASCADE, related_name='questions', null=True, blank=True)
     type = models.CharField(max_length=255, choices=TYPES)
     text = models.TextField()
     hint = models.CharField(max_length=255, null=True, blank=True)
