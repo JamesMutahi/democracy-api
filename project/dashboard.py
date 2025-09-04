@@ -29,7 +29,7 @@ class CustomIndexDashboard(Dashboard):
             title=_('Constitution'),
             column=1,
             collapsible=True,
-            models=('constitution.models.Chapter', 'constitution.models.Article', 'constitution.models.Schedule'),
+            models=('constitution.models.Section',),
         ))
         # append a recent actions module
         self.children.append(modules.RecentActions(

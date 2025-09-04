@@ -1,50 +1,20 @@
+from django.contrib.auth import get_user_model
 from django.db import models
 
-
-class Chapter(models.Model):
-    title = models.CharField(max_length=255)
-
-    class Meta:
-        db_table = 'Chapter'
-        ordering = ['id']
-
-    def __str__(self):
-        return self.title
+User = get_user_model()
 
 
-class Part(models.Model):
-    chapter = models.ForeignKey(Chapter, on_delete=models.PROTECT, related_name='parts')
-    title = models.CharField(max_length=255)
+class Section(models.Model):
+    position = models.IntegerField()
+    tag = models.CharField(max_length=30, unique=True, null=True, blank=True)
+    text = models.TextField()
+    is_title = models.BooleanField()
+    parent = models.ForeignKey('self', on_delete=models.PROTECT, null=True, blank=True, related_name='subsections')
+    bookmarks = models.ManyToManyField(User, blank=True, related_name='constitution_bookmarks')
 
     class Meta:
-        db_table = 'Part'
-        ordering = ['id']
+        db_table = 'Section'
+        ordering = ['position']
 
     def __str__(self):
-        return f'{self.chapter} > {self.title}'
-
-
-class Article(models.Model):
-    chapter = models.ForeignKey(Chapter, on_delete=models.PROTECT, related_name='articles', null=True, blank=True)
-    part = models.ForeignKey(Part, on_delete=models.PROTECT, related_name='articles', null=True, blank=True)
-    title = models.CharField(max_length=255)
-    content = models.TextField(blank=True)
-
-    class Meta:
-        db_table = 'Article'
-        ordering = ['id']
-
-    def __str__(self):
-        return self.title
-
-
-class Schedule(models.Model):
-    title = models.CharField(max_length=255)
-    content = models.TextField(blank=True)
-
-    class Meta:
-        db_table = 'Schedule'
-        ordering = ['id']
-
-    def __str__(self):
-        return self.title
+        return self.text

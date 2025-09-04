@@ -1,34 +1,32 @@
 from django.contrib import admin
 from nested_admin.nested import NestedTabularInline, NestedModelAdmin
 
-from constitution.models import Chapter, Article, Schedule, Part
+from constitution.models import Section
 
-
-class ArticleInline(NestedTabularInline):
-    model = Article
+class SubsectionInline(NestedTabularInline):
+    model = Section
     extra = 0
-    fields = ['title', 'content']
+    sortable_field_name = 'position'
+    verbose_name = 'subsection'
     classes = ('grp-collapse grp-closed',)
+    fieldsets = ((None, {'fields': ('text', 'tag', 'is_title', 'position')}),)
 
 
-class PartInline(NestedTabularInline):
-    model = Part
+class SectionInline(NestedTabularInline):
+    model = Section
     extra = 0
-    inlines = [ArticleInline]
-    classes = ('grp-collapse grp-closed',)
+    sortable_field_name = 'position'
+    verbose_name = 'subsection'
+    classes = ('grp-collapse grp-open',)
+    fieldsets = ((None, {'fields': ('text', 'tag', 'is_title', 'position')}),)
+    inlines = [SubsectionInline]
 
 
-@admin.register(Chapter)
-class ChapterAdmin(NestedModelAdmin):
-    list_display = ['title', ]
-    inlines = [PartInline, ArticleInline]
+@admin.register(Section)
+class SectionAdmin(NestedModelAdmin):
+    list_display = ['text', 'is_title', 'parent']
+    inlines = [SectionInline]
 
-
-@admin.register(Article)
-class ArticleAdmin(admin.ModelAdmin):
-    list_display = ['id', 'title']
-
-
-@admin.register(Schedule)
-class ScheduleAdmin(admin.ModelAdmin):
-    list_display = ['title']
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.filter(parent=None)
