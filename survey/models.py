@@ -38,13 +38,14 @@ class Survey(BaseModel):
 class Page(models.Model):
     survey = models.ForeignKey(Survey, on_delete=models.CASCADE, related_name='pages')
     number = models.IntegerField()
+    title = models.CharField(max_length=255)
 
     class Meta:
         ordering = ['number']
         db_table = 'Page'
 
     def __str__(self):
-        return self.number
+        return str(self.number)
 
 
 class Question(models.Model):

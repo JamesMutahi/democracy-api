@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from survey.models import Survey, Question, Choice, Response, TextAnswer, ChoiceAnswer
+from survey.models import Survey, Question, Choice, Response, TextAnswer, ChoiceAnswer, Page
 
 
 class ChoiceSerializer(serializers.ModelSerializer):
@@ -21,7 +21,6 @@ class QuestionSerializer(serializers.ModelSerializer):
         model = Question
         fields = [
             'id',
-            'survey',
             'page',
             'number',
             'type',
@@ -30,6 +29,19 @@ class QuestionSerializer(serializers.ModelSerializer):
             'is_required',
             'choices',
             'dependency',
+        ]
+
+
+class PageSerializer(serializers.ModelSerializer):
+    questions = QuestionSerializer(many=True)
+
+    class Meta:
+        model = Page
+        fields = [
+            'id',
+            'survey',
+            'number',
+            'questions',
         ]
 
 
@@ -94,7 +106,7 @@ class ResponseSerializer(serializers.ModelSerializer):
 
 
 class SurveySerializer(serializers.ModelSerializer):
-    questions = QuestionSerializer(many=True)
+    pages = PageSerializer(many=True)
     response = serializers.SerializerMethodField(read_only=True)
     total_responses = serializers.SerializerMethodField(read_only=True)
 
@@ -107,7 +119,7 @@ class SurveySerializer(serializers.ModelSerializer):
             'start_time',
             'end_time',
             'is_active',
-            'questions',
+            'pages',
             'response',
             'total_responses',
         ]

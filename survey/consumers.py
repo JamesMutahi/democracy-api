@@ -61,7 +61,7 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     def question_activity(self, instance: Question, action, **kwargs):
         return dict(
             # data is overridden in model_observer
-            data=instance.survey,
+            data=instance.page.survey,
             action='update',
             request_id='surveys',
             pk=instance.pk,
@@ -78,7 +78,7 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     def choice_activity(self, instance: Choice, action, **kwargs):
         return dict(
             # data is overridden in model_observer
-            data=instance.question.survey,
+            data=instance.question.page.survey,
             action='update',
             request_id='surveys',
             pk=instance.pk,

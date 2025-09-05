@@ -7,7 +7,7 @@ from survey.models import *
 
 class ChoiceInline(GrappelliSortableHiddenMixin, NestedTabularInline):
     model = Choice
-    extra = 2
+    extra = 0
     sortable_field_name = 'number'
     classes = ('grp-collapse grp-closed',)
 
@@ -20,7 +20,7 @@ class QuestionAdmin(NestedModelAdmin):
 
 class QuestionInline(GrappelliSortableHiddenMixin, NestedTabularInline):
     model = Question
-    extra = 1
+    extra = 0
     sortable_field_name = 'number'
     inlines = [ChoiceInline]
     classes = ('grp-collapse grp-closed',)
@@ -28,9 +28,10 @@ class QuestionInline(GrappelliSortableHiddenMixin, NestedTabularInline):
 
 class PageInline(GrappelliSortableHiddenMixin, NestedTabularInline):
     model = Page
-    extra = 1
+    extra = 0
     sortable_field_name = 'number'
     inlines = [QuestionInline]
+    classes = ('grp-collapse grp-open',)
 
 
 @admin.register(Survey)
