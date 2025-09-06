@@ -27,6 +27,7 @@ from survey.consumers import SurveyConsumer
 from petition.consumers import PetitionConsumer
 from notification.consumers import NotificationConsumer
 from users.consumers import UserConsumer
+from constitution.consumers import ConstitutionConsumer
 
 application = ProtocolTypeRouter({
     # Django's ASGI application to handle traditional HTTP requests
@@ -44,6 +45,7 @@ application = ProtocolTypeRouter({
                     petitions=PetitionConsumer.as_asgi(),
                     notifications=NotificationConsumer.as_asgi(),
                     users=UserConsumer.as_asgi(),
+                    constitution=ConstitutionConsumer.as_asgi(),
                 )),
             ]), )
         ),
