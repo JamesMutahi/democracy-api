@@ -1,5 +1,6 @@
 from channels.db import database_sync_to_async
-from django.db.models import QuerySet
+from django.db.models import QuerySet, Q
+from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import ListModelMixin
 from djangochannelsrestframework.observer import model_observer
@@ -55,4 +56,31 @@ class ConstitutionConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
         if kwargs.get('action') == 'list':
             return queryset.filter(parent=None)
+        if kwargs.get('action') == 'tags':
+            search_term = kwargs.get('search_term', None)
+            if search_term:
+                return queryset.filter(Q(tag__icontains=search_term) | Q(text__icontains=search_term)).exclude(tag=None)
+            return queryset.exclude(tag=None)
         return queryset
+
+    @action()
+    def tags(self, **kwargs):
+        sections = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        data = SectionSerializer(sections, many=True, context={'scope': self.scope}).data
+        return data, 200
+
+    @action()
+    async def bookmark(self, **kwargs):
+        message = await self.bookmark_section(pk=kwargs['pk'], user=self.scope["user"])
+        return message, 200
+
+    @database_sync_to_async
+    def bookmark_section(self, pk, user):
+        section = Section.objects.get(pk=pk)
+        if section.bookmarks.filter(pk=user.pk).exists():
+            section.bookmarks.remove(user)
+            message = 'Bookmark removed'
+        else:
+            section.bookmarks.add(user)
+            message = 'Bookmark added'
+        return {'message': message}

@@ -14,7 +14,7 @@ class Section(models.Model):
 
     class Meta:
         db_table = 'Section'
-        ordering = ['position']
+        ordering = ['id', 'parent__position', 'position']
 
     def __str__(self):
         return self.text

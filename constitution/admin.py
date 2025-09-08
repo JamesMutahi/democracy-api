@@ -55,7 +55,7 @@ class Level1Inline(NestedTabularInline):
 
 @admin.register(Section)
 class SectionAdmin(NestedModelAdmin):
-    list_display = ['text', 'is_title', 'parent']
+    list_display = ['position', 'text', 'is_title', 'parent']
     inlines = [Level1Inline]
 
     def get_queryset(self, request):

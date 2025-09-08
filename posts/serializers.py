@@ -4,6 +4,8 @@ from rest_framework import serializers
 
 from ballot.models import Ballot
 from ballot.serializers import BallotSerializer
+from constitution.models import Section
+from constitution.serializers import SectionSerializer
 from petition.models import Petition
 from petition.serializers import PetitionSerializer
 from posts.models import Post, Report
@@ -27,12 +29,13 @@ class PostSerializer(serializers.ModelSerializer):
     survey = SurveySerializer(read_only=True)
     petition = PetitionSerializer(read_only=True)
     tagged_users = UserSerializer(read_only=True, many=True)
+    tagged_sections = SectionSerializer(read_only=True, many=True)
     reply_to_id = serializers.IntegerField(write_only=True, allow_null=True)
     repost_of_id = serializers.IntegerField(write_only=True, allow_null=True)
     ballot_id = serializers.IntegerField(write_only=True, allow_null=True)
     survey_id = serializers.IntegerField(write_only=True, allow_null=True)
     petition_id = serializers.IntegerField(write_only=True, allow_null=True)
-    tagged_user_ids = serializers.ListField(write_only=True, allow_empty=True)
+    tags = serializers.ListField(write_only=True, allow_empty=True) # Holds both @ and # tags
 
     class Meta:
         model = Post
@@ -59,7 +62,8 @@ class PostSerializer(serializers.ModelSerializer):
             'bookmarks',
             'is_bookmarked',
             'tagged_users',
-            'tagged_user_ids',
+            'tagged_sections',
+            'tags',
             'views',
             'replies',
             'reposts',
@@ -126,11 +130,17 @@ class PostSerializer(serializers.ModelSerializer):
             validated_data['survey'] = Survey.objects.get(id=validated_data['survey_id'])
         if validated_data['petition_id']:
             validated_data['petition'] = Petition.objects.get(id=validated_data['petition_id'])
-        tagged_user_ids = validated_data.pop('tagged_user_ids')
+        tags = validated_data.pop('tags')
         validated_data['tagged_users'] = []
-        for tagged_user_id in tagged_user_ids:
-            user = User.objects.get(id=tagged_user_id)
-            validated_data['tagged_users'].append(user)
+        validated_data['tagged_sections'] = []
+        for tag in tags:
+            user_qs = User.objects.filter(id=tag['id'], username=tag['text'])
+            if user_qs.exists():
+                validated_data['tagged_users'].append(user_qs.first())
+            else:
+                section_qs = Section.objects.filter(id=tag['id'], text=tag['text'])
+                if section_qs.exists():
+                    validated_data['tagged_sections'].append(section_qs.first())
         post = super().create(validated_data)
         if post.reply_to:
             post_save.send(sender=Post, instance=post.reply_to, created=False)
