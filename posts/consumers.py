@@ -82,8 +82,11 @@ class PostConsumer(
     def get_post_serializer_data(self, message):
         message['data']['is_liked'] = self.scope['user'].id in message['data']['likes']
         message['data']['is_bookmarked'] = self.scope['user'].id in message['data']['bookmarks']
+        message['data']['is_reposted'] = self.scope['user'].id in message['data']['reposts']
+        message['data']['is_quoted'] = self.scope['user'].id in message['data']['quotes']
         message['data']['likes'] = len(message['data']['likes'])
         message['data']['bookmarks'] = len(message['data']['bookmarks'])
+        message['data']['reposts'] = len(message['data']['reposts']) + len(message['data']['quotes'])
         return message
 
     @post_activity.groups_for_signal
@@ -101,8 +104,9 @@ class PostConsumer(
         if action.value != 'delete':
             data = dict(body=instance.body, likes=instance.likes.values_list('id', flat=True),
                         bookmarks=instance.bookmarks.values_list('id', flat=True), replies=instance.replies.count(),
-                        reposts=instance.reposts.count(), views=instance.views.count(), is_edited=instance.is_edited,
-                        is_deleted=instance.is_deleted, is_active=instance.is_active)
+                        reposts=list(instance.reposts.filter(body='').values_list('author', flat=True)),
+                        quotes=list(instance.reposts.exclude(body='').values_list('author', flat=True)),
+                        views=instance.views.count(), is_deleted=instance.is_deleted, is_active=instance.is_active)
         return dict(
             data=data,
             action=action.value,
@@ -230,6 +234,12 @@ class PostConsumer(
             if post.repost_of:
                 post_save.send(sender=Post, instance=post.repost_of, created=False)
         return post
+
+    @action()
+    async def delete_repost(self, pk: int, request_id: str, **kwargs):
+        post = await database_sync_to_async(self.get_object)(pk=pk)
+        repost = await database_sync_to_async(Post.objects.get)(repost_of=post.pk, author=self.scope["user"], body='')
+        await self.delete_(post=repost)
 
     @staticmethod
     def mark_deleted(post: Post):

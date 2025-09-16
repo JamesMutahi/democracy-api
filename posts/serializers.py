@@ -24,6 +24,8 @@ class PostSerializer(serializers.ModelSerializer):
     is_bookmarked = serializers.SerializerMethodField(read_only=True)
     replies = serializers.SerializerMethodField(read_only=True)
     reposts = serializers.SerializerMethodField(read_only=True)
+    is_reposted = serializers.SerializerMethodField(read_only=True)
+    is_quoted = serializers.SerializerMethodField(read_only=True)
     views = serializers.SerializerMethodField(read_only=True)
     ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
@@ -54,7 +56,6 @@ class PostSerializer(serializers.ModelSerializer):
             'video1',
             'video2',
             'video3',
-            'is_edited',
             'is_deleted',
             'is_active',
             'likes',
@@ -67,6 +68,8 @@ class PostSerializer(serializers.ModelSerializer):
             'views',
             'replies',
             'reposts',
+            'is_reposted',
+            'is_quoted',
             'reply_to',
             'repost_of',
             'ballot',
@@ -113,6 +116,14 @@ class PostSerializer(serializers.ModelSerializer):
         count = obj.reposts.count()
         return count
 
+    def get_is_reposted(self, obj):
+        is_reposted = obj.reposts.filter(author=self.context['scope']['user'], body='').exists()
+        return is_reposted
+
+    def get_is_quoted(self, obj):
+        is_quoted = obj.reposts.filter(author=self.context['scope']['user']).exclude(body='').exists()
+        return is_quoted
+
     @staticmethod
     def get_views(obj):
         count = obj.views.count()
@@ -123,7 +134,11 @@ class PostSerializer(serializers.ModelSerializer):
         if validated_data['reply_to_id']:
             validated_data['reply_to'] = Post.objects.get(id=validated_data['reply_to_id'])
         if validated_data['repost_of_id']:
-            validated_data['repost_of'] = Post.objects.get(id=validated_data['repost_of_id'])
+            repost_of = Post.objects.get(id=validated_data['repost_of_id'])
+            # User can only have one repost of a post without body
+            if validated_data['body'] == '':
+                repost_of.reposts.filter(author=self.context['scope']['user'], body='').delete()
+            validated_data['repost_of'] = repost_of
         if validated_data['ballot_id']:
             validated_data['ballot'] = Ballot.objects.get(id=validated_data['ballot_id'])
         if validated_data['survey_id']:
