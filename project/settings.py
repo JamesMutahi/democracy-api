@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'chat.apps.ChatConfig',
     'notification.apps.NotificationConfig',
     'constitution.apps.ConstitutionConfig',
+    'live.apps.LiveConfig',
     'rest_framework',
     'rest_framework.authtoken',
     'corsheaders',

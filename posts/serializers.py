@@ -37,7 +37,7 @@ class PostSerializer(serializers.ModelSerializer):
     ballot_id = serializers.IntegerField(write_only=True, allow_null=True)
     survey_id = serializers.IntegerField(write_only=True, allow_null=True)
     petition_id = serializers.IntegerField(write_only=True, allow_null=True)
-    tags = serializers.ListField(write_only=True, allow_empty=True) # Holds both @ and # tags
+    tags = serializers.ListField(write_only=True, allow_empty=True)  # Holds both @ and # tags
 
     class Meta:
         model = Post
@@ -137,7 +137,8 @@ class PostSerializer(serializers.ModelSerializer):
             repost_of = Post.objects.get(id=validated_data['repost_of_id'])
             # User can only have one repost of a post without body
             if validated_data['body'] == '':
-                repost_of.reposts.filter(author=self.context['scope']['user'], body='').delete()
+                repost_of.reposts.filter(author=self.context['scope']['user'], body='', image1=None,
+                                         video1=None, ballot=None, survey=None, petition=None).delete()
             validated_data['repost_of'] = repost_of
         if validated_data['ballot_id']:
             validated_data['ballot'] = Ballot.objects.get(id=validated_data['ballot_id'])
