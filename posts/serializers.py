@@ -137,8 +137,8 @@ class PostSerializer(serializers.ModelSerializer):
             repost_of = Post.objects.get(id=validated_data['repost_of_id'])
             # User can only have one repost of a post without body
             if validated_data['body'] == '':
-                repost_of.reposts.filter(author=self.context['scope']['user'], body='', image1=None,
-                                         video1=None, ballot=None, survey=None, petition=None).delete()
+                repost_of.reposts.filter(author=self.context['scope']['user'], body='', image1=None, video1=None,
+                                         ballot=None, survey=None, petition=None, meeting=None).delete()
             validated_data['repost_of'] = repost_of
         if validated_data['ballot_id']:
             validated_data['ballot'] = Ballot.objects.get(id=validated_data['ballot_id'])

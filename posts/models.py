@@ -5,6 +5,7 @@ from django.utils.translation import gettext_lazy as _
 
 from ballot.models import Ballot
 from constitution.models import Section
+from live.models import Meeting
 from petition.models import Petition
 from survey.models import Survey
 
@@ -42,9 +43,10 @@ class Post(BaseModel):
                                  related_name='replies')
     repost_of = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
                                   related_name='reposts')
-    ballot = models.ForeignKey(Ballot, on_delete=models.SET_NULL, null=True, blank=True)
-    survey = models.ForeignKey(Survey, on_delete=models.SET_NULL, null=True, blank=True)
-    petition = models.ForeignKey(Petition, on_delete=models.SET_NULL, null=True, blank=True)
+    ballot = models.ForeignKey(Ballot, on_delete=models.SET_NULL, null=True, blank=True, related_name='posts')
+    survey = models.ForeignKey(Survey, on_delete=models.SET_NULL, null=True, blank=True, related_name='posts')
+    petition = models.ForeignKey(Petition, on_delete=models.SET_NULL, null=True, blank=True, related_name='posts')
+    meeting = models.ForeignKey(Meeting, on_delete=models.SET_NULL, null=True, blank=True, related_name='posts')
     likes = models.ManyToManyField(User, blank=True, related_name='liked_posts')
     bookmarks = models.ManyToManyField(User, blank=True, related_name='bookmarked_posts')
     views = models.ManyToManyField(User, blank=True, related_name='viewed_posts')

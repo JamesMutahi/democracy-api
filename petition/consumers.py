@@ -128,19 +128,19 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
         return data, 200
 
     @action()
-    async def unsubscribe_user_petitions(self, pks: list, request_id: str, **kwargs):
+    async def unsubscribe_user_petitions(self, pks, request_id: str, **kwargs):
         for pk in pks:
             await self.petition_activity.unsubscribe(pk=pk, request_id=f'user_{request_id}')
         return {}, 200
 
     @action()
-    async def resubscribe(self, pks: list, request_id: str, **kwargs):
+    async def resubscribe(self, pks, request_id: str, **kwargs):
         for pk in pks:
             await self.subscribe(pk=pk, request_id=request_id)
         return {}, 200
 
     @action()
-    async def resubscribe_user_petitions(self, pks: list, request_id: str, **kwargs):
+    async def resubscribe_user_petitions(self, pks, request_id: str, **kwargs):
         for pk in pks:
             await self.petition_activity.subscribe(pk=pk, request_id=f'user_{request_id}')
         return {}, 200

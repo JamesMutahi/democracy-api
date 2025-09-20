@@ -3,6 +3,7 @@ from django.db import models
 
 from ballot.models import Ballot
 from chat.models import Chat, Message
+from live.models import Meeting
 from petition.models import Petition
 from posts.models import Post
 from survey.models import Survey
@@ -18,6 +19,7 @@ class Notification(models.Model):
     ballot = models.ForeignKey(Ballot, on_delete=models.CASCADE, null=True, blank=True)
     survey = models.ForeignKey(Survey, on_delete=models.CASCADE, null=True, blank=True)
     petition = models.ForeignKey(Petition, on_delete=models.CASCADE, null=True, blank=True)
+    meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, null=True, blank=True)
     chat = models.ForeignKey(Chat, on_delete=models.CASCADE, null=True, blank=True)
     message = models.ForeignKey(Message, on_delete=models.CASCADE, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

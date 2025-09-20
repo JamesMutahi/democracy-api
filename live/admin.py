@@ -1,3 +1,8 @@
 from django.contrib import admin
 
-# Register your models here.
+from live.models import Meeting
+
+
+@admin.register(Meeting)
+class MeetingAdmin(admin.ModelAdmin):
+    list_display = ['title', 'created_at']
