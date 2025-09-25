@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from ballot.serializers import BallotSerializer
 from chat.serializers import ChatSerializer, MessageSerializer
-from live.serializers import MeetingSerializer
+from meet.serializers import MeetingSerializer
 from notification.models import Notification, Preferences
 from petition.serializers import PetitionSerializer
 from posts.serializers import PostSerializer

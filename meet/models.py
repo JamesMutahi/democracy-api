@@ -14,7 +14,7 @@ class BaseModel(models.Model):
 
 
 class Meeting(BaseModel):
-    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='meetings')
+    host = models.ForeignKey(User, on_delete=models.CASCADE, related_name='meetings')
     title = models.CharField(max_length=100)
     description = models.TextField()
     start_time = models.DateTimeField()

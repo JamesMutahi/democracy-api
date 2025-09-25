@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from live.models import Meeting
+from meet.models import Meeting
 
 
 @admin.register(Meeting)

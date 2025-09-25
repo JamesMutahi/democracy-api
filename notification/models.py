@@ -3,7 +3,7 @@ from django.db import models
 
 from ballot.models import Ballot
 from chat.models import Chat, Message
-from live.models import Meeting
+from meet.models import Meeting
 from petition.models import Petition
 from posts.models import Post
 from survey.models import Survey

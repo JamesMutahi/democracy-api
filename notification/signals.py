@@ -3,7 +3,7 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 
 from chat.models import Message
-from live.models import Meeting
+from meet.models import Meeting
 from notification.models import Notification, Preferences
 from ballot.models import Ballot
 from petition.models import Petition
@@ -49,7 +49,7 @@ def create_notification(sender, instance, created, **kwargs):
             for user in instance.author.followers_notified.all():
                 Notification.objects.create(
                     user=user,
-                    text=f'New meeting from {instance.author}',
+                    text=f'New meeting from {instance.host}',
                     meeting=instance,
                 )
         if sender == Message:

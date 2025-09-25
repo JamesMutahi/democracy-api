@@ -6,8 +6,8 @@ from djangochannelsrestframework.mixins import ListModelMixin, CreateModelMixin,
 from djangochannelsrestframework.observer import model_observer
 
 from chat.utils.list_paginator import list_paginator
-from live.models import Meeting
-from live.serializers import MeetingSerializer
+from meet.models import Meeting
+from meet.serializers import MeetingSerializer
 
 
 class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, GenericAsyncAPIConsumer):
@@ -66,9 +66,9 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Generic
                 return queryset.filter(
                     Q(title__icontains=search_term) | Q(description__icontains=search_term)).distinct()
         if kwargs.get('action') == 'user_meetings':
-            return queryset.filter(author=kwargs.get('user'))
+            return queryset.filter(host=kwargs.get('user'))
         if kwargs.get('action') == 'delete' or kwargs.get('action') == 'patch':
-            return queryset.filter(author=self.scope['user'])
+            return queryset.filter(host=self.scope['user'])
         return queryset
 
     @action()

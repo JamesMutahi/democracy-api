@@ -6,6 +6,8 @@ from ballot.models import Ballot
 from ballot.serializers import BallotSerializer
 from constitution.models import Section
 from constitution.serializers import SectionSerializer
+from meet.models import Meeting
+from meet.serializers import MeetingSerializer
 from petition.models import Petition
 from petition.serializers import PetitionSerializer
 from posts.models import Post, Report
@@ -30,6 +32,7 @@ class PostSerializer(serializers.ModelSerializer):
     ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
     petition = PetitionSerializer(read_only=True)
+    meeting = MeetingSerializer(read_only=True)
     tagged_users = UserSerializer(read_only=True, many=True)
     tagged_sections = SectionSerializer(read_only=True, many=True)
     reply_to_id = serializers.IntegerField(write_only=True, allow_null=True)
@@ -75,11 +78,13 @@ class PostSerializer(serializers.ModelSerializer):
             'ballot',
             'survey',
             'petition',
+            'meeting',
             'reply_to_id',
             'repost_of_id',
             'ballot_id',
             'survey_id',
             'petition_id',
+            'meeting_id',
         )
 
     def get_fields(self):
@@ -146,6 +151,8 @@ class PostSerializer(serializers.ModelSerializer):
             validated_data['survey'] = Survey.objects.get(id=validated_data['survey_id'])
         if validated_data['petition_id']:
             validated_data['petition'] = Petition.objects.get(id=validated_data['petition_id'])
+        if validated_data['meeting_id']:
+            validated_data['meeting'] = Meeting.objects.get(id=validated_data['meeting_id'])
         tags = validated_data.pop('tags')
         validated_data['tagged_users'] = []
         validated_data['tagged_sections'] = []

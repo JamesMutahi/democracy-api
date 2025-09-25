@@ -5,7 +5,7 @@ from django.utils.translation import gettext_lazy as _
 
 from ballot.models import Ballot
 from constitution.models import Section
-from live.models import Meeting
+from meet.models import Meeting
 from petition.models import Petition
 from survey.models import Survey
 
