@@ -40,6 +40,7 @@ class PostSerializer(serializers.ModelSerializer):
     ballot_id = serializers.IntegerField(write_only=True, allow_null=True)
     survey_id = serializers.IntegerField(write_only=True, allow_null=True)
     petition_id = serializers.IntegerField(write_only=True, allow_null=True)
+    meeting_id = serializers.IntegerField(write_only=True, allow_null=True)
     tags = serializers.ListField(write_only=True, allow_empty=True)  # Holds both @ and # tags
 
     class Meta:

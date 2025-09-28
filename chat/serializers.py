@@ -5,6 +5,8 @@ from rest_framework import serializers
 from ballot.models import Ballot
 from ballot.serializers import BallotSerializer
 from chat.models import Message, Chat
+from meet.models import Meeting
+from meet.serializers import MeetingSerializer
 from petition.models import Petition
 from petition.serializers import PetitionSerializer
 from posts.models import Post
@@ -22,10 +24,12 @@ class MessageSerializer(serializers.ModelSerializer):
     ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
     petition = PetitionSerializer(read_only=True)
+    meeting = MeetingSerializer(read_only=True)
     post_id = serializers.IntegerField(write_only=True, allow_null=True)
     ballot_id = serializers.IntegerField(write_only=True, allow_null=True)
     survey_id = serializers.IntegerField(write_only=True, allow_null=True)
     petition_id = serializers.IntegerField(write_only=True, allow_null=True)
+    meeting_id = serializers.IntegerField(write_only=True, allow_null=True)
 
     class Meta:
         model = Message
@@ -38,10 +42,12 @@ class MessageSerializer(serializers.ModelSerializer):
             'ballot',
             'survey',
             'petition',
+            'meeting',
             'post_id',
             'ballot_id',
             'survey_id',
             'petition_id',
+            'meeting_id',
             'is_read',
             'is_edited',
             'is_deleted',
@@ -56,14 +62,16 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data['user'] = self.context['scope']['user']
-        if validated_data['post_id'] is not None:
+        if validated_data['post_id']:
             validated_data['post'] = Post.objects.get(id=validated_data['post_id'])
-        if validated_data['ballot_id'] is not None:
+        if validated_data['ballot_id']:
             validated_data['ballot'] = Ballot.objects.get(id=validated_data['ballot_id'])
-        if validated_data['survey_id'] is not None:
+        if validated_data['survey_id']:
             validated_data['survey'] = Survey.objects.get(id=validated_data['survey_id'])
-        if validated_data['petition_id'] is not None:
+        if validated_data['petition_id']:
             validated_data['petition'] = Petition.objects.get(id=validated_data['petition_id'])
+        if validated_data['meeting_id']:
+            validated_data['meeting'] = Meeting.objects.get(id=validated_data['meeting_id'])
         message = super().create(validated_data)
         post_save.send(sender=Chat, instance=message.chat, created=False)
         return message
