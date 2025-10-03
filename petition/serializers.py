@@ -48,7 +48,7 @@ class PetitionSerializer(serializers.ModelSerializer):
         recent_supporters = []
         if instance.supporters.exists():
             # Using through only returns object id
-            related = instance.supporters.through.objects.filter(petition_id=instance.id).order_by('-id')[:5]
+            related = instance.supporters.through.objects.filter(petition_id=instance.pk).order_by('-id')[:5]
             user_list = []
             for obj in related:
                 user = User.objects.get(id=obj.customuser_id)

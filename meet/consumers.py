@@ -111,6 +111,18 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Generic
         return data, 200
 
     @action()
+    def join(self, pk, **kwargs):
+        meeting = self.get_object(pk=pk)
+        meeting.listeners.add(self.scope['user'])
+        return {}, 200
+
+    @action()
+    def leave(self, pk, **kwargs):
+        meeting = self.get_object(pk=pk)
+        meeting.listeners.remove(self.scope['user'])
+        return {}, 200
+
+    @action()
     async def unsubscribe_user_meetings(self, pks, request_id: str, **kwargs):
         for pk in pks:
             await self.meeting_activity.unsubscribe(pk=pk, request_id=f'user_{request_id}')

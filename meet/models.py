@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 User = get_user_model()
 
@@ -17,8 +18,10 @@ class Meeting(BaseModel):
     host = models.ForeignKey(User, on_delete=models.CASCADE, related_name='meetings')
     title = models.CharField(max_length=100)
     description = models.TextField()
+    listeners = models.ManyToManyField(User, blank=True, related_name='listening_meetings')
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
+    is_active = models.BooleanField(_('active'), default=True)
 
     class Meta:
         db_table = 'Meeting'

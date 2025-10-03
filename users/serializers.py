@@ -29,7 +29,7 @@ class UserSerializer(serializers.ModelSerializer):
             'email',
             'image',
             'cover_photo',
-            'status',
+            'bio',
             'muted',
             'blocked',
             'following',
@@ -138,5 +138,5 @@ class UserUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = (
-            'status',
+            'bio',
         )

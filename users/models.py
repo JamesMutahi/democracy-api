@@ -14,7 +14,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     name = models.CharField(_('name'), max_length=50)
     id_number = models.IntegerField(_('ID number'), unique=True, null=True, blank=True)
     email = models.EmailField(_('email'), unique=True, null=True, blank=True)
-    status = models.TextField(_('status'), blank=True)
+    bio = models.TextField(_('bio'), blank=True)
     image = models.ImageField(upload_to='profile_pics/', default='profile_pics/default.jpg')
     cover_photo = models.ImageField(upload_to='cover_photos/', default='cover_photos/default.jpg')
     following = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='followers')
