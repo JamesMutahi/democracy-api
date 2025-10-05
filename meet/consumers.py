@@ -56,6 +56,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Generic
 
     async def disconnect(self, code):
         await self.meeting_activity.unsubscribe()
+        await database_sync_to_async(self.scope['user'].listening_to.clear)()
         await super().disconnect(code)
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
@@ -114,13 +115,13 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Generic
     def join(self, pk, **kwargs):
         meeting = self.get_object(pk=pk)
         meeting.listeners.add(self.scope['user'])
-        return {}, 200
+        return {'pk': pk}, 200
 
     @action()
     def leave(self, pk, **kwargs):
         meeting = self.get_object(pk=pk)
         meeting.listeners.remove(self.scope['user'])
-        return {}, 200
+        return {'pk': pk}, 200
 
     @action()
     async def unsubscribe_user_meetings(self, pks, request_id: str, **kwargs):

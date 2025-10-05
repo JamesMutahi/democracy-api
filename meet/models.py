@@ -18,7 +18,7 @@ class Meeting(BaseModel):
     host = models.ForeignKey(User, on_delete=models.CASCADE, related_name='meetings')
     title = models.CharField(max_length=100)
     description = models.TextField()
-    listeners = models.ManyToManyField(User, blank=True, related_name='listening_meetings')
+    listeners = models.ManyToManyField(User, blank=True, related_name='listening_to')
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
     is_active = models.BooleanField(_('active'), default=True)
