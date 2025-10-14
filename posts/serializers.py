@@ -154,23 +154,39 @@ class PostSerializer(serializers.ModelSerializer):
             validated_data['petition'] = Petition.objects.get(id=validated_data['petition_id'])
         if validated_data['meeting_id']:
             validated_data['meeting'] = Meeting.objects.get(id=validated_data['meeting_id'])
-        tags = validated_data.pop('tags')
-        validated_data['tagged_users'] = []
-        validated_data['tagged_sections'] = []
-        for tag in tags:
-            user_qs = User.objects.filter(id=tag['id'], username=tag['text'])
-            if user_qs.exists():
-                validated_data['tagged_users'].append(user_qs.first())
-            else:
-                section_qs = Section.objects.filter(id=tag['id'], text=tag['text'])
-                if section_qs.exists():
-                    validated_data['tagged_sections'].append(section_qs.first())
+        tagged_users, tagged_sections = get_tagged(validated_data.pop('tags'))
+        validated_data['tagged_users'] = tagged_users
+        validated_data['tagged_sections'] = tagged_sections
         post = super().create(validated_data)
         if post.reply_to:
             post_save.send(sender=Post, instance=post.reply_to, created=False)
         if post.repost_of:
             post_save.send(sender=Post, instance=post.repost_of, created=False)
         return post
+
+    def update(self, instance, validated_data):
+        tagged_users, tagged_sections = get_tagged(validated_data.pop('tags'))
+        # Save validated data to instance
+        instance.body = validated_data.get('body', instance.body)
+        instance.status = validated_data.get('status', instance.status)
+        instance.tagged_users.set(tagged_users)
+        instance.tagged_sections.set(tagged_sections)
+        instance.save()
+        return instance
+
+
+def get_tagged(tags):
+    tagged_users = []
+    tagged_sections = []
+    for tag in tags:
+        user_qs = User.objects.filter(id=tag['id'], username=tag['text'])
+        if user_qs.exists():
+            tagged_users.append(user_qs.first())
+        else:
+            section_qs = Section.objects.filter(id=tag['id'], text=tag['text'])
+            if section_qs.exists():
+                tagged_sections.append(section_qs.first())
+    return tagged_users, tagged_sections
 
 
 class ReportSerializer(serializers.ModelSerializer):

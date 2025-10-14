@@ -143,8 +143,10 @@ class PostConsumer(
                 'published_at'
             )
             return queryset
-        if kwargs.get('action') == 'delete' or kwargs.get('action') == 'patch':
-            return queryset.filter(is_deleted=False, author=self.scope['user']).order_by('-published_at')
+        if kwargs.get('action') == 'delete':
+            return queryset.filter(is_deleted=False, author=self.scope['user'])
+        if kwargs.get('action') == 'patch':
+            return queryset.filter(is_deleted=False, author=self.scope['user'], status='draft')
         if kwargs.get('action') == 'bookmarks':
             return self.scope["user"].bookmarked_posts.all()
         if kwargs.get('action') == 'user_posts':
