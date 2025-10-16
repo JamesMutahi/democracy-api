@@ -204,3 +204,15 @@ class ReportSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data['user'] = self.context['scope']['user']
         return super().create(validated_data)
+
+
+class ThreadSerializer(PostSerializer):
+    thread = serializers.SerializerMethodField(read_only=True)
+
+    def get_thread(self, obj):
+        author_replies = obj.replies.filter(author=obj.reply_to.author)
+        serializer = ThreadSerializer(author_replies, many=True, context=self.context)
+        return serializer.data
+
+    class Meta(PostSerializer.Meta):
+        fields = PostSerializer.Meta.fields + ('thread',)

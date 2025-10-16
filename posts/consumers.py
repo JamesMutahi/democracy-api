@@ -19,7 +19,7 @@ from rest_framework.authtoken.models import Token
 
 from chat.utils.list_paginator import list_paginator
 from posts.models import Post
-from posts.serializers import PostSerializer, ReportSerializer
+from posts.serializers import PostSerializer, ReportSerializer, ThreadSerializer
 
 User = get_user_model()
 
@@ -169,7 +169,7 @@ class PostConsumer(
     @action()
     async def list(self, request_id: str, last_post: int = None, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
         await self.subscribe_to_posts(posts=data['results'], request_id=request_id)
         return data, 200
 
@@ -301,7 +301,7 @@ class PostConsumer(
     @action()
     async def following(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
         await self.subscribe_to_posts(posts=data['results'], request_id=request_id)
         return data, 200
 
@@ -309,7 +309,8 @@ class PostConsumer(
     async def replies(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
         kwargs['author_pk'] = await self.get_author_pk(post_pk=kwargs['pk'])
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post,
+                                          post_serializer=ThreadSerializer)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'reply_{request_id}')
         return data, 200
 
@@ -331,35 +332,35 @@ class PostConsumer(
     @action()
     async def bookmarks(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
     @action()
     async def liked_posts(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
     @action()
     async def user_posts(self, request_id: str, last_post: int = None, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
     @action()
     async def user_replies(self, request_id: str, last_post: int = None, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
     @action()
     async def drafts(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post, **kwargs)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
@@ -371,14 +372,14 @@ class PostConsumer(
         return serializer.data, 200
 
     @database_sync_to_async
-    def posts_paginator(self, posts, page_size, last_post: int = None, **kwargs):
+    def posts_paginator(self, posts, page_size, last_post: int = None, post_serializer=PostSerializer):
         if last_post:
             posts = posts.filter(id__lt=last_post)
         page_obj = list_paginator(queryset=posts, page=1, page_size=page_size)
         self.scope['user'].viewed_posts.add(*page_obj.object_list)
         reposts_ofs = page_obj.object_list.values_list('repost_of', flat=True)
         self.scope['user'].viewed_posts.add(*[post for post in reposts_ofs if post is not None])
-        serializer = PostSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
+        serializer = post_serializer(page_obj.object_list, many=True, context={'scope': self.scope})
         return dict(results=serializer.data, last_post=last_post, has_next=page_obj.has_next())
 
     async def subscribe_to_posts(self, posts: dict, request_id: str):
