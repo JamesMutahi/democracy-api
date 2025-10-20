@@ -34,6 +34,7 @@ class UserSerializer(serializers.ModelSerializer):
             'blocked',
             'following',
             'followers',
+            'is_representative',
             'is_active',
             'date_joined',
             'is_muted',

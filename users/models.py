@@ -20,6 +20,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     following = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='followers')
     muted = models.ManyToManyField('self', symmetrical=False, blank=True)
     blocked = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='blockers')
+    is_representative = models.BooleanField(default=False)
     is_staff = models.BooleanField(_('staff status'), default=False)
     is_active = models.BooleanField(_('active'), default=True)
     date_joined = models.DateTimeField(_('date joined'), auto_now_add=True)
