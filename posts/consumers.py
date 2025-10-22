@@ -387,6 +387,14 @@ class PostConsumer(
             await self.post_activity.subscribe(pk=post['id'], request_id=request_id)
             if post['repost_of']:
                 await self.post_activity.subscribe(pk=post['repost_of']['id'], request_id=request_id)
+            if 'thread' in post:
+                for reply in post['thread']:
+                    target_key = "id"
+                    exclude_keys = ['author', 'reply_to', 'repost_of', 'ballot', 'survey', 'petition', 'meeting',
+                                    'tagged_users', 'tagged_sections', ]
+                    values = find_key_values(reply, target_key, exclude_keys)
+                    for value in values:
+                        await self.post_activity.subscribe(pk=value, request_id=request_id)
 
     @action()
     async def unsubscribe_user_posts(self, pks: list, request_id: str, **kwargs):
@@ -411,3 +419,26 @@ class PostConsumer(
         for pk in pks:
             await self.post_activity.subscribe(pk=pk, request_id=f'user_{request_id}')
         return {}, 200
+
+
+def find_key_values(data, target_key, exclude_keys, result=None):
+    if result is None:
+        result = []
+
+    if isinstance(data, dict):
+        # Check for the target key in the current dictionary
+        if target_key in data:
+            result.append(data[target_key])
+
+        # Recursively search through all values, skipping those associated with exclude_keys
+        for key, value in data.items():
+            if key not in exclude_keys and isinstance(value, (dict, list)):
+                find_key_values(value, target_key, exclude_keys, result)
+
+    elif isinstance(data, list):
+        # Recursively search through all items in the list
+        for item in data:
+            if isinstance(item, (dict, list)):
+                find_key_values(item, target_key, exclude_keys, result)
+
+    return result
