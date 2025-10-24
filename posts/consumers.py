@@ -319,17 +319,6 @@ class PostConsumer(
         return Post.objects.get(pk=post_pk).author.pk
 
     @action()
-    async def unsubscribe_replies(self, request_id, pk, **kwargs):
-        reply_pks = await self.get_reply_pks(pk=pk)
-        for pk in reply_pks:
-            await self.post_activity.unsubscribe(pk=pk, request_id=f'reply_{request_id}')
-        return {}, 200
-
-    @database_sync_to_async
-    def get_reply_pks(self, pk):
-        return list(Post.objects.filter(reply_to=pk).values_list('pk', flat=True))
-
-    @action()
     async def bookmarks(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
@@ -389,7 +378,7 @@ class PostConsumer(
                 await self.post_activity.subscribe(pk=post['repost_of']['id'], request_id=request_id)
             if 'thread' in post:
                 for reply in post['thread']:
-                    target_key = "id"
+                    target_key = 'id'
                     exclude_keys = ['author', 'reply_to', 'repost_of', 'ballot', 'survey', 'petition', 'meeting',
                                     'tagged_users', 'tagged_sections', ]
                     values = find_key_values(reply, target_key, exclude_keys)
@@ -412,6 +401,12 @@ class PostConsumer(
     async def resubscribe_replies(self, pks: list, request_id: str, **kwargs):
         for pk in pks:
             await self.post_activity.subscribe(pk=pk, request_id=f'reply_{request_id}')
+        return {}, 200
+
+    @action()
+    async def unsubscribe_replies(self, pks: list, request_id, **kwargs):
+        for pk in pks:
+            await self.post_activity.unsubscribe(pk=pk, request_id=f'reply_{request_id}')
         return {}, 200
 
     @action()
