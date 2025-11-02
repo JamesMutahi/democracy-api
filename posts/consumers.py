@@ -126,9 +126,12 @@ class PostConsumer(
         if kwargs.get('action') == 'list':
             search_term = kwargs.get('search_term', None)
             if search_term:
-                return queryset.filter(is_deleted=False, reply_to=None, status='published',
-                                       body__icontains=search_term).order_by('-published_at')
-            return queryset.filter(is_deleted=False, reply_to=None, status='published').order_by('-published_at')
+                queryset = queryset.filter(body__icontains=search_term)
+            start_date = kwargs.get('start_date', None)
+            end_date = kwargs.get('end_date', None)
+            if start_date and end_date:
+                queryset = queryset.filter(published_at__range=(start_date, end_date))
+            return queryset.filter(is_deleted=False, status='published').order_by('-published_at')
         if kwargs.get('action') == 'for_you':
             return queryset.filter(is_deleted=False, reply_to=None, status='published').order_by('-published_at')
         if kwargs.get('action') == 'following':

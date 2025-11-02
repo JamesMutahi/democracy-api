@@ -75,8 +75,13 @@ class BallotConsumer(GenericAsyncAPIConsumer):
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
         search_term = kwargs.get('search_term', None)
+        start_date = kwargs.get('start_date', None)
+        end_date = kwargs.get('end_date', None)
         if search_term:
-            return queryset.filter(Q(name__icontains=search_term) | Q(description__icontains=search_term)).distinct()
+            queryset = queryset.filter(
+                Q(title__icontains=search_term) | Q(description__icontains=search_term)).distinct()
+        if start_date and end_date:
+            queryset = queryset.filter(start_time__range=(start_date, end_date))
         return queryset
 
     @action()
