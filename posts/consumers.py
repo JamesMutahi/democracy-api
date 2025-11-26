@@ -138,7 +138,7 @@ class PostConsumer(
             return queryset.filter(author__in=self.scope['user'].following.all(), is_deleted=False, reply_to=None,
                                    status='published').order_by('-published_at')
         if kwargs.get('action') == 'replies':
-            queryset = queryset.filter(reply_to=kwargs['pk'], is_deleted=False, status='published').order_by(
+            queryset = queryset.filter(reply_to=kwargs['pk'], status='published').order_by(
                 Case(
                     When(author=kwargs['author_pk'], then=0),
                     default=1,
@@ -309,6 +309,19 @@ class PostConsumer(
         return data, 200
 
     @action()
+    async def reply_to(self, request_id, pk: int, **kwargs):
+        post = await database_sync_to_async(self.get_object)(pk=pk)
+        data = await self.get_reply_to_posts(post=post)
+        await self.subscribe_to_posts(posts=data, request_id=f'reply_{request_id}')
+        return data, 200
+
+    @database_sync_to_async
+    def get_reply_to_posts(self, post: Post):
+        posts = get_reply_to(post=post)
+        serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
+        return serializer.data
+
+    @action()
     async def replies(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
         kwargs['author_pk'] = await self.get_author_pk(post_pk=kwargs['pk'])
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
@@ -440,3 +453,11 @@ def find_key_values(data, target_key, exclude_keys, result=None):
                 find_key_values(item, target_key, exclude_keys, result)
 
     return result
+
+
+def get_reply_to(post: Post):
+    posts = []
+    if post.reply_to:
+        posts.append(post.reply_to)
+        posts.extend(get_reply_to(post.reply_to))
+    return posts

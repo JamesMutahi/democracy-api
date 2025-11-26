@@ -72,7 +72,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
                 queryset = queryset.filter(
                     Q(title__icontains=search_term) | Q(description__icontains=search_term)).distinct()
             if start_date and end_date:
-                queryset = queryset.filter(start_time__range=(start_date, end_date))
+                queryset = queryset.filter(created_at__range=(start_date, end_date))
             return queryset
         if kwargs.get('action') == 'user_petitions':
             return queryset.filter(author=kwargs.get('user'))
