@@ -5,12 +5,12 @@ from grappelli.dashboard import modules, Dashboard
 class CustomIndexDashboard(Dashboard):
     def __init__(self, **kwargs):
         Dashboard.__init__(self, **kwargs)
-        # self.children.append(modules.AppList(
-        #     title=_(''),
-        #     column=1,
-        #     collapsible=True,
-        #     models=('django.contrib.sites.models.Site',),
-        # ))
+        self.children.append(modules.AppList(
+            title=_(''),
+            column=1,
+            collapsible=True,
+            models=('django.contrib.sites.models.Site',),
+        ))
         self.children.append(modules.ModelList(
             title=_('General'),
             column=1,

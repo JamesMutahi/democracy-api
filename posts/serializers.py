@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.contrib.sites.models import Site
 from django.db.models.signals import post_save
 from rest_framework import serializers
 
@@ -42,6 +43,12 @@ class PostSerializer(serializers.ModelSerializer):
     petition_id = serializers.IntegerField(write_only=True, allow_null=True)
     meeting_id = serializers.IntegerField(write_only=True, allow_null=True)
     tags = serializers.ListField(write_only=True, allow_empty=True)  # Holds both @ and # tags
+    image1 = serializers.SerializerMethodField(allow_null=True)
+    image2 = serializers.SerializerMethodField()
+    image3 = serializers.SerializerMethodField()
+    image4 = serializers.SerializerMethodField()
+    image5 = serializers.SerializerMethodField()
+    image6 = serializers.SerializerMethodField()
 
     class Meta:
         model = Post
@@ -87,6 +94,48 @@ class PostSerializer(serializers.ModelSerializer):
             'petition_id',
             'meeting_id',
         )
+
+    @staticmethod
+    def get_image1(obj):
+        if obj.image1:
+            current_site = Site.objects.get_current()
+            return current_site.domain + obj.image1.url
+        return None
+
+    @staticmethod
+    def get_image2(obj):
+        if obj.image2:
+            current_site = Site.objects.get_current()
+            return current_site.domain + obj.image2.url
+        return None
+
+    @staticmethod
+    def get_image3(obj):
+        if obj.image3:
+            current_site = Site.objects.get_current()
+            return current_site.domain + obj.image3.url
+        return None
+
+    @staticmethod
+    def get_image4(obj):
+        if obj.image4:
+            current_site = Site.objects.get_current()
+            return current_site.domain + obj.image4.url
+        return None
+
+    @staticmethod
+    def get_image5(obj):
+        if obj.image5:
+            current_site = Site.objects.get_current()
+            return current_site.domain + obj.image5.url
+        return None
+
+    @staticmethod
+    def get_image6(obj):
+        if obj.image6:
+            current_site = Site.objects.get_current()
+            return current_site.domain + obj.image6.url
+        return None
 
     def get_fields(self):
         fields = super(PostSerializer, self).get_fields()

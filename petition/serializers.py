@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.contrib.sites.models import Site
 from rest_framework import serializers
 
 from petition.models import Petition
@@ -33,12 +34,12 @@ class PetitionSerializer(serializers.ModelSerializer):
             'image_base64',
         ]
 
-    def get_image(self, obj):
-        if 'scope' in self.context:
-            headers = dict(self.context['scope']['headers'])
-            host = headers[b'host'].decode()
-            return 'http://' + host + obj.image.url
-        return self.context.get('request').build_absolute_uri(obj.image.url)
+    @staticmethod
+    def get_image(obj):
+        if obj.image:
+            current_site = Site.objects.get_current()
+            return current_site.domain + obj.image.url
+        return None
 
     @staticmethod
     def get_supporters(instance: Petition):
