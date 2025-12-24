@@ -73,3 +73,17 @@ class Report(BaseModel):
 
     def __str__(self):
         return self.issue
+
+
+class CommunityNote(BaseModel):
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='community_notes')
+    author = models.ForeignKey(User, on_delete=models.CASCADE)
+    text = models.TextField()
+    is_helpful_votes = models.ManyToManyField(User, blank=True, related_name='is_helpful_votes')
+    is_not_helpful_votes = models.ManyToManyField(User, blank=True, related_name='is_not_helpful_votes')
+
+    def __str__(self):
+        return f"Note on {self.post} by {self.author}"
+
+    class Meta:
+        ordering = ['-created_at']
