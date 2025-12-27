@@ -1,19 +1,6 @@
 from django.contrib import admin
 
-from posts.models import Post, Report, CommunityNote
-
-
-class CommunityNoteInline(admin.TabularInline):
-    model = CommunityNote
-    fieldsets = [
-        (None, {
-            'fields': ('id', 'author', 'text', 'is_helpful_votes', 'is_not_helpful_votes',), }),
-        ('Date information', {'fields': ['created_at'], 'classes': ('grp-collapse grp-closed',), }),
-    ]
-    extra = 0
-    classes = ('grp-collapse grp-open',)
-    readonly_fields = ['created_at']
-    filter_horizontal = ['is_helpful_votes', 'is_not_helpful_votes']
+from posts.models import Post, Report
 
 
 class ReportInline(admin.TabularInline):
@@ -25,10 +12,11 @@ class ReportInline(admin.TabularInline):
 
 @admin.register(Post)
 class PostAdmin(admin.ModelAdmin):
-    list_display = ['id', 'author', 'body', 'repost_of', 'reply_to', 'ballot', 'survey', 'created_at']
+    list_display = ['id', 'author', 'body', 'repost_of', 'reply_to', 'community_note_of', 'ballot', 'survey',
+                    'created_at']
     list_filter = ['status']
-    filter_horizontal = ['likes', 'bookmarks', 'views', 'tagged_users']
-    inlines = [CommunityNoteInline, ReportInline]
+    filter_horizontal = ['likes', 'bookmarks', 'views', 'tagged_users', 'upvotes', 'downvotes']
+    inlines = [ReportInline]
 
 
 admin.site.register(Report)

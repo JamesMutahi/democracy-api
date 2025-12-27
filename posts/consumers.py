@@ -7,7 +7,7 @@ from channels.middleware import BaseMiddleware
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
-from django.db.models import QuerySet, Case, When
+from django.db.models import QuerySet, Case, When, Count, ExpressionWrapper, F, FloatField
 from django.db.models.signals import post_save
 from djangochannelsrestframework.consumers import AsyncAPIConsumer
 from djangochannelsrestframework.decorators import action
@@ -82,10 +82,14 @@ class PostConsumer(
     def get_post_serializer_data(self, message):
         message['data']['is_liked'] = self.scope['user'].id in message['data']['likes']
         message['data']['is_bookmarked'] = self.scope['user'].id in message['data']['bookmarks']
+        message['data']['is_upvoted'] = self.scope['user'].id in message['data']['upvotes']
+        message['data']['is_downvoted'] = self.scope['user'].id in message['data']['downvotes']
         message['data']['is_reposted'] = self.scope['user'].id in message['data']['reposts']
         message['data']['is_quoted'] = self.scope['user'].id in message['data']['quotes']
         message['data']['likes'] = len(message['data']['likes'])
         message['data']['bookmarks'] = len(message['data']['bookmarks'])
+        message['data']['upvotes'] = len(message['data']['upvotes'])
+        message['data']['downvotes'] = len(message['data']['downvotes'])
         message['data']['reposts'] = len(message['data']['reposts']) + len(message['data']['quotes'])
         return message
 
@@ -106,7 +110,9 @@ class PostConsumer(
                         bookmarks=instance.bookmarks.values_list('id', flat=True), replies=instance.replies.count(),
                         reposts=list(instance.reposts.filter(body='').values_list('author', flat=True)),
                         quotes=list(instance.reposts.exclude(body='').values_list('author', flat=True)),
-                        views=instance.views.count(), is_deleted=instance.is_deleted, is_active=instance.is_active)
+                        community_note=instance.get_top_note(), upvotes=instance.upvotes.values_list('id', flat=True),
+                        downvotes=instance.downvotes.values_list('id', flat=True),
+                        views=instance.views.count(), is_deleted=instance.is_deleted, is_active=instance.is_active, )
         return dict(
             data=data,
             action=action.value,
@@ -133,10 +139,11 @@ class PostConsumer(
                 queryset = queryset.filter(published_at__range=(start_date, end_date))
             return queryset.filter(is_deleted=False, status='published').order_by('-published_at')
         if kwargs.get('action') == 'for_you':
-            return queryset.filter(is_deleted=False, reply_to=None, status='published').order_by('-published_at')
+            return queryset.filter(is_deleted=False, reply_to=None, community_note_of=None,
+                                   status='published').order_by('-published_at')
         if kwargs.get('action') == 'following':
             return queryset.filter(author__in=self.scope['user'].following.all(), is_deleted=False, reply_to=None,
-                                   status='published').order_by('-published_at')
+                                   community_note_of=None, status='published').order_by('-published_at')
         if kwargs.get('action') == 'replies':
             queryset = queryset.filter(reply_to=kwargs['pk'], status='published').order_by(
                 Case(
@@ -146,6 +153,8 @@ class PostConsumer(
                 'published_at'
             )
             return queryset
+        if kwargs.get('action') == 'community_notes':
+            return queryset.filter(community_note_of=kwargs['pk'], status='published').order_by('published_at')
         if kwargs.get('action') == 'delete':
             return queryset.filter(is_deleted=False, author=self.scope['user'])
         if kwargs.get('action') == 'patch':
@@ -335,6 +344,47 @@ class PostConsumer(
         return Post.objects.get(pk=post_pk).author.pk
 
     @action()
+    async def community_notes(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
+        posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
+        await self.subscribe_to_posts(posts=data['results'], request_id=f'community_note_{request_id}')
+        return data, 200
+
+    @action()
+    async def upvote(self, **kwargs):
+        message = await self.upvote_post(pk=kwargs['pk'], user=self.scope["user"])
+        return message, 200
+
+    @database_sync_to_async
+    def upvote_post(self, pk, user):
+        post = Post.objects.get(pk=pk)
+        post.downvotes.remove(user)
+        if post.upvotes.filter(pk=user.pk).exists():
+            post.upvotes.remove(user)
+            message = 'Upvote removed'
+        else:
+            post.upvotes.add(user)
+            message = 'Upvoted'
+        return {'message': message}
+
+    @action()
+    async def downvote(self, **kwargs):
+        message = await self.downvote_post(pk=kwargs['pk'], user=self.scope["user"])
+        return message, 200
+
+    @database_sync_to_async
+    def downvote_post(self, pk, user):
+        post = Post.objects.get(pk=pk)
+        post.upvotes.remove(user)
+        if post.downvotes.filter(pk=user.pk).exists():
+            post.downvotes.remove(user)
+            message = 'Downvote removed'
+        else:
+            post.downvotes.add(user)
+            message = 'Downvoted'
+        return {'message': message}
+
+    @action()
     async def bookmarks(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
@@ -423,6 +473,18 @@ class PostConsumer(
     async def unsubscribe_replies(self, pks: list, request_id, **kwargs):
         for pk in pks:
             await self.post_activity.unsubscribe(pk=pk, request_id=f'reply_{request_id}')
+        return {}, 200
+
+    @action()
+    async def resubscribe_community_notes(self, pks: list, request_id: str, **kwargs):
+        for pk in pks:
+            await self.post_activity.subscribe(pk=pk, request_id=f'community_note_{request_id}')
+        return {}, 200
+
+    @action()
+    async def unsubscribe_community_notes(self, pks: list, request_id, **kwargs):
+        for pk in pks:
+            await self.post_activity.unsubscribe(pk=pk, request_id=f'community_note_{request_id}')
         return {}, 200
 
     @action()

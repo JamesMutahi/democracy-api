@@ -12,50 +12,12 @@ from meet.models import Meeting
 from meet.serializers import MeetingSerializer
 from petition.models import Petition
 from petition.serializers import PetitionSerializer
-from posts.models import Post, Report, CommunityNote
+from posts.models import Post, Report
 from survey.models import Survey
 from survey.serializers import SurveySerializer
 from users.serializers import UserSerializer
 
 User = get_user_model()
-
-
-class CommunityNoteSerializer(serializers.ModelSerializer):
-    author = UserSerializer(read_only=True)
-    is_helpful_votes = serializers.SerializerMethodField(read_only=True)
-    is_not_helpful_votes = serializers.SerializerMethodField(read_only=True)
-    helpful_score = serializers.SerializerMethodField()
-
-    class Meta:
-        model = CommunityNote
-        fields = (
-            'id',
-            'author',
-            'text',
-            'is_helpful_votes',
-            'is_not_helpful_votes',
-            'helpful_score',
-            'created_at',
-        )
-
-    @staticmethod
-    def get_is_helpful_votes(obj):
-        count = obj.is_helpful_votes.count()
-        return count
-
-    @staticmethod
-    def get_is_not_helpful_votes(obj):
-        count = obj.is_not_helpful_votes.count()
-        return count
-
-    @staticmethod
-    def get_helpful_score(obj):
-        helpful_votes = obj.is_helpful_votes.count()
-        not_helpful_votes = obj.is_not_helpful_votes.count()
-        total_votes = helpful_votes + not_helpful_votes
-        if total_votes == 0:
-            return 0.0
-        return round((helpful_votes / total_votes) * 100, 2)
 
 
 class PostSerializer(serializers.ModelSerializer):
@@ -89,6 +51,10 @@ class PostSerializer(serializers.ModelSerializer):
     image5 = serializers.SerializerMethodField()
     image6 = serializers.SerializerMethodField()
     community_note = serializers.SerializerMethodField(read_only=True)
+    is_upvoted = serializers.SerializerMethodField(read_only=True)
+    is_downvoted = serializers.SerializerMethodField(read_only=True)
+    upvotes = serializers.SerializerMethodField(read_only=True)
+    downvotes = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Post
@@ -128,6 +94,10 @@ class PostSerializer(serializers.ModelSerializer):
             'petition',
             'meeting',
             'community_note',
+            'is_upvoted',
+            'is_downvoted',
+            'upvotes',
+            'downvotes',
             'reply_to_id',
             'repost_of_id',
             'ballot_id',
@@ -225,22 +195,31 @@ class PostSerializer(serializers.ModelSerializer):
         count = obj.views.count()
         return count
 
-    def get_community_note(self, obj):
-        top_note = obj.community_notes.annotate(
-            helpful_votes=Count('is_helpful_votes'),
-            not_helpful_votes=Count('is_not_helpful_votes'),
-            helpful_score=ExpressionWrapper(
-                F('helpful_votes') * 1.0 / (F('helpful_votes') + F('not_helpful_votes')),
-                output_field=FloatField()
-            )).filter(helpful_score__gt=0.7).order_by(
-            '-helpful_score',
-            '-helpful_votes',
-            '-not_helpful_votes',
-            '-created_at'
-        ).first()
-        if top_note:
-            return CommunityNoteSerializer(top_note, context=self.context).data
-        return None
+    @staticmethod
+    def get_community_note(obj: Post):
+        return obj.get_top_note()
+
+    def get_is_upvoted(self, obj):
+        is_upvoted = obj.upvotes.contains(self.context['scope']['user'])
+        return is_upvoted
+
+    def get_is_downvoted(self, obj):
+        is_downvoted = obj.downvotes.contains(self.context['scope']['user'])
+        return is_downvoted
+
+    @staticmethod
+    def get_upvotes(obj):
+        count = 0
+        if obj.community_note_of:
+            count = obj.upvotes.count()
+        return count
+
+    @staticmethod
+    def get_downvotes(obj):
+        count = 0
+        if obj.community_note_of:
+            count = obj.downvotes.count()
+        return count
 
     def create(self, validated_data):
         validated_data['author'] = self.context['scope']['user']
