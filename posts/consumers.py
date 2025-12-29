@@ -522,4 +522,7 @@ def get_reply_to(post: Post):
     if post.reply_to:
         posts.append(post.reply_to)
         posts.extend(get_reply_to(post.reply_to))
+    if post.community_note_of:
+        posts.append(post.community_note_of)
+        posts.extend(get_reply_to(post.community_note_of))
     return posts

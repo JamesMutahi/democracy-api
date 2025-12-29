@@ -38,6 +38,7 @@ class PostSerializer(serializers.ModelSerializer):
     tagged_sections = SectionSerializer(read_only=True, many=True)
     reply_to_id = serializers.IntegerField(write_only=True, allow_null=True)
     repost_of_id = serializers.IntegerField(write_only=True, allow_null=True)
+    community_note_of_id = serializers.IntegerField(write_only=True, allow_null=True)
     ballot_id = serializers.IntegerField(write_only=True, allow_null=True)
     survey_id = serializers.IntegerField(write_only=True, allow_null=True)
     petition_id = serializers.IntegerField(write_only=True, allow_null=True)
@@ -100,6 +101,7 @@ class PostSerializer(serializers.ModelSerializer):
             'downvotes',
             'reply_to_id',
             'repost_of_id',
+            'community_note_of_id',
             'ballot_id',
             'survey_id',
             'petition_id',
@@ -233,6 +235,8 @@ class PostSerializer(serializers.ModelSerializer):
                 repost_of.reposts.filter(author=self.context['scope']['user'], body='', image1=None, video1=None,
                                          ballot=None, survey=None, petition=None, meeting=None).delete()
             validated_data['repost_of'] = repost_of
+        if validated_data['community_note_of_id']:
+            validated_data['community_note_of'] = Post.objects.get(id=validated_data['community_note_of_id'])
         if validated_data['ballot_id']:
             validated_data['ballot'] = Ballot.objects.get(id=validated_data['ballot_id'])
         if validated_data['survey_id']:

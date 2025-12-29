@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.db import models
 from django.db.models import ExpressionWrapper, Count, F, FloatField
+from django.db.models.functions import NullIf
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -74,8 +75,9 @@ class Post(BaseModel):
         top_note = self.community_notes.annotate(
             upvotes_count=Count('upvotes'),
             downvotes_count=Count('downvotes'),
+            total_votes=ExpressionWrapper(F('upvotes_count') + F('downvotes_count'), output_field=FloatField()),
             helpful_score=ExpressionWrapper(
-                F('upvotes_count') * 1.0 / (F('upvotes_count') + F('downvotes_count')),
+                F('upvotes_count') * 1.0 / NullIf('total_votes', 0),
                 output_field=FloatField()
             )).filter(helpful_score__gt=0.7).order_by(
             '-helpful_score',
