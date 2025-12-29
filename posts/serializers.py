@@ -1,6 +1,5 @@
 from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
-from django.db.models import ExpressionWrapper, F, FloatField, Count
 from django.db.models.signals import post_save
 from rest_framework import serializers
 
@@ -89,6 +88,7 @@ class PostSerializer(serializers.ModelSerializer):
             'is_quoted',
             'reply_to',
             'repost_of',
+            'community_note_of',
             'ballot',
             'survey',
             'petition',
@@ -152,6 +152,7 @@ class PostSerializer(serializers.ModelSerializer):
         fields = super(PostSerializer, self).get_fields()
         fields['reply_to'] = PostSerializer(read_only=True)
         fields['repost_of'] = PostSerializer(read_only=True)
+        fields['community_note_of'] = PostSerializer(read_only=True)
         return fields
 
     @staticmethod
