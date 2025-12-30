@@ -7,7 +7,7 @@ from channels.middleware import BaseMiddleware
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
-from django.db.models import QuerySet, Case, When, Count, ExpressionWrapper, F, FloatField
+from django.db.models import QuerySet, Case, When
 from django.db.models.signals import post_save
 from djangochannelsrestframework.consumers import AsyncAPIConsumer
 from djangochannelsrestframework.decorators import action
@@ -137,7 +137,8 @@ class PostConsumer(
             end_date = kwargs.get('end_date', None)
             if start_date and end_date:
                 queryset = queryset.filter(published_at__range=(start_date, end_date))
-            return queryset.filter(is_deleted=False, status='published').order_by('-published_at')
+            return queryset.filter(is_deleted=False, community_note_of=None, status='published').order_by(
+                '-published_at')
         if kwargs.get('action') == 'for_you':
             return queryset.filter(is_deleted=False, reply_to=None, community_note_of=None,
                                    status='published').order_by('-published_at')
@@ -162,13 +163,15 @@ class PostConsumer(
         if kwargs.get('action') == 'bookmarks':
             return self.scope["user"].bookmarked_posts.all()
         if kwargs.get('action') == 'user_posts':
-            return queryset.filter(author=kwargs['user'], reply_to=None, status='published')
+            return queryset.filter(author=kwargs['user'], reply_to=None, community_note_of=None, status='published')
         if kwargs.get('action') == 'liked_posts':
             return queryset.filter(likes__id=kwargs['user'])
         if kwargs.get('action') == 'user_replies':
             return queryset.filter(author=kwargs['user']).exclude(reply_to=None)
         if kwargs.get('action') == 'drafts':
             return queryset.filter(author=self.scope['user'], status='draft')
+        if kwargs.get('action') == 'user_community_notes':
+            return queryset.filter(author=kwargs['user']).exclude(community_note_of=None)
         return queryset.filter(is_deleted=False).order_by('-published_at')
 
     @action()
@@ -414,6 +417,13 @@ class PostConsumer(
 
     @action()
     async def drafts(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
+        posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
+        await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
+        return data, 200
+
+    @action()
+    async def user_community_notes(self, request_id: str, last_post: int = None, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
