@@ -53,7 +53,8 @@ class LoginView(APIView):
 
 @api_view(['DELETE'])
 def logout(request):
-    request.user.auth_token.delete()
+    # TODO: Prototype cannot have tokens deleted
+    # request.user.auth_token.delete()
     return Response(status=status.HTTP_200_OK)
 
 

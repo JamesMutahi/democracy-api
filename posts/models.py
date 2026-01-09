@@ -79,7 +79,7 @@ class Post(BaseModel):
             helpful_score=ExpressionWrapper(
                 F('upvotes_count') * 1.0 / NullIf('total_votes', 0),
                 output_field=FloatField()
-            )).filter(helpful_score__gt=0.7).order_by(
+            )).filter(total_votes__gt=0, helpful_score__gt=0.7).order_by(
             '-helpful_score',
             '-upvotes_count',
             '-downvotes_count',

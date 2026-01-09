@@ -7,7 +7,7 @@ from channels.middleware import BaseMiddleware
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
-from django.db.models import QuerySet, Case, When
+from django.db.models import QuerySet, Case, When, Q, Count
 from django.db.models.signals import post_save
 from djangochannelsrestframework.consumers import AsyncAPIConsumer
 from djangochannelsrestframework.decorators import action
@@ -155,7 +155,22 @@ class PostConsumer(
             )
             return queryset
         if kwargs.get('action') == 'community_notes':
-            return queryset.filter(community_note_of=kwargs['pk'], status='published').order_by('published_at')
+            search_term = kwargs.get('search_term', None)
+            sort_by = kwargs.get('sort_by', None)
+            queryset = queryset.filter(community_note_of=kwargs['pk']).annotate(
+                upvotes_count=Count('upvotes'),
+                downvotes_count=Count('downvotes'),
+                total_votes=Count('upvotes', distinct=True) - Count('downvotes', distinct=True))
+            if search_term:
+                queryset = queryset.filter(
+                    Q(author__username__icontains=search_term) | Q(author__name__icontains=search_term) | Q(
+                        body__icontains=search_term)).distinct()
+            if sort_by:
+                # TODO: Sort
+                queryset = queryset.filter()
+            else:
+                queryset = queryset.order_by('-total_votes', '-upvotes_count', 'downvotes_count', 'created_at')
+            return queryset
         if kwargs.get('action') == 'delete':
             return queryset.filter(is_deleted=False, author=self.scope['user'])
         if kwargs.get('action') == 'patch':
