@@ -166,11 +166,11 @@ class PostConsumer(
                     Q(author__username__icontains=search_term) | Q(author__name__icontains=search_term) | Q(
                         body__icontains=search_term)).distinct()
             if sort_by:
-                # TODO: Sort
-                queryset = queryset.filter()
-            else:
-                queryset = queryset.order_by('-total_votes', '-upvotes_count', 'downvotes_count', 'created_at')
-            return queryset
+                if sort_by == 'recent':
+                    return queryset.order_by('-created_at')
+                if sort_by == 'oldest':
+                    return queryset.order_by('created_at')
+            return queryset.order_by('-total_votes', '-upvotes_count', 'downvotes_count', 'created_at')
         if kwargs.get('action') == 'delete':
             return queryset.filter(is_deleted=False, author=self.scope['user'])
         if kwargs.get('action') == 'patch':
