@@ -12,10 +12,11 @@ class ReasonInline(admin.TabularInline):
     extra = 0
     classes = ('grp-collapse grp-open',)
 
+
 class OptionInline(GrappelliSortableHiddenMixin, admin.TabularInline):
     model = Option
     fieldsets = [
-        (None, {'fields': ['number', 'text', 'votes',]}),
+        (None, {'fields': ['number', 'text', 'votes', ]}),
     ]
     extra = 0
     filter_horizontal = ['votes']
@@ -25,6 +26,6 @@ class OptionInline(GrappelliSortableHiddenMixin, admin.TabularInline):
 
 @admin.register(Ballot)
 class BallotAdmin(admin.ModelAdmin):
-    list_display = ['title', 'start_time', 'end_time']
+    list_display = ['title', 'is_active', 'start_time', 'end_time']
     inlines = [OptionInline, ReasonInline]
     readonly_fields = ['created_at', 'updated_at']

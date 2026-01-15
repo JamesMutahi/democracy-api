@@ -48,8 +48,6 @@ class PostSerializer(serializers.ModelSerializer):
     image2 = serializers.SerializerMethodField()
     image3 = serializers.SerializerMethodField()
     image4 = serializers.SerializerMethodField()
-    image5 = serializers.SerializerMethodField()
-    image6 = serializers.SerializerMethodField()
     community_note = serializers.SerializerMethodField(read_only=True)
     is_upvoted = serializers.SerializerMethodField(read_only=True)
     is_downvoted = serializers.SerializerMethodField(read_only=True)
@@ -68,8 +66,6 @@ class PostSerializer(serializers.ModelSerializer):
             'image2',
             'image3',
             'image4',
-            'image5',
-            'image6',
             'video1',
             'video2',
             'video3',
@@ -134,20 +130,6 @@ class PostSerializer(serializers.ModelSerializer):
         if obj.image4:
             current_site = Site.objects.get_current()
             return current_site.domain + obj.image4.url
-        return None
-
-    @staticmethod
-    def get_image5(obj):
-        if obj.image5:
-            current_site = Site.objects.get_current()
-            return current_site.domain + obj.image5.url
-        return None
-
-    @staticmethod
-    def get_image6(obj):
-        if obj.image6:
-            current_site = Site.objects.get_current()
-            return current_site.domain + obj.image6.url
         return None
 
     def get_fields(self):

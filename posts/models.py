@@ -34,8 +34,6 @@ class Post(BaseModel):
     image2 = models.ImageField(upload_to='posts/images/', null=True, blank=True)
     image3 = models.ImageField(upload_to='posts/images/', null=True, blank=True)
     image4 = models.ImageField(upload_to='posts/images/', null=True, blank=True)
-    image5 = models.ImageField(upload_to='posts/images/', null=True, blank=True)
-    image6 = models.ImageField(upload_to='posts/images/', null=True, blank=True)
     video1 = models.FileField(upload_to='posts/videos/', null=True, blank=True)
     video2 = models.FileField(upload_to='posts/videos/', null=True, blank=True)
     video3 = models.FileField(upload_to='posts/videos/', null=True, blank=True)
