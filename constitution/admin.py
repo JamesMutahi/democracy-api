@@ -4,23 +4,23 @@ from nested_admin.nested import NestedTabularInline, NestedModelAdmin
 from constitution.models import Section
 
 
-# class Level5Inline(NestedTabularInline):
-#     model = Section
-#     extra = 0
-#     sortable_field_name = 'position'
-#     verbose_name = 'subsection'
-#     classes = ('grp-collapse grp-closed',)
-#     fieldsets = ((None, {'fields': ('text', 'tag', 'is_title', 'position')}),)
-#
-#
-# class Level4Inline(NestedTabularInline):
-#     model = Section
-#     extra = 0
-#     sortable_field_name = 'position'
-#     verbose_name = 'subsection'
-#     classes = ('grp-collapse grp-closed',)
-#     fieldsets = ((None, {'fields': ('text', 'tag', 'is_title', 'position')}),)
-#     inlines = [Level5Inline]
+class Level5Inline(NestedTabularInline):
+    model = Section
+    extra = 0
+    sortable_field_name = 'position'
+    verbose_name = 'subsection'
+    classes = ('grp-collapse grp-closed',)
+    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title', 'position')}),)
+
+
+class Level4Inline(NestedTabularInline):
+    model = Section
+    extra = 0
+    sortable_field_name = 'position'
+    verbose_name = 'subsection'
+    classes = ('grp-collapse grp-closed',)
+    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title', 'position')}),)
+    inlines = [Level5Inline]
 
 
 class Level3Inline(NestedTabularInline):
@@ -29,8 +29,8 @@ class Level3Inline(NestedTabularInline):
     sortable_field_name = 'position'
     verbose_name = 'subsection'
     classes = ('grp-collapse grp-closed',)
-    fieldsets = ((None, {'fields': ('text', 'tag', 'is_title', 'position')}),)
-    # inlines = [Level4Inline]
+    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title', 'position')}),)
+    inlines = [Level4Inline]
 
 
 class Level2Inline(NestedTabularInline):
@@ -39,7 +39,7 @@ class Level2Inline(NestedTabularInline):
     sortable_field_name = 'position'
     verbose_name = 'subsection'
     classes = ('grp-collapse grp-closed',)
-    fieldsets = ((None, {'fields': ('text', 'tag', 'is_title', 'position')}),)
+    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title', 'position')}),)
     inlines = [Level3Inline]
 
 
@@ -49,7 +49,7 @@ class Level1Inline(NestedTabularInline):
     sortable_field_name = 'position'
     verbose_name = 'subsection'
     classes = ('grp-collapse grp-open',)
-    fieldsets = ((None, {'fields': ('text', 'tag', 'is_title', 'position')}),)
+    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title', 'position')}),)
     inlines = [Level2Inline]
 
 

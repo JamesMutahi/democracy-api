@@ -13,6 +13,7 @@ class SectionSerializer(serializers.ModelSerializer):
             'id',
             'position',
             'tag',
+            'numeral',
             'text',
             'is_title',
             'subsections',
