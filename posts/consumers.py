@@ -227,9 +227,6 @@ class PostConsumer(
             page_obj = paginator.page(1)
         except EmptyPage:
             page_obj = paginator.page(paginator.num_pages)
-        self.scope['user'].viewed_posts.add(*page_obj.object_list)
-        reposts_ofs = page_obj.object_list.values_list('repost_of', flat=True)
-        self.scope['user'].viewed_posts.add(*[post for post in reposts_ofs if post is not None])
         serializer = PostSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
         return dict(results=serializer.data, count=paginator.count, num_pages=paginator.num_pages,
                     current_page=page_obj.number, has_next=page_obj.has_next(), has_previous=page_obj.has_previous())
@@ -445,6 +442,12 @@ class PostConsumer(
         return data, 200
 
     @action()
+    def add_view(self, pk, **kwargs):
+        post = self.get_object(pk=pk)
+        post.views.add(self.scope['user'])
+        return pk, 200
+
+    @action()
     def report(self, **kwargs):
         serializer = ReportSerializer(data=kwargs['data'], context={'scope': self.scope})
         serializer.is_valid(raise_exception=True)
@@ -456,9 +459,6 @@ class PostConsumer(
         if last_post:
             posts = posts.filter(id__lt=last_post)
         page_obj = list_paginator(queryset=posts, page=1, page_size=page_size)
-        self.scope['user'].viewed_posts.add(*page_obj.object_list)
-        reposts_ofs = page_obj.object_list.values_list('repost_of', flat=True)
-        self.scope['user'].viewed_posts.add(*[post for post in reposts_ofs if post is not None])
         serializer = post_serializer(page_obj.object_list, many=True, context={'scope': self.scope})
         return dict(results=serializer.data, last_post=last_post, has_next=page_obj.has_next())
 
