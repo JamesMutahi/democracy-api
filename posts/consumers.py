@@ -82,12 +82,14 @@ class PostConsumer(
     def get_post_serializer_data(self, message):
         message['data']['is_liked'] = self.scope['user'].id in message['data']['likes']
         message['data']['is_bookmarked'] = self.scope['user'].id in message['data']['bookmarks']
+        message['data']['is_viewed'] = self.scope['user'].id in message['data']['views']
         message['data']['is_upvoted'] = self.scope['user'].id in message['data']['upvotes']
         message['data']['is_downvoted'] = self.scope['user'].id in message['data']['downvotes']
         message['data']['is_reposted'] = self.scope['user'].id in message['data']['reposts']
         message['data']['is_quoted'] = self.scope['user'].id in message['data']['quotes']
         message['data']['likes'] = len(message['data']['likes'])
         message['data']['bookmarks'] = len(message['data']['bookmarks'])
+        message['data']['views'] = len(message['data']['views'])
         message['data']['upvotes'] = len(message['data']['upvotes'])
         message['data']['downvotes'] = len(message['data']['downvotes'])
         message['data']['reposts'] = len(message['data']['reposts']) + len(message['data']['quotes'])
@@ -112,7 +114,8 @@ class PostConsumer(
                         quotes=list(instance.reposts.exclude(body='').values_list('author', flat=True)),
                         community_note=instance.get_top_note(), upvotes=instance.upvotes.values_list('id', flat=True),
                         downvotes=instance.downvotes.values_list('id', flat=True),
-                        views=instance.views.count(), is_deleted=instance.is_deleted, is_active=instance.is_active, )
+                        views=instance.views.values_list('id', flat=True), is_deleted=instance.is_deleted,
+                        is_active=instance.is_active, )
         return dict(
             data=data,
             action=action.value,
@@ -443,8 +446,7 @@ class PostConsumer(
 
     @action()
     def add_view(self, pk, **kwargs):
-        post = self.get_object(pk=pk)
-        post.views.add(self.scope['user'])
+        self.scope['user'].viewed_posts.add(pk)
         return pk, 200
 
     @action()
