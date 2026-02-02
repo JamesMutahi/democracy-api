@@ -30,6 +30,7 @@ class PostSerializer(serializers.ModelSerializer):
     is_reposted = serializers.SerializerMethodField(read_only=True)
     is_quoted = serializers.SerializerMethodField(read_only=True)
     views = serializers.SerializerMethodField(read_only=True)
+    is_viewed = serializers.SerializerMethodField(read_only=True)
     ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
     petition = PetitionSerializer(read_only=True)
@@ -79,6 +80,7 @@ class PostSerializer(serializers.ModelSerializer):
             'tagged_sections',
             'tags',
             'views',
+            'is_viewed',
             'replies',
             'reposts',
             'is_reposted',
@@ -179,6 +181,10 @@ class PostSerializer(serializers.ModelSerializer):
     def get_views(obj):
         count = obj.views.count()
         return count
+
+    def get_is_viewed(self, obj):
+        is_viewed = obj.views.contains(self.context['scope']['user'])
+        return is_viewed
 
     @staticmethod
     def get_community_note(obj: Post):
