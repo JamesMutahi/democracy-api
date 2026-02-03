@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from ballot.models import Ballot, Option, Reason
+from geo.serializers import CountySerializer, WardSerializer, ConstituencySerializer
 
 
 class OptionSerializer(serializers.ModelSerializer):
@@ -32,6 +33,9 @@ class BallotSerializer(serializers.ModelSerializer):
     voted_option = serializers.SerializerMethodField(read_only=True)
     options = OptionSerializer(many=True)
     reason = serializers.SerializerMethodField(read_only=True)
+    county = CountySerializer(read_only=True)
+    constituency = ConstituencySerializer(read_only=True)
+    ward = WardSerializer(read_only=True)
 
     class Meta:
         model = Ballot
@@ -39,6 +43,9 @@ class BallotSerializer(serializers.ModelSerializer):
             'id',
             'title',
             'description',
+            'county',
+            'constituency',
+            'ward',
             'start_time',
             'end_time',
             'is_active',

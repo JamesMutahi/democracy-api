@@ -3,6 +3,8 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from geo.models import County, Constituency, Ward
+
 User = get_user_model()
 
 
@@ -18,6 +20,10 @@ class BaseModel(models.Model):
 class Survey(BaseModel):
     title = models.CharField(max_length=255)
     description = models.TextField(null=True, blank=True)
+    county = models.ForeignKey(County, on_delete=models.PROTECT, null=True, blank=True, related_name='surveys')
+    constituency = models.ForeignKey(Constituency, on_delete=models.PROTECT, null=True, blank=True,
+                                     related_name='surveys')
+    ward = models.ForeignKey(Ward, on_delete=models.PROTECT, null=True, blank=True, related_name='surveys')
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
     is_active = models.BooleanField(_('active'), default=True)

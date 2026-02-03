@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
 from survey.models import Survey, Question, Choice, Response, TextAnswer, ChoiceAnswer, Page
 
 
@@ -109,6 +110,9 @@ class SurveySerializer(serializers.ModelSerializer):
     pages = PageSerializer(many=True)
     response = serializers.SerializerMethodField(read_only=True)
     total_responses = serializers.SerializerMethodField(read_only=True)
+    county = CountySerializer(read_only=True)
+    constituency = ConstituencySerializer(read_only=True)
+    ward = WardSerializer(read_only=True)
 
     class Meta:
         model = Survey
@@ -116,6 +120,9 @@ class SurveySerializer(serializers.ModelSerializer):
             'id',
             'title',
             'description',
+            'county',
+            'constituency',
+            'ward',
             'start_time',
             'end_time',
             'is_active',

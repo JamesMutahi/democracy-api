@@ -22,6 +22,7 @@ from django.conf import settings
 urlpatterns = [
     path('grappelli/', include('grappelli.urls')),
     path('auth/', include('users.urls')),
+    path('geo/', include('geo.urls')),
     path('admin/', admin.site.urls),
     path('nested_admin/', include('nested_admin.urls')),
 ]

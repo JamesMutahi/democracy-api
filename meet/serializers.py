@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
+from geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
 from meet.models import Meeting
 from users.serializers import UserSerializer
 
@@ -11,6 +12,9 @@ class MeetingSerializer(serializers.ModelSerializer):
     host = UserSerializer(read_only=True)
     listeners = serializers.SerializerMethodField(read_only=True)
     recent_listeners = serializers.SerializerMethodField(read_only=True)
+    county = CountySerializer(read_only=True)
+    constituency = ConstituencySerializer(read_only=True)
+    ward = WardSerializer(read_only=True)
 
     class Meta:
         model = Meeting
@@ -19,6 +23,9 @@ class MeetingSerializer(serializers.ModelSerializer):
             'host',
             'title',
             'description',
+            'county',
+            'constituency',
+            'ward',
             'listeners',
             'recent_listeners',
             'start_time',

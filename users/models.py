@@ -6,6 +6,7 @@ from django.core.mail import send_mail
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from geo.models import County, Constituency, Ward
 from .managers import UserManager
 
 
@@ -21,6 +22,10 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     muted = models.ManyToManyField('self', symmetrical=False, blank=True)
     blocked = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='blockers')
     is_representative = models.BooleanField(default=False)
+    county = models.ForeignKey(County, on_delete=models.PROTECT, null=True, blank=True, related_name='voters')
+    constituency = models.ForeignKey(Constituency, on_delete=models.PROTECT, null=True, blank=True,
+                                     related_name='voters')
+    ward = models.ForeignKey(Ward, on_delete=models.PROTECT, null=True, blank=True, related_name='voters')
     is_staff = models.BooleanField(_('staff status'), default=False)
     is_active = models.BooleanField(_('active'), default=True)
     date_joined = models.DateTimeField(_('date joined'), auto_now_add=True)

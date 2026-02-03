@@ -3,6 +3,7 @@ from django.contrib.sites.models import Site
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
+from geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
 from users.utils.base64_image_field import Base64ImageField
 
 User = get_user_model()
@@ -20,6 +21,9 @@ class UserSerializer(serializers.ModelSerializer):
     is_notifying = serializers.SerializerMethodField(read_only=True)
     image_base64 = Base64ImageField(write_only=True, max_length=None, use_url=True, allow_null=True)
     cover_photo_base64 = Base64ImageField(write_only=True, max_length=None, use_url=True, allow_null=True)
+    county = CountySerializer(read_only=True)
+    constituency = ConstituencySerializer(read_only=True)
+    ward = WardSerializer(read_only=True)
 
     class Meta:
         model = User
@@ -36,6 +40,9 @@ class UserSerializer(serializers.ModelSerializer):
             'following',
             'followers',
             'is_representative',
+            'county',
+            'constituency',
+            'ward',
             'is_active',
             'date_joined',
             'is_muted',

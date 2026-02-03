@@ -5,25 +5,24 @@ from grappelli.dashboard import modules, Dashboard
 class CustomIndexDashboard(Dashboard):
     def __init__(self, **kwargs):
         Dashboard.__init__(self, **kwargs)
-        self.children.append(modules.AppList(
-            title=_(''),
+        self.children.append(modules.ModelList(
+            title=_('App'),
             column=1,
             collapsible=True,
-            models=('django.contrib.sites.models.Site',),
+            models=('django.contrib.sites.models.Site', 'geo.models.County',),
         ))
         self.children.append(modules.ModelList(
             title=_('General'),
             column=1,
             collapsible=True,
-            models=('ballot.models.Ballot', 'survey.models.Survey', 'users.models.CustomUser', 'posts.models.Report',
-                    'meet.models.Meeting',),
+            models=('ballot.models.Ballot', 'survey.models.Survey', 'posts.models.Report', 'meet.models.Meeting',),
         ))
         self.children.append(modules.ModelList(
             title=_('User data'),
             column=1,
             collapsible=True,
             models=(
-                'posts.models.Post', 'petition.models.Petition', 'chat.models.Chat',
+                'users.models.CustomUser', 'posts.models.Post', 'petition.models.Petition', 'chat.models.Chat',
                 'notification.models.Notification',),
         ))
         self.children.append(modules.ModelList(

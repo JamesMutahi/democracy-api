@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
 from rest_framework import serializers
 
+from geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
 from petition.models import Petition
 from users.serializers import UserSerializer
 from users.utils.base64_image_field import Base64ImageField
@@ -16,6 +17,9 @@ class PetitionSerializer(serializers.ModelSerializer):
     recent_supporters = serializers.SerializerMethodField(read_only=True)
     is_supported = serializers.SerializerMethodField(read_only=True)
     image_base64 = Base64ImageField(write_only=True, max_length=None, use_url=True, allow_null=True)
+    county = CountySerializer(read_only=True)
+    constituency = ConstituencySerializer(read_only=True)
+    ward = WardSerializer(read_only=True)
 
     class Meta:
         model = Petition
@@ -24,6 +28,9 @@ class PetitionSerializer(serializers.ModelSerializer):
             'author',
             'title',
             'description',
+            'county',
+            'constituency',
+            'ward',
             'image',
             'video',
             'supporters',

@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.sites',
+    'geo.apps.GeoConfig',
     'users.apps.UsersConfig',
     'survey.apps.SurveyConfig',
     'ballot.apps.BallotConfig',
@@ -58,6 +59,8 @@ INSTALLED_APPS = [
     'django_filters',
     'nested_admin',
 ]
+
+DATA_UPLOAD_MAX_NUMBER_FIELDS = None
 
 AUTH_USER_MODEL = 'users.CustomUser'
 

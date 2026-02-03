@@ -21,34 +21,11 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
     lookup_field = "pk"
     page_size = 20
 
-    def filter_queryset(self, queryset: QuerySet, **kwargs):
-        queryset = super().filter_queryset(queryset=queryset, **kwargs)
-        search_term = kwargs.get('search_term', None)
-        if search_term:
-            search_term = search_term.lower()
-            queryset = queryset.annotate(latest_message_id=Max('messages__id')).filter(
-                users=self.scope['user']).order_by(
-                '-latest_message_id').prefetch_related('users')
-            users_in_chats = []
-            for chat in queryset:
-                for user in chat.users.all():
-                    if user != self.scope['user']:
-                        if search_term in user.username.lower() or search_term in user.name.lower():
-                            users_in_chats.append(user)
-            return queryset.filter(users__in=users_in_chats)
-        return queryset.annotate(latest_message_id=Max('messages__id')).filter(users=self.scope['user']).order_by(
-            '-latest_message_id')
-
     async def connect(self):
         if self.scope['user'].is_authenticated:
             await self.accept()
         else:
             await self.close()
-
-    @database_sync_to_async
-    def get_chat_pks(self):
-        chat_pks = list(self.scope['user'].chats.all().values_list('pk', flat=True))
-        return chat_pks
 
     @model_observer(Chat)
     async def chat_activity(self, message, observer=None, action=None, **kwargs):
@@ -125,6 +102,24 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
     async def unsubscribe(self):
         await self.chat_activity.unsubscribe()
         await self.message_activity.unsubscribe()
+
+    def filter_queryset(self, queryset: QuerySet, **kwargs):
+        queryset = super().filter_queryset(queryset=queryset, **kwargs)
+        search_term = kwargs.get('search_term', None)
+        if search_term:
+            search_term = search_term.lower()
+            queryset = queryset.annotate(latest_message_id=Max('messages__id')).filter(
+                users=self.scope['user']).order_by(
+                '-latest_message_id').prefetch_related('users')
+            users_in_chats = []
+            for chat in queryset:
+                for user in chat.users.all():
+                    if user != self.scope['user']:
+                        if search_term in user.username.lower() or search_term in user.name.lower():
+                            users_in_chats.append(user)
+            return queryset.filter(users__in=users_in_chats)
+        return queryset.annotate(latest_message_id=Max('messages__id')).filter(users=self.scope['user']).order_by(
+            '-latest_message_id')
 
     @action()
     async def create(self, data: dict, request_id: str, **kwargs):
