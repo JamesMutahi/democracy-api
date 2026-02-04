@@ -103,8 +103,27 @@ class BallotConsumer(GenericAsyncAPIConsumer):
 
     @action()
     async def vote(self, pk: int, **kwargs):
-        option: Option = await database_sync_to_async(Option.objects.get)(pk=pk, ballot__is_active=True)
+        option: Option = await self.get_option(pk=pk)
+        if not option:
+            return await self.reply(action='vote', errors=['You are not registered to vote in this ballot'], status=403)
         await self.vote_(option=option)
+
+    @database_sync_to_async
+    def get_option(self, pk: int):
+        option: Option = Option.objects.get(pk=pk, ballot__is_active=True)
+        if not option.ballot.county:
+            return option
+        if not self.scope['user'].county:
+            return None
+        if option.ballot.county.id != self.scope['user'].county.id:
+            return None
+        if option.ballot.constituency:
+            if option.ballot.constituency.id != self.scope['user'].constituency.id:
+                return None
+        if option.ballot.ward:
+            if option.ballot.ward.id != self.scope['user'].ward.id:
+                return None
+        return option
 
     @database_sync_to_async
     def vote_(self, option):
@@ -119,9 +138,20 @@ class BallotConsumer(GenericAsyncAPIConsumer):
 
     @action()
     async def add_reason(self, pk: int, text: str, **kwargs):
-        ballot = await database_sync_to_async(self.get_object)(pk=pk)
+        ballot = await database_sync_to_async(self.get_object)(pk=pk, is_active=True)
+        check: bool = await self.check_vote(ballot=ballot)
+        if not check:
+            return await self.reply(action='vote', errors=['Please enter your vote first'], status=400)
         data = await self.add_reason_(ballot=ballot, text=text)
         return await self.reply(data=data, action='update')
+
+    @database_sync_to_async
+    def check_vote(self, ballot: Ballot):
+        user = self.scope['user']
+        for o in ballot.options.all():
+            if o.votes.contains(user):
+                return True
+        return False
 
     @database_sync_to_async
     def add_reason_(self, ballot: Ballot, text: str):
