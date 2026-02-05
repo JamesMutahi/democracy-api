@@ -117,10 +117,31 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Generic
         return data, 200
 
     @action()
-    def join(self, pk, **kwargs):
-        meeting = self.get_object(pk=pk)
-        meeting.listeners.add(self.scope['user'])
+    async def join(self, pk, **kwargs):
+        meeting = await database_sync_to_async(self.get_object)(pk=pk)
+        in_region = await self.check_region(meeting=meeting)
+        if not in_region:
+            return await self.reply(action='join', errors=['You are not a registered voter in the region'], status=403)
+        await self.add_listener(meeting=meeting)
         return {'pk': pk}, 200
+
+    @database_sync_to_async
+    def check_region(self, meeting: Meeting):
+        if not meeting.county:
+            return True
+        if meeting.county != self.scope['user'].county:
+            return False
+        if meeting.constituency:
+            if meeting.constituency != self.scope['user'].constituency:
+                return False
+        if meeting.ward:
+            if meeting.ward != self.scope['user'].ward:
+                return False
+        return True
+
+    @database_sync_to_async
+    def add_listener(self, meeting: Meeting):
+        meeting.listeners.add(self.scope['user'])
 
     @action()
     def leave(self, pk, **kwargs):

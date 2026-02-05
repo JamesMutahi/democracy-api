@@ -103,7 +103,7 @@ class Response(BaseModel):
         db_table = 'Response'
 
     def __str__(self):
-        return self.survey.name
+        return self.survey.title
 
 
 class TextAnswer(models.Model):

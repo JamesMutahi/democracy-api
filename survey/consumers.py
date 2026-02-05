@@ -124,13 +124,30 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         return dict(results=serializer.data, last_survey=last_survey, has_next=page_obj.has_next())
 
     @action()
-    async def create_response(self, data: dict, request_id: str, **kwargs):
-        await database_sync_to_async(self.get_object)(pk=data['survey'], is_active=True)
-        data = await self.create_response_(data=data)
-        return await self.reply(data=data, action='create', request_id=request_id, status=201)
+    async def submit(self, data: dict, request_id: str, **kwargs):
+        survey = await database_sync_to_async(self.get_object)(pk=data['survey'], is_active=True)
+        in_region = await self.check_region(survey=survey)
+        if not in_region:
+            return await self.reply(action='submit', errors=['You are not a registered voter in the region'], status=403)
+        data = await self.submit_(data=data)
+        return await self.reply(data=data, action='submit', request_id=request_id, status=201)
 
     @database_sync_to_async
-    def create_response_(self, data: dict):
+    def check_region(self, survey: Survey):
+        if not survey.county:
+            return True
+        if survey.county != self.scope['user'].county:
+            return False
+        if survey.constituency:
+            if survey.constituency != self.scope['user'].constituency:
+                return False
+        if survey.ward:
+            if survey.ward != self.scope['user'].ward:
+                return False
+        return True
+
+    @database_sync_to_async
+    def submit_(self, data: dict):
         serializer = ResponseSerializer(data=data, context={'scope': self.scope})
         serializer.is_valid(raise_exception=True)
         serializer.save()

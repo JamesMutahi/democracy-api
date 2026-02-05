@@ -109,8 +109,26 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
     @action()
     async def support(self, pk: int, request_id: str, **kwargs):
         petition = await database_sync_to_async(self.get_object)(pk=pk, is_active=True)
+        in_region = await self.check_region(petition=petition)
+        if not in_region:
+            return await self.reply(action='support', errors=['You are not a registered voter in the region'],
+                                    status=403)
         data = await self.support_(petition=petition)
         return data, 200
+
+    @database_sync_to_async
+    def check_region(self, petition: Petition):
+        if not petition.county:
+            return True
+        if petition.county != self.scope['user'].county:
+            return False
+        if petition.constituency:
+            if petition.constituency != self.scope['user'].constituency:
+                return False
+        if petition.ward:
+            if petition.ward != self.scope['user'].ward:
+                return False
+        return True
 
     @database_sync_to_async
     def support_(self, petition: Petition):

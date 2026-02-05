@@ -105,7 +105,7 @@ class BallotConsumer(GenericAsyncAPIConsumer):
     async def vote(self, pk: int, **kwargs):
         option: Option = await self.get_option(pk=pk)
         if not option:
-            return await self.reply(action='vote', errors=['You are not registered to vote in this ballot'], status=403)
+            return await self.reply(action='vote', errors=['You are not a registered voter in the region'], status=403)
         await self.vote_(option=option)
 
     @database_sync_to_async
@@ -113,15 +113,13 @@ class BallotConsumer(GenericAsyncAPIConsumer):
         option: Option = Option.objects.get(pk=pk, ballot__is_active=True)
         if not option.ballot.county:
             return option
-        if not self.scope['user'].county:
-            return None
-        if option.ballot.county.id != self.scope['user'].county.id:
+        if option.ballot.county != self.scope['user'].county:
             return None
         if option.ballot.constituency:
-            if option.ballot.constituency.id != self.scope['user'].constituency.id:
+            if option.ballot.constituency != self.scope['user'].constituency:
                 return None
         if option.ballot.ward:
-            if option.ballot.ward.id != self.scope['user'].ward.id:
+            if option.ballot.ward != self.scope['user'].ward:
                 return None
         return option
 
