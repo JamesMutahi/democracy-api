@@ -1,4 +1,3 @@
-import asyncio
 from typing import Dict, Any
 
 from asgiref.sync import sync_to_async
@@ -6,10 +5,8 @@ from channels.db import database_sync_to_async
 from channels.middleware import BaseMiddleware
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
-from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from django.db.models import QuerySet, Case, When, Q, Count
 from django.db.models.signals import post_save
-from djangochannelsrestframework.consumers import AsyncAPIConsumer
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import CreateModelMixin, PatchModelMixin, RetrieveModelMixin
@@ -64,7 +61,7 @@ class PostConsumer(
     serializer_class = PostSerializer
     lookup_field = "pk"
     pagination_class = PostListPagination
-    page_size = 20
+    page_size = 2
 
     async def connect(self):
         if self.scope['user'].is_authenticated:
@@ -132,6 +129,9 @@ class PostConsumer(
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
+        last_post = kwargs.get('last_post', None)
+        if last_post:
+            queryset = queryset.filter(id__lt=last_post)
         if kwargs.get('action') == 'list':
             search_term = kwargs.get('search_term', None)
             if search_term:
@@ -200,49 +200,25 @@ class PostConsumer(
         return response, status
 
     @action()
-    async def list(self, request_id: str, last_post: int = None, page_size=page_size, **kwargs):
+    async def list(self, request_id: str, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
         await self.subscribe_to_posts(posts=data['results'], request_id=request_id)
         return data, 200
 
-    @action(detached=True)
-    async def for_you(self, request_id: str, page=1, page_size=10, timer=100, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        while not asyncio.current_task().cancelled():
-            data = await self.list_(queryset, page, page_size, **kwargs)
-            await self.subscribe_to_posts(posts=data['results'], request_id=request_id)
-            await self.reply(action='for_you', data=data, status=200, request_id=request_id)
-            has_next = data.get('has_next', False)
-            # Go to next page if more or stop when there are no more pages to fetch
-            if has_next:
-                page += 1
-                await asyncio.sleep(timer)
-            else:
-                break
-
-    @database_sync_to_async
-    def list_(self, queryset, page, page_size, **kwargs):
-        paginator = Paginator(queryset, page_size)
-        try:
-            page_obj = paginator.page(page)
-        except PageNotAnInteger:
-            page_obj = paginator.page(1)
-        except EmptyPage:
-            page_obj = paginator.page(paginator.num_pages)
-        serializer = PostSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
-        return dict(results=serializer.data, count=paginator.count, num_pages=paginator.num_pages,
-                    current_page=page_obj.number, has_next=page_obj.has_next(), has_previous=page_obj.has_previous())
+    @action()
+    async def for_you(self, request_id, page_size=page_size, **kwargs):
+        posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
+        await self.subscribe_to_posts(posts=data['results'], request_id=request_id)
+        return data, 200
 
     @action()
-    async def list_cancel(self: AsyncAPIConsumer, request_id, **kwargs):
-        """
-        Action that will stop all pending streaming list requests.
-        """
-        for task in self.detached_tasks:
-            task.cancel()
-            await self.handle_detached_task_completion(task)
-        await self.reply(action='list_cancel', status=200, request_id=request_id)
+    async def following(self, request_id, page_size=page_size, **kwargs):
+        posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
+        await self.subscribe_to_posts(posts=data['results'], request_id=request_id)
+        return data, 200
 
     @action()
     async def delete(self, pk: int, request_id: str, **kwargs):
@@ -329,13 +305,6 @@ class PostConsumer(
         return {'message': message}
 
     @action()
-    async def following(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
-        posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
-        await self.subscribe_to_posts(posts=data['results'], request_id=request_id)
-        return data, 200
-
-    @action()
     async def reply_to(self, request_id, pk: int, **kwargs):
         post = await database_sync_to_async(self.get_object)(pk=pk)
         data = await self.get_reply_to_posts(post=post)
@@ -349,11 +318,10 @@ class PostConsumer(
         return serializer.data
 
     @action()
-    async def replies(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
+    async def replies(self, request_id, page_size=page_size, **kwargs):
         kwargs['author_pk'] = await self.get_author_pk(post_pk=kwargs['pk'])
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post,
-                                          post_serializer=ThreadSerializer)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, post_serializer=ThreadSerializer, **kwargs)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'reply_{request_id}')
         return data, 200
 
@@ -362,9 +330,9 @@ class PostConsumer(
         return Post.objects.get(pk=post_pk).author.pk
 
     @action()
-    async def community_notes(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
+    async def community_notes(self, request_id, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'community_note_{request_id}')
         return data, 200
 
@@ -403,44 +371,44 @@ class PostConsumer(
         return {'message': message}
 
     @action()
-    async def bookmarks(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
+    async def bookmarks(self, request_id, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
     @action()
-    async def liked_posts(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
+    async def liked_posts(self, request_id, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
     @action()
-    async def user_posts(self, request_id: str, last_post: int = None, page_size=page_size, **kwargs):
+    async def user_posts(self, request_id: str, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
     @action()
-    async def user_replies(self, request_id: str, last_post: int = None, page_size=page_size, **kwargs):
+    async def user_replies(self, request_id: str, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
     @action()
-    async def drafts(self, request_id, last_post: int = None, page_size=page_size, **kwargs):
+    async def drafts(self, request_id, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
     @action()
-    async def user_community_notes(self, request_id: str, last_post: int = None, page_size=page_size, **kwargs):
+    async def user_community_notes(self, request_id: str, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, last_post=last_post)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
         await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
@@ -457,12 +425,10 @@ class PostConsumer(
         return serializer.data, 200
 
     @database_sync_to_async
-    def posts_paginator(self, posts, page_size, last_post: int = None, post_serializer=PostSerializer):
-        if last_post:
-            posts = posts.filter(id__lt=last_post)
+    def posts_paginator(self, posts, page_size, post_serializer=PostSerializer, **kwargs):
         page_obj = list_paginator(queryset=posts, page=1, page_size=page_size)
         serializer = post_serializer(page_obj.object_list, many=True, context={'scope': self.scope})
-        return dict(results=serializer.data, last_post=last_post, has_next=page_obj.has_next())
+        return dict(results=serializer.data, last_post=kwargs.get('last_post', None), has_next=page_obj.has_next())
 
     async def subscribe_to_posts(self, posts: dict, request_id: str):
         for post in posts:
