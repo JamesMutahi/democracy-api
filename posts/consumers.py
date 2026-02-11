@@ -160,10 +160,7 @@ class PostConsumer(
         if kwargs.get('action') == 'community_notes':
             search_term = kwargs.get('search_term', None)
             sort_by = kwargs.get('sort_by', None)
-            queryset = queryset.filter(community_note_of=kwargs['pk']).annotate(
-                upvotes_count=Count('upvotes'),
-                downvotes_count=Count('downvotes'),
-                total_votes=Count('upvotes', distinct=True) - Count('downvotes', distinct=True))
+            queryset = queryset.filter(community_note_of=kwargs['pk'])
             if search_term:
                 queryset = queryset.filter(
                     Q(author__username__icontains=search_term) | Q(author__name__icontains=search_term) | Q(
@@ -173,7 +170,10 @@ class PostConsumer(
                     return queryset.order_by('-created_at')
                 if sort_by == 'oldest':
                     return queryset.order_by('created_at')
-            return queryset.order_by('-total_votes', '-upvotes_count', 'downvotes_count', 'created_at')
+            return queryset.annotate(upvotes_count=Count('upvotes'), downvotes_count=Count('downvotes'),
+                                     total_votes=Count('upvotes', distinct=True) - Count('downvotes',
+                                                                                         distinct=True)).order_by(
+                '-total_votes', '-upvotes_count', 'downvotes_count', 'created_at')
         if kwargs.get('action') == 'delete':
             return queryset.filter(is_deleted=False, author=self.scope['user'])
         if kwargs.get('action') == 'patch':

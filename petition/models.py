@@ -27,6 +27,7 @@ class Petition(BaseModel):
     image = models.ImageField(upload_to='petitions/images/')
     video = models.FileField(upload_to='petitions/videos/', null=True, blank=True)
     supporters = models.ManyToManyField(User, blank=True, related_name='supported_petitions')
+    is_open = models.BooleanField(_('open'), default=True)
     is_active = models.BooleanField(_('active'), default=True)
 
     class Meta:

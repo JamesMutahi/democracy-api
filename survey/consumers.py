@@ -97,14 +97,33 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
         search_term = kwargs.get('search_term', None)
+        status = kwargs.get('status', 'open')
+        filter_by_region = kwargs.get('filter_by_region', True)
+        sort_by = kwargs.get('sort_by', 'recent')
         start_date = kwargs.get('start_date', None)
         end_date = kwargs.get('end_date', None)
         if search_term:
-            queryset = queryset.filter(
-                Q(title__icontains=search_term) | Q(description__icontains=search_term)).distinct()
+            queryset = queryset.filter(Q(title__icontains=search_term) | Q(description__icontains=search_term) | Q(
+                author__name__icontains=search_term)).distinct()
+        if status:
+            if status == 'open':
+                queryset = queryset.filter(is_active=True)
+            if status == 'closed':
+                queryset = queryset.filter(is_active=False)
+        if filter_by_region:
+            county = self.scope['user'].county
+            constituency = self.scope['user'].constituency
+            ward = self.scope['user'].ward
+            queryset = queryset.filter(Q(county__isnull=True) | Q(county=county)).filter(
+                Q(constituency__isnull=True) | Q(constituency=constituency)).filter(Q(ward__isnull=True) | Q(ward=ward))
         if start_date and end_date:
             queryset = queryset.filter(start_time__range=(start_date, end_date))
-        return queryset
+        if sort_by:
+            if sort_by == 'recent':
+                return queryset.order_by('-created_at')
+            if sort_by == 'oldest':
+                return queryset.order_by('created_at')
+        return queryset.order_by('-created_at')
 
     @action()
     async def list(self, request_id, last_survey: int = None, page_size=page_size, **kwargs):
@@ -128,7 +147,8 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         survey = await database_sync_to_async(self.get_object)(pk=data['survey'], is_active=True)
         in_region = await self.check_region(survey=survey)
         if not in_region:
-            return await self.reply(action='submit', errors=['You are not a registered voter in the region'], status=403)
+            return await self.reply(action='submit', errors=['You are not a registered voter in the region'],
+                                    status=403)
         data = await self.submit_(data=data)
         return await self.reply(data=data, action='submit', request_id=request_id, status=201)
 

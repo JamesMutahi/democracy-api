@@ -1,5 +1,5 @@
 from channels.db import database_sync_to_async
-from django.db.models import QuerySet, Q
+from django.db.models import QuerySet, Q, Count
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import ListModelMixin, CreateModelMixin
 from djangochannelsrestframework.observer import model_observer
@@ -46,7 +46,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
     @petition_activity.serializer
     def petition_activity(self, instance: Petition, action, **kwargs):
         return dict(
-            # data is overridden in model_observer
+            # data is overridden in @model_observer
             data=instance,
             action=action.value,
             request_id='petitions',
@@ -66,16 +66,36 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
         if kwargs.get('action') == 'list':
             search_term = kwargs.get('search_term', None)
+            status = kwargs.get('status', 'open')
+            filter_by_region = kwargs.get('filter_by_region', True)
+            sort_by = kwargs.get('sort_by', 'popular')
             start_date = kwargs.get('start_date', None)
             end_date = kwargs.get('end_date', None)
             if search_term:
-                queryset = queryset.filter(
-                    Q(title__icontains=search_term) | Q(description__icontains=search_term)).distinct()
+                queryset = queryset.filter(Q(title__icontains=search_term) | Q(description__icontains=search_term) | Q(
+                    author__name__icontains=search_term)).distinct()
+            if status:
+                if status == 'open':
+                    queryset = queryset.filter(is_open=True)
+                if status == 'closed':
+                    queryset = queryset.filter(is_open=False)
+            if filter_by_region:
+                county = self.scope['user'].county
+                constituency = self.scope['user'].constituency
+                ward = self.scope['user'].ward
+                queryset = queryset.filter(Q(county__isnull=True) | Q(county=county)).filter(
+                    Q(constituency__isnull=True) | Q(constituency=constituency)).filter(
+                    Q(ward__isnull=True) | Q(ward=ward))
             if start_date and end_date:
                 queryset = queryset.filter(created_at__range=(start_date, end_date))
-            return queryset
+            if sort_by:
+                if sort_by == 'recent':
+                    return queryset.order_by('-created_at')
+                if sort_by == 'oldest':
+                    return queryset.order_by('created_at')
+            return queryset.annotate(supporters_count=Count('supporters')).order_by('-supporters_count', '-created_at')
         if kwargs.get('action') == 'user_petitions':
-            return queryset.filter(author=kwargs.get('user'))
+            return queryset.filter(author=kwargs.get('user')).order_by('-created_at')
         if kwargs.get('action') == 'delete' or kwargs.get('action') == 'patch':
             return queryset.filter(author=self.scope['user'])
         return queryset
