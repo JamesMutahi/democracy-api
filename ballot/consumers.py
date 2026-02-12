@@ -75,13 +75,32 @@ class BallotConsumer(GenericAsyncAPIConsumer):
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
         search_term = kwargs.get('search_term', None)
+        is_active = kwargs.get('is_active', True)
+        filter_by_region = kwargs.get('filter_by_region', True)
+        sort_by = kwargs.get('sort_by', 'recent')
         start_date = kwargs.get('start_date', None)
         end_date = kwargs.get('end_date', None)
         if search_term:
-            queryset = queryset.filter(
-                Q(title__icontains=search_term) | Q(description__icontains=search_term)).distinct()
+            queryset = queryset.filter(Q(title__icontains=search_term) | Q(description__icontains=search_term) | Q(
+                author__name__icontains=search_term)).distinct()
+        if is_active is not None:
+            if is_active:
+                queryset = queryset.filter(is_active=True)
+            if not is_active:
+                queryset = queryset.filter(is_active=False)
+        if filter_by_region:
+            county = self.scope['user'].county
+            constituency = self.scope['user'].constituency
+            ward = self.scope['user'].ward
+            queryset = queryset.filter(Q(county__isnull=True) | Q(county=county)).filter(
+                Q(constituency__isnull=True) | Q(constituency=constituency)).filter(Q(ward__isnull=True) | Q(ward=ward))
         if start_date and end_date:
             queryset = queryset.filter(start_time__range=(start_date, end_date))
+        if sort_by:
+            if sort_by == 'recent':
+                return queryset.order_by('-created_at')
+            if sort_by == 'oldest':
+                return queryset.order_by('created_at')
         return queryset
 
     @action()
