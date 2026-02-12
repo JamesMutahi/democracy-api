@@ -70,7 +70,8 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Generic
             end_date = kwargs.get('end_date', None)
             if search_term:
                 queryset = queryset.filter(Q(title__icontains=search_term) | Q(description__icontains=search_term) | Q(
-                    author__name__icontains=search_term)).distinct()
+                    host__name__icontains=search_term) | Q(county__name__icontains=search_term) | Q(
+                    constituency__name__icontains=search_term) | Q(ward__name__icontains=search_term)).distinct()
             if is_active is not None:
                 if is_active:
                     queryset = queryset.filter(is_active=True)

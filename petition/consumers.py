@@ -73,7 +73,8 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
             end_date = kwargs.get('end_date', None)
             if search_term:
                 queryset = queryset.filter(Q(title__icontains=search_term) | Q(description__icontains=search_term) | Q(
-                    author__name__icontains=search_term)).distinct()
+                    author__name__icontains=search_term) | Q(county__name__icontains=search_term) | Q(
+                    constituency__name__icontains=search_term) | Q(ward__name__icontains=search_term)).distinct()
             if is_open is not None:
                 if is_open:
                     queryset = queryset.filter(is_open=True)
