@@ -98,9 +98,9 @@ class BallotConsumer(GenericAsyncAPIConsumer):
             queryset = queryset.filter(start_time__range=(start_date, end_date))
         if sort_by:
             if sort_by == 'recent':
-                return queryset.order_by('-created_at')
+                return queryset.order_by('-start_time')
             if sort_by == 'oldest':
-                return queryset.order_by('created_at')
+                return queryset.order_by('start_time')
         return queryset
 
     @action()
