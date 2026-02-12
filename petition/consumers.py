@@ -66,7 +66,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
         if kwargs.get('action') == 'list':
             search_term = kwargs.get('search_term', None)
-            status = kwargs.get('status', 'open')
+            is_open = kwargs.get('is_open', True)
             filter_by_region = kwargs.get('filter_by_region', True)
             sort_by = kwargs.get('sort_by', 'popular')
             start_date = kwargs.get('start_date', None)
@@ -74,10 +74,10 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
             if search_term:
                 queryset = queryset.filter(Q(title__icontains=search_term) | Q(description__icontains=search_term) | Q(
                     author__name__icontains=search_term)).distinct()
-            if status:
-                if status == 'open':
+            if is_open is not None:
+                if is_open:
                     queryset = queryset.filter(is_open=True)
-                if status == 'closed':
+                if not is_open:
                     queryset = queryset.filter(is_open=False)
             if filter_by_region:
                 county = self.scope['user'].county
