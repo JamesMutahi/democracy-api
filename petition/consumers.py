@@ -81,12 +81,9 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
                 if not is_open:
                     queryset = queryset.filter(is_open=False)
             if filter_by_region:
-                county = self.scope['user'].county
-                constituency = self.scope['user'].constituency
-                ward = self.scope['user'].ward
-                queryset = queryset.filter(Q(county__isnull=True) | Q(county=county)).filter(
-                    Q(constituency__isnull=True) | Q(constituency=constituency)).filter(
-                    Q(ward__isnull=True) | Q(ward=ward))
+                queryset = queryset.filter(Q(county__isnull=True) | Q(county=self.scope['user'].county)).filter(
+                    Q(constituency__isnull=True) | Q(constituency=self.scope['user'].constituency)).filter(
+                    Q(ward__isnull=True) | Q(ward=self.scope['user'].ward))
             if start_date and end_date:
                 queryset = queryset.filter(created_at__range=(start_date, end_date))
             if sort_by:
@@ -129,7 +126,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
 
     @action()
     async def support(self, pk: int, request_id: str, **kwargs):
-        petition = await database_sync_to_async(self.get_object)(pk=pk, is_active=True)
+        petition = await database_sync_to_async(self.get_object)(pk=pk, is_open=True, is_active=True)
         in_region = await self.check_region(petition=petition)
         if not in_region:
             return await self.reply(action='support', errors=['You are not a registered voter in the region'],
@@ -160,7 +157,19 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
         else:
             petition.supporters.add(user)
             message = 'Supported'
-        return {'message': message}
+        return message
+
+    @action()
+    async def close(self, pk: int, request_id: str, **kwargs):
+        petition = await database_sync_to_async(self.get_object)(pk=pk, author=self.scope['user'])
+        data = await self.close_(petition=petition)
+        return data, 200
+
+    @database_sync_to_async
+    def close_(self, petition: Petition):
+        petition.is_open = False
+        petition.save()
+        return 'Closed'
 
     @action()
     async def user_petitions(self, request_id, last_petition: int = None, page_size=page_size, **kwargs):
