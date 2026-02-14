@@ -78,9 +78,9 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Generic
                 if not is_active:
                     queryset = queryset.filter(is_active=False)
             if filter_by_region:
-                queryset = queryset.filter(Q(county__isnull=True) | Q(county=self.scope['user'].county)).filter(
-                    Q(constituency__isnull=True) | Q(constituency=self.scope['user'].constituency)).filter(
-                    Q(ward__isnull=True) | Q(ward=self.scope['user'].ward))
+                queryset = queryset.filter(Q(county__isnull=True) | Q(county=kwargs['county'])).filter(
+                    Q(constituency__isnull=True) | Q(constituency=kwargs['constituency'])).filter(
+                    Q(ward__isnull=True) | Q(ward=kwargs['ward']))
             if start_date and end_date:
                 queryset = queryset.filter(start_time__range=(start_date, end_date))
             if sort_by:
@@ -109,12 +109,17 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Generic
     async def list(self, request_id, last_meeting: int = None, page_size=page_size, **kwargs):
         if not last_meeting:
             await self.meeting_activity.unsubscribe()
+        kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_user_regions()
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.list_(queryset=queryset, page_size=page_size, last_meeting=last_meeting, **kwargs)
         for meeting in data['results']:
             pk = meeting["id"]
             await self.subscribe(pk=pk, request_id=request_id)
         await self.reply(action='list', data=data, request_id=request_id)
+
+    @database_sync_to_async
+    def get_user_regions(self):
+        return self.scope['user'].county, self.scope['user'].constituency, self.scope['user'].ward
 
     @database_sync_to_async
     def list_(self, queryset, page_size, last_meeting: int = None, **kwargs):

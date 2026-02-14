@@ -81,9 +81,9 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
                 if not is_open:
                     queryset = queryset.filter(is_open=False)
             if filter_by_region:
-                queryset = queryset.filter(Q(county__isnull=True) | Q(county=self.scope['user'].county)).filter(
-                    Q(constituency__isnull=True) | Q(constituency=self.scope['user'].constituency)).filter(
-                    Q(ward__isnull=True) | Q(ward=self.scope['user'].ward))
+                queryset = queryset.filter(Q(county__isnull=True) | Q(county=kwargs['county'])).filter(
+                    Q(constituency__isnull=True) | Q(constituency=kwargs['constituency'])).filter(
+                    Q(ward__isnull=True) | Q(ward=kwargs['ward']))
             if start_date and end_date:
                 queryset = queryset.filter(created_at__range=(start_date, end_date))
             if sort_by:
@@ -108,12 +108,17 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
     async def list(self, request_id, last_petition: int = None, page_size=page_size, **kwargs):
         if not last_petition:
             await self.petition_activity.unsubscribe()
+        kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_user_regions()
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.list_(queryset=queryset, page_size=page_size, last_petition=last_petition, **kwargs)
         for petition in data['results']:
             pk = petition["id"]
             await self.subscribe(pk=pk, request_id=request_id)
         await self.reply(action='list', data=data, request_id=request_id)
+
+    @database_sync_to_async
+    def get_user_regions(self):
+        return self.scope['user'].county, self.scope['user'].constituency, self.scope['user'].ward
 
     @database_sync_to_async
     def list_(self, queryset, page_size, last_petition: int = None, **kwargs):
