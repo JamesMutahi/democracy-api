@@ -13,7 +13,7 @@ class BallotConsumer(GenericAsyncAPIConsumer):
     serializer_class = BallotSerializer
     queryset = Ballot.objects.all()
     lookup_field = "pk"
-    page_size = 1
+    page_size = 20
 
     async def connect(self):
         if self.scope['user'].is_authenticated:

@@ -64,6 +64,9 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
+        previous_petitions = kwargs.get('previous_petitions', None)
+        if previous_petitions:
+            queryset = queryset.exclude(id__in=previous_petitions)
         if kwargs.get('action') == 'list':
             search_term = kwargs.get('search_term', None)
             is_open = kwargs.get('is_open', True)
@@ -105,12 +108,13 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
         return response, status
 
     @action()
-    async def list(self, request_id, last_petition: int = None, page_size=page_size, **kwargs):
-        if not last_petition:
+    async def list(self, request_id, page_size=page_size, **kwargs):
+        previous_petitions = kwargs.get('previous_petitions', None)
+        if not previous_petitions:
             await self.petition_activity.unsubscribe()
         kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_user_regions()
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.list_(queryset=queryset, page_size=page_size, last_petition=last_petition, **kwargs)
+        data = await self.list_(queryset=queryset, page_size=page_size, **kwargs)
         for petition in data['results']:
             pk = petition["id"]
             await self.subscribe(pk=pk, request_id=request_id)
@@ -121,13 +125,11 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
         return self.scope['user'].county, self.scope['user'].constituency, self.scope['user'].ward
 
     @database_sync_to_async
-    def list_(self, queryset, page_size, last_petition: int = None, **kwargs):
-        if last_petition:
-            petition = Petition.objects.get(pk=last_petition)
-            queryset = queryset.filter(start_time__lt=petition.start_time)
+    def list_(self, queryset, page_size, **kwargs):
         page_obj = list_paginator(queryset=queryset, page=1, page_size=page_size, )
         serializer = PetitionSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
-        return dict(results=serializer.data, last_petition=last_petition, has_next=page_obj.has_next())
+        return dict(results=serializer.data, previous_petitions=kwargs.get('previous_petitions', None),
+                    has_next=page_obj.has_next())
 
     @action()
     async def support(self, pk: int, request_id: str, **kwargs):
@@ -177,9 +179,9 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
         return 'Closed'
 
     @action()
-    async def user_petitions(self, request_id, last_petition: int = None, page_size=page_size, **kwargs):
+    async def user_petitions(self, request_id, page_size=page_size, **kwargs):
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.list_(queryset=queryset, page_size=page_size, last_petition=last_petition, **kwargs)
+        data = await self.list_(queryset=queryset, page_size=page_size, **kwargs)
         for petition in data['results']:
             pk = petition["id"]
             await self.subscribe(pk=pk, request_id=f'user_{request_id}')
