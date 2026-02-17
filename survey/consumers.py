@@ -96,6 +96,9 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
+        previous_surveys = kwargs.get('previous_surveys', None)
+        if previous_surveys:
+            queryset = queryset.exclude(id__in=previous_surveys)
         search_term = kwargs.get('search_term', None)
         is_active = kwargs.get('is_active', True)
         filter_by_region = kwargs.get('filter_by_region', True)
@@ -125,11 +128,12 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         return queryset.order_by('-created_at')
 
     @action()
-    async def list(self, request_id, last_survey: int = None, page_size=page_size, **kwargs):
-        if not last_survey:
+    async def list(self, request_id, page_size=page_size, **kwargs):
+        previous_surveys = kwargs.get('previous_surveys', None)
+        if not previous_surveys:
             await self.unsubscribe()
         kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_user_regions()
-        data = await self.list_(page_size=page_size, last_survey=last_survey, **kwargs)
+        data = await self.list_(page_size=page_size, **kwargs)
         await self.reply(action='list', data=data, request_id=request_id)
 
     @database_sync_to_async
@@ -137,14 +141,12 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         return self.scope['user'].county, self.scope['user'].constituency, self.scope['user'].ward
 
     @database_sync_to_async
-    def list_(self, page_size, last_survey: int = None, **kwargs):
+    def list_(self, page_size, **kwargs):
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        if last_survey:
-            survey = Survey.objects.get(pk=last_survey)
-            queryset = queryset.filter(start_time__lt=survey.start_time)
         page_obj = list_paginator(queryset=queryset, page=1, page_size=page_size, )
         serializer = SurveySerializer(page_obj.object_list, many=True, context={'scope': self.scope})
-        return dict(results=serializer.data, last_survey=last_survey, has_next=page_obj.has_next())
+        return dict(results=serializer.data, previous_surveys=kwargs.get('previous_surveys', None),
+                    has_next=page_obj.has_next())
 
     @action()
     async def submit(self, data: dict, request_id: str, **kwargs):
