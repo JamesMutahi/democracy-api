@@ -129,6 +129,9 @@ class PostConsumer(
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
+        previous_posts = kwargs.get('previous_posts', None)
+        if previous_posts:
+            queryset = queryset.exclude(id__in=previous_posts)
         if kwargs.get('action') == 'list':
             search_term = kwargs.get('search_term', None)
             if search_term:
@@ -256,8 +259,6 @@ class PostConsumer(
         post.image2 = None
         post.image3 = None
         post.image4 = None
-        post.image5 = None
-        post.image6 = None
         post.video1 = None
         post.video2 = None
         post.video3 = None
@@ -423,12 +424,9 @@ class PostConsumer(
 
     @database_sync_to_async
     def posts_paginator(self, posts, page_size, post_serializer=PostSerializer, **kwargs):
-        last_posts = kwargs.get('last_posts', None)
-        if last_posts:
-            posts = posts.exclude(id__in=last_posts)
         page_obj = list_paginator(queryset=posts, page=1, page_size=page_size)
         serializer = post_serializer(page_obj.object_list, many=True, context={'scope': self.scope})
-        return dict(results=serializer.data, last_posts=kwargs.get('last_posts', None), has_next=page_obj.has_next())
+        return dict(results=serializer.data, previous_posts=kwargs.get('previous_posts', None), has_next=page_obj.has_next())
 
     async def subscribe_to_posts(self, posts: dict, request_id: str):
         for post in posts:

@@ -13,7 +13,7 @@ class BallotConsumer(GenericAsyncAPIConsumer):
     serializer_class = BallotSerializer
     queryset = Ballot.objects.all()
     lookup_field = "pk"
-    page_size = 20
+    page_size = 1
 
     async def connect(self):
         if self.scope['user'].is_authenticated:
@@ -74,6 +74,9 @@ class BallotConsumer(GenericAsyncAPIConsumer):
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
+        previous_ballots = kwargs.get('previous_ballots', None)
+        if previous_ballots:
+            queryset = queryset.exclude(id__in=previous_ballots)
         search_term = kwargs.get('search_term', None)
         is_active = kwargs.get('is_active', True)
         filter_by_region = kwargs.get('filter_by_region', True)
@@ -103,11 +106,12 @@ class BallotConsumer(GenericAsyncAPIConsumer):
         return queryset
 
     @action()
-    async def list(self, request_id, last_ballot: int = None, page_size=page_size, **kwargs):
-        if not last_ballot:
+    async def list(self, request_id, page_size=page_size, **kwargs):
+        previous_ballots = kwargs.get('previous_ballots', None)
+        if not previous_ballots:
             await self.unsubscribe()
         kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_regions()
-        data = await self.list_(page_size=page_size, last_ballot=last_ballot, **kwargs)
+        data = await self.list_(page_size=page_size, **kwargs)
         await self.reply(action='list', data=data, request_id=request_id)
 
     @database_sync_to_async
@@ -115,14 +119,12 @@ class BallotConsumer(GenericAsyncAPIConsumer):
         return self.scope['user'].county, self.scope['user'].constituency, self.scope['user'].ward
 
     @database_sync_to_async
-    def list_(self, page_size, last_ballot: int = None, **kwargs):
+    def list_(self, page_size, **kwargs):
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        if last_ballot:
-            ballot = Ballot.objects.get(pk=last_ballot)
-            queryset = queryset.filter(start_time__lt=ballot.start_time)
         page_obj = list_paginator(queryset=queryset, page=1, page_size=page_size, )
         serializer = BallotSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
-        return dict(results=serializer.data, last_ballot=last_ballot, has_next=page_obj.has_next())
+        return dict(results=serializer.data, previous_ballots=kwargs.get('previous_ballots', None),
+                    has_next=page_obj.has_next())
 
     @action()
     async def vote(self, pk: int, **kwargs):
