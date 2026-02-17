@@ -61,6 +61,9 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Generic
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
+        previous_meetings = kwargs.get('previous_meetings', None)
+        if previous_meetings:
+            queryset = queryset.exclude(id__in=previous_meetings)
         if kwargs.get('action') == 'list':
             search_term = kwargs.get('search_term', None)
             is_active = kwargs.get('is_active', True)
@@ -106,12 +109,13 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Generic
         return response, status
 
     @action()
-    async def list(self, request_id, last_meeting: int = None, page_size=page_size, **kwargs):
-        if not last_meeting:
+    async def list(self, request_id, page_size=page_size, **kwargs):
+        previous_meetings = kwargs.get('previous_meetings', None)
+        if not previous_meetings:
             await self.meeting_activity.unsubscribe()
         kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_user_regions()
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.list_(queryset=queryset, page_size=page_size, last_meeting=last_meeting, **kwargs)
+        data = await self.list_(queryset=queryset, page_size=page_size, **kwargs)
         for meeting in data['results']:
             pk = meeting["id"]
             await self.subscribe(pk=pk, request_id=request_id)
@@ -122,18 +126,16 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Generic
         return self.scope['user'].county, self.scope['user'].constituency, self.scope['user'].ward
 
     @database_sync_to_async
-    def list_(self, queryset, page_size, last_meeting: int = None, **kwargs):
-        if last_meeting:
-            meeting = Meeting.objects.get(pk=last_meeting)
-            queryset = queryset.filter(start_time__lt=meeting.start_time)
+    def list_(self, queryset, page_size, **kwargs):
         page_obj = list_paginator(queryset=queryset, page=1, page_size=page_size, )
         serializer = MeetingSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
-        return dict(results=serializer.data, last_meeting=last_meeting, has_next=page_obj.has_next())
+        return dict(results=serializer.data, previous_meetings=kwargs.get('previous_meetings', None),
+                    has_next=page_obj.has_next())
 
     @action()
-    async def user_meetings(self, request_id, last_meeting: int = None, page_size=page_size, **kwargs):
+    async def user_meetings(self, request_id, page_size=page_size, **kwargs):
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.list_(queryset=queryset, page_size=page_size, last_meeting=last_meeting, **kwargs)
+        data = await self.list_(queryset=queryset, page_size=page_size, **kwargs)
         for meeting in data['results']:
             pk = meeting["id"]
             await self.subscribe(pk=pk, request_id=f'user_{request_id}')
