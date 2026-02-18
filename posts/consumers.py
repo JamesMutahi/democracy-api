@@ -5,6 +5,7 @@ from channels.db import database_sync_to_async
 from channels.middleware import BaseMiddleware
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
+from django.contrib.postgres.search import TrigramSimilarity
 from django.db.models import QuerySet, Case, When, Q, Count
 from django.db.models.signals import post_save
 from djangochannelsrestframework.decorators import action
@@ -133,9 +134,9 @@ class PostConsumer(
         if previous_posts:
             queryset = queryset.exclude(id__in=previous_posts)
         if kwargs.get('action') == 'list':
-            search_term = kwargs.get('search_term', None)
-            if search_term:
-                queryset = queryset.filter(body__icontains=search_term)
+            search_term = kwargs.get('search_term', '')
+            queryset = queryset.annotate(similarity=TrigramSimilarity('body', search_term)).filter(
+                similarity__gt=0.1).order_by('-similarity')
             start_date = kwargs.get('start_date', None)
             end_date = kwargs.get('end_date', None)
             if start_date and end_date:
@@ -143,13 +144,13 @@ class PostConsumer(
             return queryset.filter(is_deleted=False, community_note_of=None, status='published').order_by(
                 '-published_at')
         if kwargs.get('action') == 'for_you':
-            return queryset.filter(is_deleted=False, reply_to=None, community_note_of=None,
-                                   status='published').order_by('-published_at')
+            return queryset.filter(is_deleted=False, reply_to=None, community_note_of=None, status='published',
+                                   is_active=True).order_by('-published_at')
         if kwargs.get('action') == 'following':
             return queryset.filter(author__in=self.scope['user'].following.all(), is_deleted=False, reply_to=None,
-                                   community_note_of=None, status='published').order_by('-published_at')
+                                   community_note_of=None, status='published', is_active=True).order_by('-published_at')
         if kwargs.get('action') == 'replies':
-            queryset = queryset.filter(reply_to=kwargs['pk'], status='published').order_by(
+            queryset = queryset.filter(reply_to=kwargs['pk'], status='published', is_active=True).order_by(
                 Case(
                     When(author=kwargs['author_pk'], then=0),
                     default=1,
@@ -160,7 +161,7 @@ class PostConsumer(
         if kwargs.get('action') == 'community_notes':
             search_term = kwargs.get('search_term', None)
             sort_by = kwargs.get('sort_by', None)
-            queryset = queryset.filter(community_note_of=kwargs['pk'])
+            queryset = queryset.filter(community_note_of=kwargs['pk'], is_active=True)
             if search_term:
                 queryset = queryset.filter(
                     Q(author__username__icontains=search_term) | Q(author__name__icontains=search_term) | Q(
@@ -179,18 +180,18 @@ class PostConsumer(
         if kwargs.get('action') == 'patch':
             return queryset.filter(is_deleted=False, author=self.scope['user'], status='draft')
         if kwargs.get('action') == 'bookmarks':
-            return self.scope["user"].bookmarked_posts.all()
+            return queryset.filter(bookmarks=self.scope['user'], is_active=True)
         if kwargs.get('action') == 'user_posts':
             return queryset.filter(author=kwargs['user'], reply_to=None, community_note_of=None, status='published')
         if kwargs.get('action') == 'liked_posts':
-            return queryset.filter(likes__id=kwargs['user'])
+            return queryset.filter(likes__id=kwargs['user'], is_active=True)
         if kwargs.get('action') == 'user_replies':
             return queryset.filter(author=kwargs['user']).exclude(reply_to=None)
         if kwargs.get('action') == 'drafts':
             return queryset.filter(author=self.scope['user'], status='draft')
         if kwargs.get('action') == 'user_community_notes':
             return queryset.filter(author=kwargs['user']).exclude(community_note_of=None)
-        return queryset.filter(is_deleted=False).order_by('-published_at')
+        return queryset.filter(is_deleted=False, is_active=True).order_by('-published_at')
 
     @action()
     async def create(self, data: dict, request_id: str, **kwargs):
@@ -426,7 +427,8 @@ class PostConsumer(
     def posts_paginator(self, posts, page_size, post_serializer=PostSerializer, **kwargs):
         page_obj = list_paginator(queryset=posts, page=1, page_size=page_size)
         serializer = post_serializer(page_obj.object_list, many=True, context={'scope': self.scope})
-        return dict(results=serializer.data, previous_posts=kwargs.get('previous_posts', None), has_next=page_obj.has_next())
+        return dict(results=serializer.data, previous_posts=kwargs.get('previous_posts', None),
+                    has_next=page_obj.has_next())
 
     async def subscribe_to_posts(self, posts: dict, request_id: str):
         for post in posts:
