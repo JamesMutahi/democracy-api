@@ -18,8 +18,11 @@ class PetitionSerializer(serializers.ModelSerializer):
     is_supported = serializers.SerializerMethodField(read_only=True)
     image_base64 = Base64ImageField(write_only=True, max_length=None, use_url=True, allow_null=True)
     county = CountySerializer(read_only=True)
+    county_id = serializers.IntegerField(write_only=True, allow_null=True)
     constituency = ConstituencySerializer(read_only=True)
+    constituency_id = serializers.IntegerField(write_only=True, allow_null=True)
     ward = WardSerializer(read_only=True)
+    ward_id = serializers.IntegerField(write_only=True, allow_null=True)
 
     class Meta:
         model = Petition
@@ -29,8 +32,11 @@ class PetitionSerializer(serializers.ModelSerializer):
             'title',
             'description',
             'county',
+            'county_id',
             'constituency',
+            'constituency_id',
             'ward',
+            'ward_id',
             'image',
             'video',
             'supporters',
