@@ -6,7 +6,7 @@ from channels.middleware import BaseMiddleware
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.postgres.search import TrigramSimilarity
-from django.db.models import QuerySet, Case, When, Q, Count
+from django.db.models import QuerySet, Case, When, Count, Q
 from django.db.models.signals import post_save
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
@@ -62,7 +62,7 @@ class PostConsumer(
     serializer_class = PostSerializer
     lookup_field = "pk"
     pagination_class = PostListPagination
-    page_size = 2
+    page_size = 20
 
     async def connect(self):
         if self.scope['user'].is_authenticated:
@@ -159,13 +159,13 @@ class PostConsumer(
             )
             return queryset
         if kwargs.get('action') == 'community_notes':
-            search_term = kwargs.get('search_term', None)
-            sort_by = kwargs.get('sort_by', None)
             queryset = queryset.filter(community_note_of=kwargs['pk'], is_active=True)
+            search_term = kwargs.get('search_term', None)
             if search_term:
                 queryset = queryset.filter(
                     Q(author__username__icontains=search_term) | Q(author__name__icontains=search_term) | Q(
                         body__icontains=search_term)).distinct()
+            sort_by = kwargs.get('sort_by', None)
             if sort_by:
                 if sort_by == 'recent':
                     return queryset.order_by('-created_at')
