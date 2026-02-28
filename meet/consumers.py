@@ -24,13 +24,14 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Generic
 
     @model_observer(Meeting, many_to_many=True)
     async def meeting_activity(self, message, observer=None, action=None, **kwargs):
-        instance = message.pop('data')
+        pk = message['data']
         if message['action'] != 'delete':
-            message['data'] = await self.get_meeting_serializer_data(meeting=instance)
+            message['data'] = await self.get_meeting_serializer_data(pk=pk)
         await self.send_json(message)
 
     @database_sync_to_async
-    def get_meeting_serializer_data(self, meeting: Meeting):
+    def get_meeting_serializer_data(self, pk: int):
+        meeting = Meeting.objects.get(pk=pk)
         serializer = MeetingSerializer(instance=meeting, context={'scope': self.scope})
         return serializer.data
 
@@ -47,7 +48,8 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Generic
     def meeting_activity(self, instance: Meeting, action, **kwargs):
         return dict(
             # data is overridden in model_observer
-            data=instance,
+            # TODO: Too many database hits. Pass more fields to data in dict
+            data=instance.pk,
             action=action.value,
             request_id='meetings',
             pk=instance.pk,

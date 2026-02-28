@@ -61,12 +61,12 @@ class UserSerializer(serializers.ModelSerializer):
             return current_site.domain + obj.image.url
         return None
 
-    def get_cover_photo(self, obj):
-        if 'scope' in self.context:
-            headers = dict(self.context['scope']['headers'])
-            host = headers[b'host'].decode()
-            return 'http://' + host + obj.cover_photo.url
-        return self.context.get('request').build_absolute_uri(obj.cover_photo.url)
+    @staticmethod
+    def get_cover_photo(obj):
+        if obj.cover_photo:
+            current_site = Site.objects.get_current()
+            return current_site.domain + obj.cover_photo.url
+        return None
 
     @staticmethod
     def get_following(user):

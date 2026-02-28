@@ -27,13 +27,14 @@ class ConstitutionConsumer(ListModelMixin, GenericAsyncAPIConsumer):
 
     @model_observer(Section)
     async def section_activity(self, message, observer=None, action=None, **kwargs):
-        instance = message.pop('data')
+        pk = message['data']
         if message['action'] != 'delete':
-            message['data'] = await self.get_section_serializer_data(section=instance)
+            message['data'] = await self.get_section_serializer_data(pk=pk)
         await self.send_json(message)
 
     @database_sync_to_async
-    def get_section_serializer_data(self, section: Section):
+    def get_section_serializer_data(self, pk: int):
+        section = Section.objects.get(pk=pk)
         serializer = SectionSerializer(instance=section, context={'scope': self.scope})
         return serializer.data
 
@@ -41,7 +42,8 @@ class ConstitutionConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     def section_activity(self, instance: Section, action, **kwargs):
         return dict(
             # data is overridden in model_observer
-            data=instance,
+            # TODO: Too many database hits. Pass more fields to data in dict
+            data=instance.pk,
             action=action.value,
             request_id='constitution',
             pk=instance.pk,

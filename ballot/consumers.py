@@ -28,13 +28,14 @@ class BallotConsumer(GenericAsyncAPIConsumer):
 
     @model_observer(Ballot)
     async def ballot_activity(self, message, observer=None, action=None, **kwargs):
-        instance = message.pop('data')
+        pk = message['data']
         if message['action'] != 'delete':
-            message['data'] = await self.get_ballot_serializer_data(ballot=instance)
+            message['data'] = await self.get_ballot_serializer_data(pk=pk)
         await self.send_json(message)
 
     @database_sync_to_async
-    def get_ballot_serializer_data(self, ballot: Ballot):
+    def get_ballot_serializer_data(self, pk: int):
+        ballot = Ballot.objects.get(pk=pk)
         serializer = BallotSerializer(instance=ballot, context={'scope': self.scope})
         return serializer.data
 
@@ -42,7 +43,8 @@ class BallotConsumer(GenericAsyncAPIConsumer):
     def ballot_activity(self, instance: Ballot, action, **kwargs):
         return dict(
             # data is overridden in model_observer
-            data=instance,
+            # TODO: Too many database hits. Pass more fields to data in dict
+            data=instance.pk,
             action=action.value,
             pk=instance.pk,
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
@@ -50,15 +52,16 @@ class BallotConsumer(GenericAsyncAPIConsumer):
 
     @model_observer(Option, many_to_many=True)
     async def option_activity(self, message, observer=None, action=None, **kwargs):
-        instance = message.pop('data')
-        message['data'] = await self.get_ballot_serializer_data(ballot=instance)
+        pk = message['data']
+        message['data'] = await self.get_ballot_serializer_data(pk=pk)
         await self.send_json(message)
 
     @option_activity.serializer
     def option_activity(self, instance: Option, action, **kwargs):
         return dict(
             # data is overridden in model_observer
-            data=instance.ballot,
+            # TODO: Too many database hits. Pass more fields to data in dict
+            data=instance.ballot.pk,
             action='update',
             pk=instance.pk,
             response_status=200,

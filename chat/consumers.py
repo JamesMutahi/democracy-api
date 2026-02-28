@@ -29,13 +29,14 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
 
     @model_observer(Chat)
     async def chat_activity(self, message, observer=None, action=None, **kwargs):
-        instance = message.pop('data')
+        pk = message['data']
         if message['action'] != 'delete':
-            message['data'] = await self.get_chat_serializer_data(chat=instance)
+            message['data'] = await self.get_chat_serializer_data(pk=pk)
         await self.send_json(message)
 
     @database_sync_to_async
-    def get_chat_serializer_data(self, chat: Chat):
+    def get_chat_serializer_data(self, pk: int):
+        chat = Chat.objects.get(pk=pk)
         serializer = ChatSerializer(instance=chat, context={'scope': self.scope})
         return serializer.data
 
@@ -52,7 +53,8 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
     def chat_activity(self, instance: Chat, action, **kwargs):
         return dict(
             # data is overridden in model_observer to pass scope required for UserSerializer
-            data=instance,
+            # TODO: Too many database hits. Pass more fields to data in dict
+            data=instance.pk,
             action=action.value,
             request_id='chats',
             pk=instance.pk,
@@ -61,13 +63,14 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
 
     @model_observer(Message)
     async def message_activity(self, message, observer=None, action=None, **kwargs):
-        instance = message.pop('data')
+        pk = message['data']
         if message['action'] != 'delete':
-            message['data'] = await self.get_message_serializer_data(message=instance)
+            message['data'] = await self.get_message_serializer_data(pk=pk)
         await self.send_json(message)
 
     @database_sync_to_async
-    def get_message_serializer_data(self, message: Message):
+    def get_message_serializer_data(self, pk: int):
+        message = Message.objects.get(pk=pk)
         serializer = MessageSerializer(instance=message, context={'scope': self.scope})
         return serializer.data
 
@@ -84,7 +87,8 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
     def message_activity(self, instance: Message, action, **kwargs):
         return dict(
             # data is overridden in model_observer to pass scope required for UserSerializer
-            data=instance,
+            # TODO: Too many database hits. Pass more fields to data in dict
+            data=instance.pk,
             action=action.value,
             request_id='messages',
             pk=instance.pk,

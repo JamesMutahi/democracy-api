@@ -24,13 +24,14 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
 
     @model_observer(Petition, many_to_many=True)
     async def petition_activity(self, message, observer=None, action=None, **kwargs):
-        instance = message.pop('data')
+        pk = message['data']
         if message['action'] != 'delete':
-            message['data'] = await self.get_petition_serializer_data(petition=instance)
+            message['data'] = await self.get_petition_serializer_data(pk=pk)
         await self.send_json(message)
 
     @database_sync_to_async
-    def get_petition_serializer_data(self, petition: Petition):
+    def get_petition_serializer_data(self, pk: int):
+        petition = Petition.objects.get(pk=pk)
         serializer = PetitionSerializer(instance=petition, context={'scope': self.scope})
         return serializer.data
 
@@ -47,7 +48,8 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
     def petition_activity(self, instance: Petition, action, **kwargs):
         return dict(
             # data is overridden in @model_observer
-            data=instance,
+            # TODO: Too many database hits. Pass more fields to data in dict
+            data=instance.pk,
             action=action.value,
             request_id='petitions',
             pk=instance.pk,

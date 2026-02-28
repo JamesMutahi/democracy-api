@@ -28,6 +28,7 @@ services:
     environment:
       SECRET_KEY: ${SECRET_KEY}
       DEBUG: ${DEBUG}
+      MODE: ${MODE}
       #     LOGLEVEL: ${DJANGO_LOGLEVEL}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS}
 

@@ -30,15 +30,16 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
 
     @model_observer(Notification)
     async def notification_activity(self, message, observer=None, action=None, **kwargs):
-        instance: Notification = message.pop('data')
-        if await self.check_notification_is_for_user(instance):
+        pk = message['data']
+        notification = await database_sync_to_async(self.get_object)(pk=pk)
+        if await self.check_notification_is_for_user(notification=notification):
             if message['action'] != 'delete':
-                message['data'] = await self.get_notification_serializer_data(notification=instance)
+                message['data'] = await self.get_notification_serializer_data(notification=notification)
             await self.send_json(message)
 
     @database_sync_to_async
-    def check_notification_is_for_user(self, instance: Notification):
-        return self.scope['user'].id == instance.user.id
+    def check_notification_is_for_user(self, notification: Notification):
+        return self.scope['user'].id == notification.user.id
 
     @database_sync_to_async
     def get_notification_serializer_data(self, notification: Notification):
@@ -48,7 +49,9 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     @notification_activity.serializer
     def notification_activity(self, instance: Notification, action, **kwargs):
         return dict(
-            data=instance,
+            # data is overridden in model_observer
+            # TODO: Too many database hits. Pass more fields to data in dict
+            data=instance.pk,
             action=action.value,
             pk=instance.pk,
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200

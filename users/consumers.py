@@ -28,12 +28,13 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
 
     @model_observer(User, many_to_many=True)  # many_to_many may be failing due to the nature of user model
     async def user_activity(self, message, observer=None, action=None, **kwargs):
-        instance = message.pop('data')
-        message['data'] = await self.get_user_serializer_data(user=instance)
+        pk = message['data']
+        message['data'] = await self.get_user_serializer_data(pk=pk)
         await self.send_json(message)
 
     @database_sync_to_async
-    def get_user_serializer_data(self, user: User):
+    def get_user_serializer_data(self, pk: int):
+        user = User.objects.get(pk=pk)
         serializer = UserSerializer(instance=user, context={'scope': self.scope})
         return serializer.data
 
@@ -50,7 +51,8 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     def user_activity(self, instance: User, action, **kwargs):
         return dict(
             # data is overridden in model_observer
-            data=instance,
+            # TODO: Too many database hits. Pass more fields to data in dict
+            data=instance.pk,
             action=action.value,
             pk=instance.pk,
             response_status=200

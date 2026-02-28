@@ -30,13 +30,14 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
 
     @model_observer(Survey)
     async def survey_activity(self, message, observer=None, action=None, **kwargs):
-        instance = message.pop('data')
+        pk = message['data']
         if message['action'] != 'delete':
-            message['data'] = await self.get_survey_serializer_data(survey=instance)
+            message['data'] = await self.get_survey_serializer_data(pk=pk)
         await self.send_json(message)
 
     @database_sync_to_async
-    def get_survey_serializer_data(self, survey: Survey):
+    def get_survey_serializer_data(self, pk: int):
+        survey = Survey.objects.get(pk=pk)
         serializer = SurveySerializer(instance=survey, context={'scope': self.scope})
         return serializer.data
 
@@ -44,7 +45,8 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     def survey_activity(self, instance: Survey, action, **kwargs):
         return dict(
             # data is overridden in model_observer
-            data=instance,
+            # TODO: Too many database hits. Pass more fields to data in dict
+            data=instance.pk,
             action=action.value,
             request_id='surveys',
             pk=instance.pk,
@@ -53,15 +55,16 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
 
     @model_observer(Question)
     async def question_activity(self, message, observer=None, action=None, **kwargs):
-        instance = message.pop('data')
-        message['data'] = await self.get_survey_serializer_data(survey=instance)
+        pk = message['data']
+        message['data'] = await self.get_survey_serializer_data(pk=pk)
         await self.send_json(message)
 
     @question_activity.serializer
     def question_activity(self, instance: Question, action, **kwargs):
         return dict(
             # data is overridden in model_observer
-            data=instance.page.survey,
+            # TODO: Too many database hits. Pass more fields to data in dict
+            data=instance.page.survey.pk,
             action='update',
             request_id='surveys',
             pk=instance.pk,
@@ -70,15 +73,16 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
 
     @model_observer(Choice)
     async def choice_activity(self, message, observer=None, action=None, **kwargs):
-        instance = message.pop('data')
-        message['data'] = await self.get_survey_serializer_data(survey=instance)
+        pk = message['data']
+        message['data'] = await self.get_survey_serializer_data(pk=pk)
         await self.send_json(message)
 
     @choice_activity.serializer
     def choice_activity(self, instance: Choice, action, **kwargs):
         return dict(
             # data is overridden in model_observer
-            data=instance.question.page.survey,
+            # TODO: Too many database hits. Pass more fields to data in dict
+            data=instance.question.page.survey.pk,
             action='update',
             request_id='surveys',
             pk=instance.pk,
