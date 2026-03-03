@@ -49,7 +49,7 @@ def get_user(token):
 class PostListPagination(WebsocketLimitOffsetPagination):
     page_size = 10
     page_size_query_param = 'page_size'
-    max_page_size = 20
+    max_page_size = 5
 
 
 class PostConsumer(
@@ -62,7 +62,7 @@ class PostConsumer(
     serializer_class = PostSerializer
     lookup_field = "pk"
     pagination_class = PostListPagination
-    page_size = 20
+    page_size = 5
 
     async def connect(self):
         if self.scope['user'].is_authenticated:
@@ -204,21 +204,30 @@ class PostConsumer(
     async def list(self, request_id: str, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
-        await self.subscribe_to_posts(posts=data['results'], request_id=request_id)
         return data, 200
+
+    @action()
+    async def retrieve(self, request_id: str, **kwargs):
+        response, status = await super().retrieve(**kwargs)
+        pk = response["id"]
+        await self.post_activity.subscribe(pk=pk, request_id=request_id)
+        return response, status
+
+    @action()
+    async def unsubscribe(self, pk: int, request_id: str, **kwargs):
+        await self.post_activity.unsubscribe(pk=pk, request_id=request_id)
+        return {}, 200
 
     @action()
     async def for_you(self, request_id, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
-        await self.subscribe_to_posts(posts=data['results'], request_id=request_id)
         return data, 200
 
     @action()
     async def following(self, request_id, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
-        await self.subscribe_to_posts(posts=data['results'], request_id=request_id)
         return data, 200
 
     @action()
@@ -281,11 +290,10 @@ class PostConsumer(
         post = Post.objects.get(pk=pk)
         if post.likes.filter(pk=user.id).exists():
             post.likes.remove(user)
-            message = 'Like removed'
+            return {'pk': post.pk, 'is_liked': False, 'likes': post.likes.count()}
         else:
             post.likes.add(user)
-            message = 'Like added'
-        return {'message': message}
+            return {'pk': post.pk, 'is_liked': True, 'likes': post.likes.count()}
 
     @action()
     async def bookmark(self, **kwargs):
@@ -297,17 +305,15 @@ class PostConsumer(
         post = Post.objects.get(pk=pk)
         if post.bookmarks.filter(pk=user.pk).exists():
             post.bookmarks.remove(user)
-            message = 'Bookmark removed'
+            return {'pk': post.pk, 'is_bookmarked': False, 'bookmarks': post.bookmarks.count()}
         else:
             post.bookmarks.add(user)
-            message = 'Bookmark added'
-        return {'message': message}
+            return {'pk': post.pk, 'is_bookmarked': True, 'bookmarks': post.bookmarks.count()}
 
     @action()
     async def reply_to(self, request_id, pk: int, **kwargs):
         post = await database_sync_to_async(self.get_object)(pk=pk)
         data = await self.get_reply_to_posts(post=post)
-        await self.subscribe_to_posts(posts=data, request_id=f'reply_{request_id}')
         return data, 200
 
     @database_sync_to_async
@@ -321,7 +327,6 @@ class PostConsumer(
         kwargs['author_pk'] = await self.get_author_pk(post_pk=kwargs['pk'])
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, post_serializer=ThreadSerializer, **kwargs)
-        await self.subscribe_to_posts(posts=data['results'], request_id=f'reply_{request_id}')
         return data, 200
 
     @database_sync_to_async
@@ -332,7 +337,6 @@ class PostConsumer(
     async def community_notes(self, request_id, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
-        await self.subscribe_to_posts(posts=data['results'], request_id=f'community_note_{request_id}')
         return data, 200
 
     @action()
@@ -346,11 +350,10 @@ class PostConsumer(
         post.downvotes.remove(user)
         if post.upvotes.filter(pk=user.pk).exists():
             post.upvotes.remove(user)
-            message = 'Upvote removed'
+            return {'pk': post.pk, 'is_upvoted': False, 'upvotes': post.upvotes.count()}
         else:
             post.upvotes.add(user)
-            message = 'Upvoted'
-        return {'message': message}
+            return {'pk': post.pk, 'is_upvoted': True, 'upvotes': post.upvotes.count()}
 
     @action()
     async def downvote(self, **kwargs):
@@ -363,52 +366,45 @@ class PostConsumer(
         post.upvotes.remove(user)
         if post.downvotes.filter(pk=user.pk).exists():
             post.downvotes.remove(user)
-            message = 'Downvote removed'
+            return {'pk': post.pk, 'is_downvoted': False, 'downvotes': post.downvotes.count()}
         else:
             post.downvotes.add(user)
-            message = 'Downvoted'
-        return {'message': message}
+            return {'pk': post.pk, 'is_downvoted': True, 'downvotes': post.downvotes.count()}
 
     @action()
     async def bookmarks(self, request_id, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
-        await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
     @action()
     async def liked_posts(self, request_id, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
-        await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
     @action()
     async def user_posts(self, request_id: str, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
-        await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
     @action()
     async def user_replies(self, request_id: str, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
-        await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
     @action()
     async def drafts(self, request_id, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
-        await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
     @action()
     async def user_community_notes(self, request_id: str, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
-        await self.subscribe_to_posts(posts=data['results'], request_id=f'user_{request_id}')
         return data, 200
 
     @action()
@@ -429,85 +425,6 @@ class PostConsumer(
         serializer = post_serializer(page_obj.object_list, many=True, context={'scope': self.scope})
         return dict(results=serializer.data, previous_posts=kwargs.get('previous_posts', None),
                     has_next=page_obj.has_next())
-
-    async def subscribe_to_posts(self, posts: dict, request_id: str):
-        for post in posts:
-            await self.post_activity.subscribe(pk=post['id'], request_id=request_id)
-            if post['repost_of']:
-                await self.post_activity.subscribe(pk=post['repost_of']['id'], request_id=request_id)
-            if 'thread' in post:
-                for reply in post['thread']:
-                    target_key = 'id'
-                    exclude_keys = ['author', 'reply_to', 'repost_of', 'ballot', 'survey', 'petition', 'meeting',
-                                    'tagged_users', 'tagged_sections', ]
-                    values = find_key_values(reply, target_key, exclude_keys)
-                    for value in values:
-                        await self.post_activity.subscribe(pk=value, request_id=request_id)
-
-    @action()
-    async def unsubscribe_user_posts(self, pks: list, request_id: str, **kwargs):
-        for pk in pks:
-            await self.post_activity.unsubscribe(pk=pk, request_id=f'user_{request_id}')
-        return {}, 200
-
-    @action()
-    async def resubscribe(self, pks: list, request_id: str, **kwargs):
-        for pk in pks:
-            await self.post_activity.subscribe(pk=pk, request_id=request_id)
-        return {}, 200
-
-    @action()
-    async def resubscribe_replies(self, pks: list, request_id: str, **kwargs):
-        for pk in pks:
-            await self.post_activity.subscribe(pk=pk, request_id=f'reply_{request_id}')
-        return {}, 200
-
-    @action()
-    async def unsubscribe_replies(self, pks: list, request_id, **kwargs):
-        for pk in pks:
-            await self.post_activity.unsubscribe(pk=pk, request_id=f'reply_{request_id}')
-        return {}, 200
-
-    @action()
-    async def resubscribe_community_notes(self, pks: list, request_id: str, **kwargs):
-        for pk in pks:
-            await self.post_activity.subscribe(pk=pk, request_id=f'community_note_{request_id}')
-        return {}, 200
-
-    @action()
-    async def unsubscribe_community_notes(self, pks: list, request_id, **kwargs):
-        for pk in pks:
-            await self.post_activity.unsubscribe(pk=pk, request_id=f'community_note_{request_id}')
-        return {}, 200
-
-    @action()
-    async def resubscribe_user_posts(self, pks: list, request_id: str, **kwargs):
-        for pk in pks:
-            await self.post_activity.subscribe(pk=pk, request_id=f'user_{request_id}')
-        return {}, 200
-
-
-def find_key_values(data, target_key, exclude_keys, result=None):
-    if result is None:
-        result = []
-
-    if isinstance(data, dict):
-        # Check for the target key in the current dictionary
-        if target_key in data:
-            result.append(data[target_key])
-
-        # Recursively search through all values, skipping those associated with exclude_keys
-        for key, value in data.items():
-            if key not in exclude_keys and isinstance(value, (dict, list)):
-                find_key_values(value, target_key, exclude_keys, result)
-
-    elif isinstance(data, list):
-        # Recursively search through all items in the list
-        for item in data:
-            if isinstance(item, (dict, list)):
-                find_key_values(item, target_key, exclude_keys, result)
-
-    return result
 
 
 def get_reply_to(post: Post):
