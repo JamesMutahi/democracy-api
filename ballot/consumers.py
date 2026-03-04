@@ -2,6 +2,7 @@ from channels.db import database_sync_to_async
 from django.db.models import QuerySet, Q
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
+from djangochannelsrestframework.mixins import RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
 
 from ballot.models import Ballot, Option, Reason
@@ -9,7 +10,7 @@ from ballot.serializers import BallotSerializer
 from chat.utils.list_paginator import list_paginator
 
 
-class BallotConsumer(GenericAsyncAPIConsumer):
+class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     serializer_class = BallotSerializer
     queryset = Ballot.objects.all()
     lookup_field = "pk"
@@ -23,8 +24,6 @@ class BallotConsumer(GenericAsyncAPIConsumer):
 
     async def accept(self, **kwargs):
         await super().accept(**kwargs)
-        await self.ballot_activity.subscribe()
-        await self.option_activity.subscribe()
 
     @model_observer(Ballot)
     async def ballot_activity(self, message, observer=None, action=None, **kwargs):
@@ -68,51 +67,46 @@ class BallotConsumer(GenericAsyncAPIConsumer):
         )
 
     async def disconnect(self, code):
-        await self.unsubscribe()
-        await super().disconnect(code)
-
-    async def unsubscribe(self):
         await self.ballot_activity.unsubscribe()
         await self.option_activity.unsubscribe()
+        await super().disconnect(code)
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
-        previous_ballots = kwargs.get('previous_ballots', None)
-        if previous_ballots:
-            queryset = queryset.exclude(id__in=previous_ballots)
-        search_term = kwargs.get('search_term', None)
-        is_active = kwargs.get('is_active', True)
-        filter_by_region = kwargs.get('filter_by_region', True)
-        sort_by = kwargs.get('sort_by', 'recent')
-        start_date = kwargs.get('start_date', None)
-        end_date = kwargs.get('end_date', None)
-        if search_term:
-            queryset = queryset.filter(Q(title__icontains=search_term) | Q(description__icontains=search_term) | Q(
-                county__name__icontains=search_term) | Q(constituency__name__icontains=search_term) | Q(
-                ward__name__icontains=search_term)).distinct()
-        if is_active is not None:
-            if is_active:
-                queryset = queryset.filter(is_active=True)
-            if not is_active:
-                queryset = queryset.filter(is_active=False)
-        if filter_by_region:
-            queryset = queryset.filter(Q(county__isnull=True) | Q(county=kwargs['county'])).filter(
-                Q(constituency__isnull=True) | Q(constituency=kwargs['constituency'])).filter(
-                Q(ward__isnull=True) | Q(ward=kwargs['ward']))
-        if start_date and end_date:
-            queryset = queryset.filter(start_time__range=(start_date, end_date))
-        if sort_by:
-            if sort_by == 'recent':
-                return queryset.order_by('-start_time')
-            if sort_by == 'oldest':
-                return queryset.order_by('start_time')
+        if kwargs.get('action') == 'list':
+            previous_ballots = kwargs.get('previous_ballots', None)
+            if previous_ballots:
+                queryset = queryset.exclude(id__in=previous_ballots)
+            search_term = kwargs.get('search_term', None)
+            is_active = kwargs.get('is_active', True)
+            filter_by_region = kwargs.get('filter_by_region', True)
+            sort_by = kwargs.get('sort_by', 'recent')
+            start_date = kwargs.get('start_date', None)
+            end_date = kwargs.get('end_date', None)
+            if search_term:
+                queryset = queryset.filter(Q(title__icontains=search_term) | Q(description__icontains=search_term) | Q(
+                    county__name__icontains=search_term) | Q(constituency__name__icontains=search_term) | Q(
+                    ward__name__icontains=search_term)).distinct()
+            if is_active is not None:
+                if is_active:
+                    queryset = queryset.filter(is_active=True)
+                if not is_active:
+                    queryset = queryset.filter(is_active=False)
+            if filter_by_region:
+                queryset = queryset.filter(Q(county__isnull=True) | Q(county=kwargs['county'])).filter(
+                    Q(constituency__isnull=True) | Q(constituency=kwargs['constituency'])).filter(
+                    Q(ward__isnull=True) | Q(ward=kwargs['ward']))
+            if start_date and end_date:
+                queryset = queryset.filter(start_time__range=(start_date, end_date))
+            if sort_by:
+                if sort_by == 'recent':
+                    return queryset.order_by('-start_time')
+                if sort_by == 'oldest':
+                    return queryset.order_by('start_time')
         return queryset
 
     @action()
     async def list(self, request_id, page_size=page_size, **kwargs):
-        previous_ballots = kwargs.get('previous_ballots', None)
-        if not previous_ballots:
-            await self.unsubscribe()
         kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_regions()
         data = await self.list_(page_size=page_size, **kwargs)
         await self.reply(action='list', data=data, request_id=request_id)
@@ -128,6 +122,20 @@ class BallotConsumer(GenericAsyncAPIConsumer):
         serializer = BallotSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
         return dict(results=serializer.data, previous_ballots=kwargs.get('previous_ballots', None),
                     has_next=page_obj.has_next())
+
+    @action()
+    async def retrieve(self, request_id: str, **kwargs):
+        response, status = await super().retrieve(**kwargs)
+        pk = response["id"]
+        await self.ballot_activity.subscribe(pk=pk, request_id=request_id)
+        await self.option_activity.subscribe(pk=pk, request_id=request_id)
+        return response, status
+
+    @action()
+    async def unsubscribe(self, pk: int, request_id: str, **kwargs):
+        await self.ballot_activity.unsubscribe(pk=pk, request_id=request_id)
+        await self.option_activity.unsubscribe(pk=pk, request_id=request_id)
+        return {}, 200
 
     @action()
     async def vote(self, pk: int, **kwargs):

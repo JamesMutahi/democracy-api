@@ -1,16 +1,15 @@
 from channels.db import database_sync_to_async
 from django.db.models import QuerySet, Q
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
-from djangochannelsrestframework.mixins import ListModelMixin
-from djangochannelsrestframework.observer import model_observer
+from djangochannelsrestframework.mixins import RetrieveModelMixin
 from djangochannelsrestframework.observer.generics import action
 
 from chat.utils.list_paginator import list_paginator
-from survey.models import Survey, Question, Choice
+from survey.models import Survey
 from survey.serializers import SurveySerializer, ResponseSerializer
 
 
-class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
+class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     serializer_class = SurveySerializer
     queryset = Survey.objects.all()
     lookup_field = "pk"
@@ -21,82 +20,6 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
             await self.accept()
         else:
             await self.close()
-
-    async def accept(self, **kwargs):
-        await super().accept(**kwargs)
-        await self.survey_activity.subscribe()
-        await self.question_activity.subscribe()
-        await self.choice_activity.subscribe()
-
-    @model_observer(Survey)
-    async def survey_activity(self, message, observer=None, action=None, **kwargs):
-        pk = message['data']
-        if message['action'] != 'delete':
-            message['data'] = await self.get_survey_serializer_data(pk=pk)
-        await self.send_json(message)
-
-    @database_sync_to_async
-    def get_survey_serializer_data(self, pk: int):
-        survey = Survey.objects.get(pk=pk)
-        serializer = SurveySerializer(instance=survey, context={'scope': self.scope})
-        return serializer.data
-
-    @survey_activity.serializer
-    def survey_activity(self, instance: Survey, action, **kwargs):
-        return dict(
-            # data is overridden in model_observer
-            # TODO: Too many database hits. Pass more fields to data in dict
-            data=instance.pk,
-            action=action.value,
-            request_id='surveys',
-            pk=instance.pk,
-            response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
-        )
-
-    @model_observer(Question)
-    async def question_activity(self, message, observer=None, action=None, **kwargs):
-        pk = message['data']
-        message['data'] = await self.get_survey_serializer_data(pk=pk)
-        await self.send_json(message)
-
-    @question_activity.serializer
-    def question_activity(self, instance: Question, action, **kwargs):
-        return dict(
-            # data is overridden in model_observer
-            # TODO: Too many database hits. Pass more fields to data in dict
-            data=instance.page.survey.pk,
-            action='update',
-            request_id='surveys',
-            pk=instance.pk,
-            response_status=200,
-        )
-
-    @model_observer(Choice)
-    async def choice_activity(self, message, observer=None, action=None, **kwargs):
-        pk = message['data']
-        message['data'] = await self.get_survey_serializer_data(pk=pk)
-        await self.send_json(message)
-
-    @choice_activity.serializer
-    def choice_activity(self, instance: Choice, action, **kwargs):
-        return dict(
-            # data is overridden in model_observer
-            # TODO: Too many database hits. Pass more fields to data in dict
-            data=instance.question.page.survey.pk,
-            action='update',
-            request_id='surveys',
-            pk=instance.pk,
-            response_status=200,
-        )
-
-    async def disconnect(self, code):
-        await self.unsubscribe()
-        await super().disconnect(code)
-
-    async def unsubscribe(self):
-        await self.survey_activity.unsubscribe()
-        await self.question_activity.unsubscribe()
-        await self.choice_activity.unsubscribe()
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
@@ -133,9 +56,6 @@ class SurveyConsumer(ListModelMixin, GenericAsyncAPIConsumer):
 
     @action()
     async def list(self, request_id, page_size=page_size, **kwargs):
-        previous_surveys = kwargs.get('previous_surveys', None)
-        if not previous_surveys:
-            await self.unsubscribe()
         kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_user_regions()
         data = await self.list_(page_size=page_size, **kwargs)
         await self.reply(action='list', data=data, request_id=request_id)

@@ -3,7 +3,6 @@ from django.db.models import QuerySet, Q
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import ListModelMixin
-from djangochannelsrestframework.observer import model_observer
 
 from constitution.models import Section
 from constitution.serializers import SectionSerializer
@@ -20,39 +19,6 @@ class ConstitutionConsumer(ListModelMixin, GenericAsyncAPIConsumer):
             await self.accept()
         else:
             await self.close()
-
-    async def accept(self, **kwargs):
-        await super().accept(**kwargs)
-        await self.section_activity.subscribe()
-
-    @model_observer(Section)
-    async def section_activity(self, message, observer=None, action=None, **kwargs):
-        pk = message['data']
-        if message['action'] != 'delete':
-            message['data'] = await self.get_section_serializer_data(pk=pk)
-        await self.send_json(message)
-
-    @database_sync_to_async
-    def get_section_serializer_data(self, pk: int):
-        section = Section.objects.get(pk=pk)
-        serializer = SectionSerializer(instance=section, context={'scope': self.scope})
-        return serializer.data
-
-    @section_activity.serializer
-    def section_activity(self, instance: Section, action, **kwargs):
-        return dict(
-            # data is overridden in model_observer
-            # TODO: Too many database hits. Pass more fields to data in dict
-            data=instance.pk,
-            action=action.value,
-            request_id='constitution',
-            pk=instance.pk,
-            response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
-        )
-
-    async def disconnect(self, code):
-        await self.section_activity.unsubscribe()
-        await super().disconnect(code)
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
@@ -81,8 +47,7 @@ class ConstitutionConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         section = Section.objects.get(pk=pk)
         if section.bookmarks.filter(pk=user.pk).exists():
             section.bookmarks.remove(user)
-            message = 'Bookmark removed'
+            return {'pk': section.pk, 'is_bookmarked': False}
         else:
             section.bookmarks.add(user)
-            message = 'Bookmark added'
-        return {'message': message}
+            return {'pk': section.pk, 'is_bookmarked': True}

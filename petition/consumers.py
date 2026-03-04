@@ -1,7 +1,7 @@
 from channels.db import database_sync_to_async
 from django.db.models import QuerySet, Q, Count
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
-from djangochannelsrestframework.mixins import ListModelMixin, CreateModelMixin
+from djangochannelsrestframework.mixins import ListModelMixin, CreateModelMixin, RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import action
 
@@ -10,7 +10,7 @@ from petition.models import Petition
 from petition.serializers import PetitionSerializer
 
 
-class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer):
+class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer):
     serializer_class = PetitionSerializer
     queryset = Petition.objects.all()
     lookup_field = "pk"
@@ -60,10 +60,6 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
         await self.petition_activity.unsubscribe()
         await super().disconnect(code)
 
-    @action()
-    async def subscribe(self, pk, request_id, **kwargs):
-        await self.petition_activity.subscribe(pk=pk, request_id=request_id)
-
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
         previous_petitions = kwargs.get('previous_petitions', None)
@@ -111,15 +107,9 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
 
     @action()
     async def list(self, request_id, page_size=page_size, **kwargs):
-        previous_petitions = kwargs.get('previous_petitions', None)
-        if not previous_petitions:
-            await self.petition_activity.unsubscribe()
         kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_user_regions()
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.list_(queryset=queryset, page_size=page_size, **kwargs)
-        for petition in data['results']:
-            pk = petition["id"]
-            await self.subscribe(pk=pk, request_id=request_id)
         await self.reply(action='list', data=data, request_id=request_id)
 
     @database_sync_to_async
@@ -132,6 +122,18 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
         serializer = PetitionSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
         return dict(results=serializer.data, previous_petitions=kwargs.get('previous_petitions', None),
                     has_next=page_obj.has_next())
+
+    @action()
+    async def retrieve(self, request_id: str, **kwargs):
+        response, status = await super().retrieve(**kwargs)
+        pk = response["id"]
+        await self.petition_activity.subscribe(pk=pk, request_id=request_id)
+        return response, status
+
+    @action()
+    async def unsubscribe(self, pk: int, request_id: str, **kwargs):
+        await self.petition_activity.unsubscribe(pk=pk, request_id=request_id)
+        return {}, 200
 
     @action()
     async def support(self, pk: int, request_id: str, **kwargs):
@@ -169,40 +171,19 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, GenericAsyncAPIConsumer
         return message
 
     @action()
-    async def close(self, pk: int, request_id: str, **kwargs):
+    async def change_status(self, pk: int, request_id: str, **kwargs):
         petition = await database_sync_to_async(self.get_object)(pk=pk, author=self.scope['user'])
-        data = await self.close_(petition=petition)
+        data = await self.change_status_(petition=petition)
         return data, 200
 
     @database_sync_to_async
-    def close_(self, petition: Petition):
-        petition.is_open = False
+    def change_status_(self, petition: Petition):
+        petition.is_open = not petition.is_open
         petition.save()
-        return 'Closed'
+        return {'pk': petition.pk, 'is_open': petition.is_open}
 
     @action()
     async def user_petitions(self, request_id, page_size=page_size, **kwargs):
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.list_(queryset=queryset, page_size=page_size, **kwargs)
-        for petition in data['results']:
-            pk = petition["id"]
-            await self.subscribe(pk=pk, request_id=f'user_{request_id}')
         return data, 200
-
-    @action()
-    async def unsubscribe_user_petitions(self, pks, request_id: str, **kwargs):
-        for pk in pks:
-            await self.petition_activity.unsubscribe(pk=pk, request_id=f'user_{request_id}')
-        return {}, 200
-
-    @action()
-    async def resubscribe(self, pks, request_id: str, **kwargs):
-        for pk in pks:
-            await self.subscribe(pk=pk, request_id=request_id)
-        return {}, 200
-
-    @action()
-    async def resubscribe_user_petitions(self, pks, request_id: str, **kwargs):
-        for pk in pks:
-            await self.petition_activity.subscribe(pk=pk, request_id=f'user_{request_id}')
-        return {}, 200

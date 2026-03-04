@@ -2,7 +2,7 @@ from channels.db import database_sync_to_async
 from django.db.models import QuerySet, Q
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
-from djangochannelsrestframework.mixins import ListModelMixin, CreateModelMixin, PatchModelMixin
+from djangochannelsrestframework.mixins import ListModelMixin, CreateModelMixin, PatchModelMixin, RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
 
 from chat.utils.list_paginator import list_paginator
@@ -10,7 +10,7 @@ from meet.models import Meeting
 from meet.serializers import MeetingSerializer
 
 
-class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, GenericAsyncAPIConsumer):
+class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer):
     queryset = Meeting.objects.all()
     serializer_class = MeetingSerializer
     lookup_field = "pk"
@@ -101,10 +101,6 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Generic
         return queryset
 
     @action()
-    async def subscribe(self, pk, request_id, **kwargs):
-        await self.meeting_activity.subscribe(pk=pk, request_id=request_id)
-
-    @action()
     async def create(self, data: dict, request_id: str, **kwargs):
         response, status = await super().create(data, **kwargs)
         await self.meeting_activity.subscribe(pk=response["id"], request_id=request_id)
@@ -112,15 +108,9 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Generic
 
     @action()
     async def list(self, request_id, page_size=page_size, **kwargs):
-        previous_meetings = kwargs.get('previous_meetings', None)
-        if not previous_meetings:
-            await self.meeting_activity.unsubscribe()
         kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_user_regions()
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.list_(queryset=queryset, page_size=page_size, **kwargs)
-        for meeting in data['results']:
-            pk = meeting["id"]
-            await self.subscribe(pk=pk, request_id=request_id)
         await self.reply(action='list', data=data, request_id=request_id)
 
     @database_sync_to_async
@@ -138,9 +128,6 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Generic
     async def user_meetings(self, request_id, page_size=page_size, **kwargs):
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.list_(queryset=queryset, page_size=page_size, **kwargs)
-        for meeting in data['results']:
-            pk = meeting["id"]
-            await self.subscribe(pk=pk, request_id=f'user_{request_id}')
         return data, 200
 
     @action()
@@ -149,8 +136,8 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Generic
         in_region = await self.check_region(meeting=meeting)
         if not in_region:
             return await self.reply(action='join', errors=['You are not a registered voter in the region'], status=403)
-        await self.add_listener(meeting=meeting)
-        return {'pk': pk}, 200
+        data = await self.add_listener(meeting=meeting)
+        return data, 200
 
     @database_sync_to_async
     def check_region(self, meeting: Meeting):
@@ -169,27 +156,15 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Generic
     @database_sync_to_async
     def add_listener(self, meeting: Meeting):
         meeting.listeners.add(self.scope['user'])
+        return MeetingSerializer(meeting, context={'scope': self.scope}).data
 
     @action()
-    def leave(self, pk, **kwargs):
-        meeting = self.get_object(pk=pk)
-        meeting.listeners.remove(self.scope['user'])
+    async def leave(self, pk: int, request_id: str, **kwargs):
+        await self.remove_listener(pk=pk)
+        await self.meeting_activity.unsubscribe(pk=pk, request_id=request_id)
         return {'pk': pk}, 200
 
-    @action()
-    async def unsubscribe_user_meetings(self, pks, request_id: str, **kwargs):
-        for pk in pks:
-            await self.meeting_activity.unsubscribe(pk=pk, request_id=f'user_{request_id}')
-        return {}, 200
-
-    @action()
-    async def resubscribe(self, pks, request_id: str, **kwargs):
-        for pk in pks:
-            await self.subscribe(pk=pk, request_id=request_id)
-        return {}, 200
-
-    @action()
-    async def resubscribe_user_meetings(self, pks, request_id: str, **kwargs):
-        for pk in pks:
-            await self.meeting_activity.subscribe(pk=pk, request_id=f'user_{request_id}')
-        return {}, 200
+    @database_sync_to_async
+    def remove_listener(self, pk):
+        meeting = self.get_object(pk=pk)
+        meeting.listeners.remove(self.scope['user'])

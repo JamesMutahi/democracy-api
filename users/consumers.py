@@ -160,7 +160,6 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     @action()
     async def following(self, request_id: str, pk: int, page=1, page_size=page_size, last_user: int = None, **kwargs):
         data = await self.following_(pk, page, page_size, last_user)
-        await self.subscribe_to_users(users=data['results'], request_id=request_id)
         return data, 200
 
     @database_sync_to_async
@@ -173,7 +172,6 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     @action()
     async def followers(self, request_id: str, pk: int, page=1, page_size=page_size, last_user: int = None, **kwargs):
         data = await self.followers_(pk, page, page_size, last_user)
-        await self.subscribe_to_users(users=data['results'], request_id=request_id)
         return data, 200
 
     @database_sync_to_async
@@ -186,7 +184,6 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     @action()
     async def muted(self, request_id: str, page=1, page_size=page_size, last_user: int = None, **kwargs):
         data = await self.muted_(page, page_size, last_user)
-        await self.subscribe_to_users(users=data['results'], request_id=request_id)
         return data, 200
 
     @database_sync_to_async
@@ -198,7 +195,6 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     @action()
     async def blocked(self, request_id: str, page=1, page_size=page_size, last_user: int = None, **kwargs):
         data = await self.blocked_(page, page_size, last_user)
-        await self.subscribe_to_users(users=data['results'], request_id=request_id)
         return data, 200
 
     @database_sync_to_async
@@ -210,7 +206,6 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     @action()
     async def petition_supporters(self, request_id: str, pk: int, page=1, page_size=page_size, last_user: int = None, **kwargs):
         data = await self.petition_supporters_(pk, page, page_size, last_user)
-        await self.subscribe_to_users(users=data['results'], request_id=request_id)
         return data, 200
 
     @database_sync_to_async
@@ -228,18 +223,3 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         serializer = UserSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
         data = dict(results=serializer.data, last_user=last_user, has_next=page_obj.has_next())
         return data
-
-    async def subscribe_to_users(self, users: dict, request_id: str):
-        for user in users:
-            await self.user_activity.subscribe(pk=user['id'], request_id=request_id)
-
-    @action()
-    async def resubscribe(self, pks: list, request_id: str, **kwargs):
-        for pk in pks:
-            await self.user_activity.subscribe(pk=pk, request_id=request_id)
-        return {}, 200
-
-    @action()
-    async def unsubscribe(self, pks: list, request_id: str, **kwargs):
-        for pk in pks:
-            await self.user_activity.unsubscribe(pk=pk, request_id=request_id)

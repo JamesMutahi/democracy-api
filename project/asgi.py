@@ -15,6 +15,8 @@ from channelsmultiplexer import AsyncJsonWebsocketDemultiplexer
 from django.core.asgi import get_asgi_application
 from django.urls import path
 
+from geo.consumers import GeoConsumer
+
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "project.settings")
 # Initialize Django ASGI application early to ensure the AppRegistry
 # is populated before importing code that may import ORM models.
@@ -48,6 +50,7 @@ application = ProtocolTypeRouter({
                     users=UserConsumer.as_asgi(),
                     constitution=ConstitutionConsumer.as_asgi(),
                     meetings=MeetingConsumer.as_asgi(),
+                    geo=GeoConsumer.as_asgi(),
                 )),
             ]), )
         ),
