@@ -164,11 +164,10 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
         user = self.scope['user']
         if petition.supporters.filter(pk=user.pk).exists():
             petition.supporters.remove(user)
-            message = 'Support removed'
+            return {'pk': petition.pk, 'is_supported': False}
         else:
             petition.supporters.add(user)
-            message = 'Supported'
-        return message
+            return {'pk': petition.pk, 'is_supported': True}
 
     @action()
     async def change_status(self, pk: int, request_id: str, **kwargs):

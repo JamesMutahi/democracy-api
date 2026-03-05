@@ -2,9 +2,7 @@ from typing import Dict, Any
 
 from asgiref.sync import sync_to_async
 from channels.db import database_sync_to_async
-from channels.middleware import BaseMiddleware
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import AnonymousUser
 from django.contrib.postgres.search import TrigramSimilarity
 from django.db.models import QuerySet, Case, When, Count, Q
 from django.db.models.signals import post_save
@@ -13,37 +11,12 @@ from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import CreateModelMixin, PatchModelMixin, RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.pagination import WebsocketLimitOffsetPagination
-from rest_framework.authtoken.models import Token
 
 from chat.utils.list_paginator import list_paginator
 from posts.models import Post
 from posts.serializers import PostSerializer, ReportSerializer, ThreadSerializer
 
 User = get_user_model()
-
-
-class TokenAuthMiddleware(BaseMiddleware):
-    async def __call__(self, scope, receive, send):
-        headers = dict(scope['headers'])
-        if b'authorization' in headers:
-            try:
-                token_name, token_key = headers[b'authorization'].decode().split()
-            except ValueError:
-                token_key = None
-            scope['user'] = AnonymousUser() if token_key is None else await get_user(token_key)
-            return await super().__call__(scope, receive, send)
-        else:
-            scope['user'] = AnonymousUser()
-            return await super().__call__(scope, receive, send)
-
-
-@database_sync_to_async
-def get_user(token):
-    try:
-        user = Token.objects.get(key=token).user
-    except:
-        user = AnonymousUser()
-    return user
 
 
 class PostListPagination(WebsocketLimitOffsetPagination):
