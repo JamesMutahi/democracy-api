@@ -48,7 +48,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
     def meeting_activity(self, instance: Meeting, action, **kwargs):
         return dict(
             # data is overridden in model_observer
-            # TODO: Too many database hits. Pass more fields to data in dict
+            # TODO: Too many database hits in model observer. Pass more fields to data in dict. Test with redis
             data=instance.pk,
             action=action.value,
             request_id='meetings',

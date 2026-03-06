@@ -48,7 +48,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
     def petition_activity(self, instance: Petition, action, **kwargs):
         return dict(
             # data is overridden in @model_observer
-            # TODO: Too many database hits. Pass more fields to data in dict
+            # TODO: Too many database hits in model observer. Pass more fields to data in dict. Test with redis
             data=instance.pk,
             action=action.value,
             request_id='petitions',
@@ -138,7 +138,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
     @action()
     async def support(self, pk: int, request_id: str, **kwargs):
         petition = await database_sync_to_async(self.get_object)(pk=pk, is_open=True, is_active=True)
-        in_region = await self.check_region(petition=petition)
+        in_region = await self.check_in_region(petition=petition)
         if not in_region:
             return await self.reply(action='support', errors=['You are not a registered voter in the region'],
                                     status=403)
@@ -146,7 +146,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
         return data, 200
 
     @database_sync_to_async
-    def check_region(self, petition: Petition):
+    def check_in_region(self, petition: Petition):
         if not petition.county:
             return True
         if petition.county != self.scope['user'].county:
@@ -164,10 +164,11 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
         user = self.scope['user']
         if petition.supporters.filter(pk=user.pk).exists():
             petition.supporters.remove(user)
-            return {'pk': petition.pk, 'is_supported': False}
+            is_supported = False
         else:
             petition.supporters.add(user)
-            return {'pk': petition.pk, 'is_supported': True}
+            is_supported = True
+        return {'pk': petition.pk, 'is_supported': is_supported, 'supporters': petition.supporters.count()}
 
     @action()
     async def change_status(self, pk: int, request_id: str, **kwargs):

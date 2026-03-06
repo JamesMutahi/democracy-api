@@ -18,7 +18,7 @@ from posts.serializers import PostSerializer, ReportSerializer, ThreadSerializer
 
 User = get_user_model()
 
-
+# TODO: Pagination class not being used - remove page size once resolved
 class PostListPagination(WebsocketLimitOffsetPagination):
     page_size = 10
     page_size_query_param = 'page_size'
@@ -45,26 +45,16 @@ class PostConsumer(
 
     @model_observer(Post, many_to_many=True)
     async def post_activity(self, message, observer=None, action=None, **kwargs):
+        pk = message['data']
         if message['action'] != 'delete':
-            message = await self.get_post_serializer_data(message)
+            message['data'] = await self.get_post_serializer_data(pk=pk)
         await self.send_json(message)
 
-    @sync_to_async
-    def get_post_serializer_data(self, message):
-        message['data']['is_liked'] = self.scope['user'].id in message['data']['likes']
-        message['data']['is_bookmarked'] = self.scope['user'].id in message['data']['bookmarks']
-        message['data']['is_viewed'] = self.scope['user'].id in message['data']['views']
-        message['data']['is_upvoted'] = self.scope['user'].id in message['data']['upvotes']
-        message['data']['is_downvoted'] = self.scope['user'].id in message['data']['downvotes']
-        message['data']['is_reposted'] = self.scope['user'].id in message['data']['reposts']
-        message['data']['is_quoted'] = self.scope['user'].id in message['data']['quotes']
-        message['data']['likes'] = len(message['data']['likes'])
-        message['data']['bookmarks'] = len(message['data']['bookmarks'])
-        message['data']['views'] = len(message['data']['views'])
-        message['data']['upvotes'] = len(message['data']['upvotes'])
-        message['data']['downvotes'] = len(message['data']['downvotes'])
-        message['data']['reposts'] = len(message['data']['reposts']) + len(message['data']['quotes'])
-        return message
+    @database_sync_to_async
+    def get_post_serializer_data(self, pk):
+        post = Post.objects.get(pk=pk)
+        serializer = PostSerializer(instance=post, context={'scope': self.scope})
+        return serializer.data
 
     @post_activity.groups_for_signal
     def post_activity(self, instance: Post, **kwargs):
@@ -77,18 +67,10 @@ class PostConsumer(
 
     @post_activity.serializer
     def post_activity(self, instance: Post, action, **kwargs):
-        data = {}
-        if action.value != 'delete':
-            data = dict(body=instance.body, likes=instance.likes.values_list('id', flat=True),
-                        bookmarks=instance.bookmarks.values_list('id', flat=True), replies=instance.replies.count(),
-                        reposts=list(instance.reposts.filter(body='').values_list('author', flat=True)),
-                        quotes=list(instance.reposts.exclude(body='').values_list('author', flat=True)),
-                        community_note=instance.get_top_note(), upvotes=instance.upvotes.values_list('id', flat=True),
-                        downvotes=instance.downvotes.values_list('id', flat=True),
-                        views=instance.views.values_list('id', flat=True), is_deleted=instance.is_deleted,
-                        is_active=instance.is_active, )
         return dict(
-            data=data,
+            # data is overridden in @model_observer
+            # TODO: Too many database hits in model observer. Pass more fields to data in dict. Test with redis
+            data=instance.pk,
             action=action.value,
             pk=instance.pk,
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
@@ -255,33 +237,37 @@ class PostConsumer(
 
     @action()
     async def like(self, **kwargs):
-        message = await self.like_post(pk=kwargs['pk'], user=self.scope["user"])
-        return message, 200
+        data = await self.like_post(pk=kwargs['pk'])
+        return data, 200
 
     @database_sync_to_async
-    def like_post(self, pk, user):
+    def like_post(self, pk):
+        user = self.scope['user']
         post = Post.objects.get(pk=pk)
-        if post.likes.filter(pk=user.id).exists():
+        if post.likes.filter(pk=user.pk).exists():
             post.likes.remove(user)
-            return {'pk': post.pk, 'is_liked': False, 'likes': post.likes.count()}
+            is_liked = False
         else:
             post.likes.add(user)
-            return {'pk': post.pk, 'is_liked': True, 'likes': post.likes.count()}
+            is_liked = True
+        return {'pk': pk, 'is_liked': is_liked, 'likes': post.likes.count()}
 
     @action()
     async def bookmark(self, **kwargs):
-        message = await self.bookmark_post(pk=kwargs['pk'], user=self.scope["user"])
-        return message, 200
+        data = await self.bookmark_post(pk=kwargs['pk'])
+        return data, 200
 
     @database_sync_to_async
-    def bookmark_post(self, pk, user):
+    def bookmark_post(self, pk):
+        user = self.scope['user']
         post = Post.objects.get(pk=pk)
         if post.bookmarks.filter(pk=user.pk).exists():
             post.bookmarks.remove(user)
-            return {'pk': post.pk, 'is_bookmarked': False, 'bookmarks': post.bookmarks.count()}
+            is_bookmarked = False
         else:
             post.bookmarks.add(user)
-            return {'pk': post.pk, 'is_bookmarked': True, 'bookmarks': post.bookmarks.count()}
+            is_bookmarked = True
+        return {'pk': pk, 'is_bookmarked': is_bookmarked, 'bookmarks': post.bookmarks.count()}
 
     @action()
     async def reply_to(self, request_id, pk: int, **kwargs):
@@ -314,35 +300,37 @@ class PostConsumer(
 
     @action()
     async def upvote(self, **kwargs):
-        message = await self.upvote_post(pk=kwargs['pk'], user=self.scope["user"])
-        return message, 200
+        data = await self.upvote_post(pk=kwargs['pk'])
+        return data, 200
 
     @database_sync_to_async
-    def upvote_post(self, pk, user):
+    def upvote_post(self, pk):
+        user = self.scope['user']
         post = Post.objects.get(pk=pk)
-        post.downvotes.remove(user)
         if post.upvotes.filter(pk=user.pk).exists():
             post.upvotes.remove(user)
-            return {'pk': post.pk, 'is_upvoted': False, 'upvotes': post.upvotes.count()}
+            is_upvoted = False
         else:
             post.upvotes.add(user)
-            return {'pk': post.pk, 'is_upvoted': True, 'upvotes': post.upvotes.count()}
+            is_upvoted = True
+        return {'pk': pk, 'is_upvoted': is_upvoted, 'upvotes': post.upvotes.count()}
 
     @action()
     async def downvote(self, **kwargs):
-        message = await self.downvote_post(pk=kwargs['pk'], user=self.scope["user"])
-        return message, 200
+        data = await self.downvote_post(pk=kwargs['pk'])
+        return data, 200
 
     @database_sync_to_async
-    def downvote_post(self, pk, user):
+    def downvote_post(self, pk):
+        user = self.scope['user']
         post = Post.objects.get(pk=pk)
-        post.upvotes.remove(user)
         if post.downvotes.filter(pk=user.pk).exists():
             post.downvotes.remove(user)
-            return {'pk': post.pk, 'is_downvoted': False, 'downvotes': post.downvotes.count()}
+            is_downvoted = False
         else:
             post.downvotes.add(user)
-            return {'pk': post.pk, 'is_downvoted': True, 'downvotes': post.downvotes.count()}
+            is_downvoted = True
+        return {'pk': pk, 'is_downvoted': is_downvoted, 'downvotes': post.downvotes.count()}
 
     @action()
     async def bookmarks(self, request_id, page_size=page_size, **kwargs):

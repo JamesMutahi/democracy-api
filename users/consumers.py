@@ -51,7 +51,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     def user_activity(self, instance: User, action, **kwargs):
         return dict(
             # data is overridden in model_observer
-            # TODO: Too many database hits. Pass more fields to data in dict
+            # TODO: Too many database hits in model observer. Pass more fields to data in dict. Test with redis
             data=instance.pk,
             action=action.value,
             pk=instance.pk,

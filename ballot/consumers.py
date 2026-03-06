@@ -42,7 +42,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     def ballot_activity(self, instance: Ballot, action, **kwargs):
         return dict(
             # data is overridden in model_observer
-            # TODO: Too many database hits. Pass more fields to data in dict
+            # TODO: Too many database hits in model observer. Pass more fields to data in dict. Test with redis
             data=instance.pk,
             action=action.value,
             pk=instance.pk,
@@ -59,7 +59,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     def option_activity(self, instance: Option, action, **kwargs):
         return dict(
             # data is overridden in model_observer
-            # TODO: Too many database hits. Pass more fields to data in dict
+            # TODO: Too many database hits in model observer. Pass more fields to data in dict. Test with redis
             data=instance.ballot.pk,
             action='update',
             pk=instance.pk,

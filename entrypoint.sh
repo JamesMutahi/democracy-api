@@ -3,7 +3,7 @@
 echo "Applying database migrations..."
 python manage.py migrate
 
-echo "Adding fixtures..."
+echo "Installing fixtures..."
 python manage.py loaddata constitution.json
 
 echo "Starting Django application..."
