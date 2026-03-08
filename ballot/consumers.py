@@ -7,7 +7,7 @@ from djangochannelsrestframework.observer import model_observer
 
 from ballot.models import Ballot, Option, Reason
 from ballot.serializers import BallotSerializer
-from chat.utils.list_paginator import list_paginator
+from users.utils.list_paginator import list_paginator
 
 
 class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):

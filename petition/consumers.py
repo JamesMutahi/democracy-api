@@ -5,7 +5,7 @@ from djangochannelsrestframework.mixins import ListModelMixin, CreateModelMixin,
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import action
 
-from chat.utils.list_paginator import list_paginator
+from users.utils.list_paginator import list_paginator
 from petition.models import Petition
 from petition.serializers import PetitionSerializer
 

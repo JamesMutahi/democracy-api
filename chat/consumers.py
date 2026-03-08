@@ -10,7 +10,7 @@ from djangochannelsrestframework.observer.generics import action
 from notification.models import Notification
 from .models import Message, Chat
 from .serializers import MessageSerializer, ChatSerializer
-from .utils.list_paginator import list_paginator
+from users.utils.list_paginator import list_paginator
 
 User = get_user_model()
 

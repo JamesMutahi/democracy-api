@@ -1,20 +1,16 @@
-import re
-from urllib.parse import urlparse
-
 from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
 from django.db.models.signals import post_save
 from rest_framework import serializers
-from urlextract import URLExtract
 
 from ballot.models import Ballot
 from ballot.serializers import BallotSerializer
-from constitution.models import Section
 from meet.models import Meeting
 from meet.serializers import MeetingSerializer
 from petition.models import Petition
 from petition.serializers import PetitionSerializer
 from posts.models import Post, Report
+from posts.utils.link_extractor import extract_linked_object
 from survey.models import Survey
 from survey.serializers import SurveySerializer
 from users.serializers import UserSerializer
@@ -268,7 +264,7 @@ class PostSerializer(serializers.ModelSerializer):
 
         validated_data['tagged_users'] = get_tagged(validated_data.pop('tags'))
 
-        linked_object = get_linked(text=validated_data['body'])
+        linked_object = extract_linked_object(text=validated_data['body'])
         if linked_object:
             if isinstance(linked_object, Post) and not validated_data.get('repost_of_id'):
                 validated_data['repost_of_id'] = linked_object.pk
@@ -306,36 +302,6 @@ def get_tagged(tags):
         if user_qs.exists():
             tagged_users.append(user_qs.first())
     return tagged_users
-
-
-def get_linked(text: str):
-    extractor = URLExtract()
-    urls = extractor.find_urls(text)
-
-    current_domain = Site.objects.get_current().domain
-
-    matching_links = [url for url in urls if current_domain in url]
-
-    for link in matching_links:
-        parsed_url = urlparse(link)
-        integer_strings = re.findall(r'\d+', parsed_url.path)
-        if len(integer_strings) > 0:
-            try:
-                if 'post' in parsed_url.path:
-                    return Post.objects.get(id=integer_strings[0])
-                if 'meeting' in parsed_url.path:
-                    return Meeting.objects.get(id=integer_strings[0])
-                if 'ballot' in parsed_url.path:
-                    return Ballot.objects.get(id=integer_strings[0])
-                if 'survey' in parsed_url.path:
-                    return Survey.objects.get(id=integer_strings[0])
-                if 'petition' in parsed_url.path:
-                    return Petition.objects.get(id=integer_strings[0])
-                if 'section' in parsed_url.path:
-                    return Section.objects.get(id=integer_strings[0])
-            except:
-                continue
-    return None
 
 
 class ReportSerializer(serializers.ModelSerializer):

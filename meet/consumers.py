@@ -5,7 +5,7 @@ from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import ListModelMixin, CreateModelMixin, PatchModelMixin, RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
 
-from chat.utils.list_paginator import list_paginator
+from users.utils.list_paginator import list_paginator
 from meet.models import Meeting
 from meet.serializers import MeetingSerializer
 

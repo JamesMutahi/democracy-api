@@ -52,15 +52,15 @@ def create_notification(sender, instance, created, **kwargs):
                     text=f'New meeting from {instance.host}',
                     meeting=instance,
                 )
-        if sender == Message:
-            users = instance.chat.users.exclude(id=instance.user.id)
-            for user in users:
-                Notification.objects.create(
-                    user=user,
-                    text=f'{instance.user} sent a message',
-                    chat=instance.chat,
-                    message=instance,
-                )
+        # if sender == Message:
+        #     users = instance.chat.users.exclude(id=instance.user.id)
+        #     for user in users:
+        #         Notification.objects.create(
+        #             user=user,
+        #             text=f'{instance.user} sent a message',
+        #             chat=instance.chat,
+        #             message=instance,
+        #         )
         # if sender == Post:
         #     for user in instance.author.followers_notified.all():
         #         Notification.objects.create(

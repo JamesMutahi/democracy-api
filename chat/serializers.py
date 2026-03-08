@@ -11,6 +11,7 @@ from petition.models import Petition
 from petition.serializers import PetitionSerializer
 from posts.models import Post
 from posts.serializers import PostSerializer
+from posts.utils.link_extractor import extract_linked_object
 from survey.models import Survey
 from survey.serializers import SurveySerializer
 from users.serializers import UserSerializer
@@ -25,11 +26,36 @@ class MessageSerializer(serializers.ModelSerializer):
     survey = SurveySerializer(read_only=True)
     petition = PetitionSerializer(read_only=True)
     meeting = MeetingSerializer(read_only=True)
-    post_id = serializers.IntegerField(write_only=True, allow_null=True)
-    ballot_id = serializers.IntegerField(write_only=True, allow_null=True)
-    survey_id = serializers.IntegerField(write_only=True, allow_null=True)
-    petition_id = serializers.IntegerField(write_only=True, allow_null=True)
-    meeting_id = serializers.IntegerField(write_only=True, allow_null=True)
+    post_id = serializers.PrimaryKeyRelatedField(
+        queryset=Post.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
+    ballot_id = serializers.PrimaryKeyRelatedField(
+        queryset=Ballot.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
+    survey_id = serializers.PrimaryKeyRelatedField(
+        queryset=Survey.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
+    petition_id = serializers.PrimaryKeyRelatedField(
+        queryset=Petition.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
+    meeting_id = serializers.PrimaryKeyRelatedField(
+        queryset=Meeting.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
 
     class Meta:
         model = Message
@@ -63,15 +89,29 @@ class MessageSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data['user'] = self.context['scope']['user']
         if validated_data['post_id']:
-            validated_data['post'] = Post.objects.get(id=validated_data['post_id'])
+            validated_data['post'] = validated_data.pop('post_id')
         if validated_data['ballot_id']:
-            validated_data['ballot'] = Ballot.objects.get(id=validated_data['ballot_id'])
+            validated_data['ballot'] = validated_data.pop('ballot_id')
         if validated_data['survey_id']:
-            validated_data['survey'] = Survey.objects.get(id=validated_data['survey_id'])
+            validated_data['survey'] = validated_data.pop('survey_id')
         if validated_data['petition_id']:
-            validated_data['petition'] = Petition.objects.get(id=validated_data['petition_id'])
+            validated_data['petition'] = validated_data.pop('petition_id')
         if validated_data['meeting_id']:
-            validated_data['meeting'] = Meeting.objects.get(id=validated_data['meeting_id'])
+            validated_data['meeting'] = validated_data.pop('meeting_id')
+
+        linked_object = extract_linked_object(text=validated_data['text'])
+        if linked_object:
+            if isinstance(linked_object, Post) and not validated_data.get('repost_of_id'):
+                validated_data['repost_of_id'] = linked_object.pk
+            if isinstance(linked_object, Ballot) and not validated_data.get('ballot_id'):
+                validated_data['ballot_id'] = linked_object.pk
+            if isinstance(linked_object, Survey) and not validated_data.get('survey_id'):
+                validated_data['survey_id'] = linked_object.pk
+            if isinstance(linked_object, Petition) and not validated_data.get('petition_id'):
+                validated_data['petition_id'] = linked_object.pk
+            if isinstance(linked_object, Meeting) and not validated_data.get('meeting_id'):
+                validated_data['meeting_id'] = linked_object.pk
+
         message = super().create(validated_data)
         post_save.send(sender=Chat, instance=message.chat, created=False)
         return message

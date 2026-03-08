@@ -7,7 +7,7 @@ from djangochannelsrestframework.mixins import RetrieveModelMixin, PatchModelMix
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import action
 
-from chat.utils.list_paginator import list_paginator
+from users.utils.list_paginator import list_paginator
 from petition.models import Petition
 from users.serializers import UserSerializer
 

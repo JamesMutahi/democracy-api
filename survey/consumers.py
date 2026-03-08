@@ -4,7 +4,7 @@ from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin
 from djangochannelsrestframework.observer.generics import action
 
-from chat.utils.list_paginator import list_paginator
+from users.utils.list_paginator import list_paginator
 from survey.models import Survey
 from survey.serializers import SurveySerializer, ResponseSerializer
 

@@ -11,7 +11,7 @@ from djangochannelsrestframework.mixins import CreateModelMixin, PatchModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.pagination import WebsocketLimitOffsetPagination
 
-from chat.utils.list_paginator import list_paginator
+from users.utils.list_paginator import list_paginator
 from posts.models import Post
 from posts.serializers import PostSerializer, ReportSerializer, ThreadSerializer
 
