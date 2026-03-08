@@ -266,15 +266,15 @@ class PostSerializer(serializers.ModelSerializer):
 
         linked_object = extract_linked_object(text=validated_data['body'])
         if linked_object:
-            if isinstance(linked_object, Post) and not validated_data.get('repost_of_id'):
+            if isinstance(linked_object, Post) and not validated_data.get('repost_of'):
                 validated_data['repost_of_id'] = linked_object.pk
-            if isinstance(linked_object, Ballot) and not validated_data.get('ballot_id'):
+            if isinstance(linked_object, Ballot) and not validated_data.get('ballot'):
                 validated_data['ballot_id'] = linked_object.pk
-            if isinstance(linked_object, Survey) and not validated_data.get('survey_id'):
+            if isinstance(linked_object, Survey) and not validated_data.get('survey'):
                 validated_data['survey_id'] = linked_object.pk
-            if isinstance(linked_object, Petition) and not validated_data.get('petition_id'):
+            if isinstance(linked_object, Petition) and not validated_data.get('petition'):
                 validated_data['petition_id'] = linked_object.pk
-            if isinstance(linked_object, Meeting) and not validated_data.get('meeting_id'):
+            if isinstance(linked_object, Meeting) and not validated_data.get('meeting'):
                 validated_data['meeting_id'] = linked_object.pk
 
         # Calling create method with new validated data

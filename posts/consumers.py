@@ -11,9 +11,9 @@ from djangochannelsrestframework.mixins import CreateModelMixin, PatchModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.pagination import WebsocketLimitOffsetPagination
 
-from users.utils.list_paginator import list_paginator
 from posts.models import Post
 from posts.serializers import PostSerializer, ReportSerializer, ThreadSerializer
+from users.utils.list_paginator import list_paginator
 
 User = get_user_model()
 
@@ -204,11 +204,20 @@ class PostConsumer(
 
     @action()
     async def delete_repost(self, pk: int, request_id: str, **kwargs):
-        post = await database_sync_to_async(self.get_object)(pk=pk)
-        repost = await database_sync_to_async(Post.objects.get)(repost_of=post.pk, author=self.scope["user"], body='')
-        deleted = repost.pk
-        await self.delete_(post=repost)
-        return {'pk': pk, 'repost': deleted}, 204
+        data = await self.delete_repost_(pk=pk)
+        if not data:
+            return await self.reply(request_id=request_id, errors=['Not found'], status=404, action='delete_repost')
+        return data, 204
+
+    @database_sync_to_async
+    def delete_repost_(self, pk):
+        post = self.get_object(pk=pk)
+        repost_qs = post.reposts.filter(repost_of=post.pk, author=self.scope["user"], body='')
+        if repost_qs.exists():
+            repost_pk = repost_qs.first().pk
+            repost_qs.first().delete()
+            return {'pk': post.pk, 'repost_pk': repost_pk, 'reposts': post.reposts.count()}
+        return None
 
     @staticmethod
     def mark_deleted(post: Post):
