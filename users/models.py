@@ -21,7 +21,6 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     following = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='followers')
     muted = models.ManyToManyField('self', symmetrical=False, blank=True)
     blocked = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='blockers')
-    is_representative = models.BooleanField(default=False)
     county = models.ForeignKey(County, on_delete=models.PROTECT, null=True, blank=True, related_name='voters')
     constituency = models.ForeignKey(Constituency, on_delete=models.PROTECT, null=True, blank=True,
                                      related_name='voters')

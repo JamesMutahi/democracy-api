@@ -39,7 +39,6 @@ class UserSerializer(serializers.ModelSerializer):
             'blocked',
             'following',
             'followers',
-            'is_representative',
             'county',
             'constituency',
             'ward',

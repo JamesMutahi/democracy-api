@@ -1,12 +1,15 @@
+import re
+from urllib.parse import urlparse
+
 from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
 from django.db.models.signals import post_save
 from rest_framework import serializers
+from urlextract import URLExtract
 
 from ballot.models import Ballot
 from ballot.serializers import BallotSerializer
 from constitution.models import Section
-from constitution.serializers import SectionSerializer
 from meet.models import Meeting
 from meet.serializers import MeetingSerializer
 from petition.models import Petition
@@ -36,14 +39,43 @@ class PostSerializer(serializers.ModelSerializer):
     petition = PetitionSerializer(read_only=True)
     meeting = MeetingSerializer(read_only=True)
     tagged_users = UserSerializer(read_only=True, many=True)
-    tagged_sections = SectionSerializer(read_only=True, many=True)
     reply_to_id = serializers.IntegerField(write_only=True, allow_null=True)
-    repost_of_id = serializers.IntegerField(write_only=True, allow_null=True)
-    community_note_of_id = serializers.IntegerField(write_only=True, allow_null=True)
-    ballot_id = serializers.IntegerField(write_only=True, allow_null=True)
-    survey_id = serializers.IntegerField(write_only=True, allow_null=True)
-    petition_id = serializers.IntegerField(write_only=True, allow_null=True)
-    meeting_id = serializers.IntegerField(write_only=True, allow_null=True)
+    repost_of_id = serializers.PrimaryKeyRelatedField(
+        queryset=Post.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
+    community_note_of_id = serializers.PrimaryKeyRelatedField(
+        queryset=Post.objects.filter(community_note_of__isnull=False),
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
+    ballot_id = serializers.PrimaryKeyRelatedField(
+        queryset=Ballot.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
+    survey_id = serializers.PrimaryKeyRelatedField(
+        queryset=Survey.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
+    petition_id = serializers.PrimaryKeyRelatedField(
+        queryset=Petition.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
+    meeting_id = serializers.PrimaryKeyRelatedField(
+        queryset=Meeting.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
     tags = serializers.ListField(write_only=True, allow_empty=True)  # Holds both @ and # tags
     image1 = serializers.SerializerMethodField(allow_null=True)
     image2 = serializers.SerializerMethodField()
@@ -77,7 +109,6 @@ class PostSerializer(serializers.ModelSerializer):
             'bookmarks',
             'is_bookmarked',
             'tagged_users',
-            'tagged_sections',
             'tags',
             'views',
             'is_viewed',
@@ -217,25 +248,40 @@ class PostSerializer(serializers.ModelSerializer):
         if validated_data['reply_to_id']:
             validated_data['reply_to'] = Post.objects.get(id=validated_data['reply_to_id'])
         if validated_data['repost_of_id']:
-            repost_of = Post.objects.get(id=validated_data['repost_of_id'])
             # Author can only have one repost of a post without body
             if validated_data['body'] == '':
-                repost_of.reposts.filter(author=self.context['scope']['user'], body='', image1=None, video1=None,
-                                         ballot=None, survey=None, petition=None, meeting=None).delete()
-            validated_data['repost_of'] = repost_of
+                validated_data['repost_of_id'].reposts.filter(author=self.context['scope']['user'], body='',
+                                                              image1=None, video1=None,
+                                                              ballot=None, survey=None, petition=None,
+                                                              meeting=None).delete()
+            validated_data['repost_of'] = validated_data.pop('repost_of_id')
         if validated_data['community_note_of_id']:
-            validated_data['community_note_of'] = Post.objects.get(id=validated_data['community_note_of_id'])
+            validated_data['community_note_of'] = validated_data.pop('community_note_of_id')
         if validated_data['ballot_id']:
-            validated_data['ballot'] = Ballot.objects.get(id=validated_data['ballot_id'])
+            validated_data['ballot'] = validated_data.pop('ballot_id')
         if validated_data['survey_id']:
-            validated_data['survey'] = Survey.objects.get(id=validated_data['survey_id'])
+            validated_data['survey'] = validated_data.pop('survey_id')
         if validated_data['petition_id']:
-            validated_data['petition'] = Petition.objects.get(id=validated_data['petition_id'])
+            validated_data['petition'] = validated_data.pop('petition_id')
         if validated_data['meeting_id']:
-            validated_data['meeting'] = Meeting.objects.get(id=validated_data['meeting_id'])
-        tagged_users, tagged_sections = get_tagged(validated_data.pop('tags'))
-        validated_data['tagged_users'] = tagged_users
-        validated_data['tagged_sections'] = tagged_sections
+            validated_data['meeting'] = validated_data.pop('meeting_id')
+
+        validated_data['tagged_users'] = get_tagged(validated_data.pop('tags'))
+
+        linked_object = get_linked(text=validated_data['body'])
+        if linked_object:
+            if isinstance(linked_object, Post) and not validated_data.get('repost_of_id'):
+                validated_data['repost_of_id'] = linked_object.pk
+            if isinstance(linked_object, Ballot) and not validated_data.get('ballot_id'):
+                validated_data['ballot_id'] = linked_object.pk
+            if isinstance(linked_object, Survey) and not validated_data.get('survey_id'):
+                validated_data['survey_id'] = linked_object.pk
+            if isinstance(linked_object, Petition) and not validated_data.get('petition_id'):
+                validated_data['petition_id'] = linked_object.pk
+            if isinstance(linked_object, Meeting) and not validated_data.get('meeting_id'):
+                validated_data['meeting_id'] = linked_object.pk
+
+        # Calling create method with new validated data
         post = super().create(validated_data)
         if post.reply_to:
             post_save.send(sender=Post, instance=post.reply_to, created=False)
@@ -244,28 +290,52 @@ class PostSerializer(serializers.ModelSerializer):
         return post
 
     def update(self, instance, validated_data):
-        tagged_users, tagged_sections = get_tagged(validated_data.pop('tags'))
+        tagged_users = get_tagged(validated_data.pop('tags'))
         # Save validated data to instance
         instance.body = validated_data.get('body', instance.body)
         instance.status = validated_data.get('status', instance.status)
         instance.tagged_users.set(tagged_users)
-        instance.tagged_sections.set(tagged_sections)
         instance.save()
         return instance
 
 
 def get_tagged(tags):
     tagged_users = []
-    tagged_sections = []
     for tag in tags:
         user_qs = User.objects.filter(id=tag['id'], username=tag['text'])
         if user_qs.exists():
             tagged_users.append(user_qs.first())
-        else:
-            section_qs = Section.objects.filter(id=tag['id'], text=tag['text'])
-            if section_qs.exists():
-                tagged_sections.append(section_qs.first())
-    return tagged_users, tagged_sections
+    return tagged_users
+
+
+def get_linked(text: str):
+    extractor = URLExtract()
+    urls = extractor.find_urls(text)
+
+    current_domain = Site.objects.get_current().domain
+
+    matching_links = [url for url in urls if current_domain in url]
+
+    for link in matching_links:
+        parsed_url = urlparse(link)
+        integer_strings = re.findall(r'\d+', parsed_url.path)
+        if len(integer_strings) > 0:
+            try:
+                if 'post' in parsed_url.path:
+                    return Post.objects.get(id=integer_strings[0])
+                if 'meeting' in parsed_url.path:
+                    return Meeting.objects.get(id=integer_strings[0])
+                if 'ballot' in parsed_url.path:
+                    return Ballot.objects.get(id=integer_strings[0])
+                if 'survey' in parsed_url.path:
+                    return Survey.objects.get(id=integer_strings[0])
+                if 'petition' in parsed_url.path:
+                    return Petition.objects.get(id=integer_strings[0])
+                if 'section' in parsed_url.path:
+                    return Section.objects.get(id=integer_strings[0])
+            except:
+                continue
+    return None
 
 
 class ReportSerializer(serializers.ModelSerializer):

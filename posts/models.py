@@ -53,8 +53,6 @@ class Post(BaseModel):
     bookmarks = models.ManyToManyField(User, blank=True, related_name='bookmarked_posts')
     views = models.ManyToManyField(User, blank=True, related_name='viewed_posts')
     tagged_users = models.ManyToManyField(User, blank=True, related_name='tagged_in_posts')
-    tagged_sections = models.ManyToManyField(Section, blank=True, related_name='tagged_posts')
-
     # For community notes
     upvotes = models.ManyToManyField(User, blank=True, related_name='upvotes')
     downvotes = models.ManyToManyField(User, blank=True, related_name='downvotes')

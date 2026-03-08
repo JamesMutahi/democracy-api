@@ -1,6 +1,5 @@
 from typing import Dict, Any
 
-from asgiref.sync import sync_to_async
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from django.contrib.postgres.search import TrigramSimilarity
@@ -17,6 +16,7 @@ from posts.models import Post
 from posts.serializers import PostSerializer, ReportSerializer, ThreadSerializer
 
 User = get_user_model()
+
 
 # TODO: Pagination class not being used - remove page size once resolved
 class PostListPagination(WebsocketLimitOffsetPagination):
@@ -45,7 +45,7 @@ class PostConsumer(
 
     @model_observer(Post, many_to_many=True)
     async def post_activity(self, message, observer=None, action=None, **kwargs):
-        pk = message['data']
+        pk = message['data']['pk']
         if message['action'] != 'delete':
             message['data'] = await self.get_post_serializer_data(pk=pk)
         await self.send_json(message)
@@ -70,7 +70,7 @@ class PostConsumer(
         return dict(
             # data is overridden in @model_observer
             # TODO: Too many database hits in model observer. Pass more fields to data in dict. Test with redis
-            data=instance.pk,
+            data={'pk': instance.pk},
             action=action.value,
             pk=instance.pk,
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
@@ -149,13 +149,6 @@ class PostConsumer(
         return queryset.filter(is_deleted=False, is_active=True).order_by('-published_at')
 
     @action()
-    async def create(self, data: dict, request_id: str, **kwargs):
-        response, status = await super().create(data, **kwargs)
-        pk = response["id"]
-        await self.post_activity.subscribe(pk=pk, request_id=request_id)
-        return response, status
-
-    @action()
     async def list(self, request_id: str, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
@@ -189,6 +182,7 @@ class PostConsumer(
     async def delete(self, pk: int, request_id: str, **kwargs):
         post = await database_sync_to_async(self.get_object)(pk=pk)
         await self.delete_(post=post)
+        return {'pk': pk}, 204
 
     @database_sync_to_async
     def delete_(self, post):
@@ -212,7 +206,9 @@ class PostConsumer(
     async def delete_repost(self, pk: int, request_id: str, **kwargs):
         post = await database_sync_to_async(self.get_object)(pk=pk)
         repost = await database_sync_to_async(Post.objects.get)(repost_of=post.pk, author=self.scope["user"], body='')
+        deleted = repost.pk
         await self.delete_(post=repost)
+        return {'pk': pk, 'repost': deleted}, 204
 
     @staticmethod
     def mark_deleted(post: Post):
@@ -370,8 +366,11 @@ class PostConsumer(
 
     @action()
     def add_view(self, pk, **kwargs):
-        self.scope['user'].viewed_posts.add(pk)
-        return pk, 200
+        try:
+            self.scope['user'].viewed_posts.add(pk)
+        except Post.DoesNotExist:
+            pass
+        return {'pk': pk}, 200
 
     @action()
     def report(self, **kwargs):
