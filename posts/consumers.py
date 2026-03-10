@@ -186,21 +186,12 @@ class PostConsumer(
 
     @database_sync_to_async
     def delete_(self, post):
+        post.reposts.filter(body='').delete()
+        if post.reply_to is not None and post.replies.exists():
+            return self.mark_deleted(post)
         if post.reposts.exists():
-            post.reposts.filter(body='').delete()
-            if post.reposts.exists():
-                post = self.mark_deleted(post)
-            else:
-                post.delete()
-        elif post.reply_to is not None and post.replies.exists():
-            post = self.mark_deleted(post)
-        else:
-            post.delete()
-            if post.reply_to:
-                post_save.send(sender=Post, instance=post.reply_to, created=False)
-            if post.repost_of:
-                post_save.send(sender=Post, instance=post.repost_of, created=False)
-        return post
+            return self.mark_deleted(post)
+        return post.delete()
 
     @action()
     async def delete_repost(self, pk: int, request_id: str, **kwargs):
@@ -239,6 +230,7 @@ class PostConsumer(
         post.likes.clear()
         post.views.clear()
         post.tagged_users.clear()
+        post_save.send(sender=Post, instance=post, created=False)
         return post
 
     @action()

@@ -36,4 +36,4 @@ def extract_linked_object(text: str):
                 return Petition.objects.get(id=integer_strings[0]), text.replace(link, "").strip()
             if 'section' in parsed_url.path:
                 return Section.objects.get(id=integer_strings[0]), text.replace(link, "").strip()
-    return None
+    return None, None
