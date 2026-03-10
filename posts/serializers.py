@@ -193,15 +193,14 @@ class PostSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_reposts(obj):
-        count = obj.reposts.count()
-        return count
+        return obj.get_reposts_count()
 
     def get_is_reposted(self, obj):
-        is_reposted = obj.reposts.filter(author=self.context['scope']['user'], body='').exists()
+        is_reposted = obj.reposts.filter(author=self.context['scope']['user'], reply_to=None, body='').exists()
         return is_reposted
 
     def get_is_quoted(self, obj):
-        is_quoted = obj.reposts.filter(author=self.context['scope']['user']).exclude(body='').exists()
+        is_quoted = obj.reposts.filter(author=self.context['scope']['user'], reply_to=None).exclude(body='').exists()
         return is_quoted
 
     @staticmethod
@@ -247,6 +246,7 @@ class PostSerializer(serializers.ModelSerializer):
             # Author can only have one repost of a post without body
             if validated_data['body'] == '':
                 validated_data['repost_of_id'].reposts.filter(author=self.context['scope']['user'], body='',
+                                                              reply_to=None, community_note_of=None,
                                                               image1=None, video1=None,
                                                               ballot=None, survey=None, petition=None,
                                                               meeting=None).delete()
@@ -264,18 +264,23 @@ class PostSerializer(serializers.ModelSerializer):
 
         validated_data['tagged_users'] = get_tagged(validated_data.pop('tags'))
 
-        linked_object = extract_linked_object(text=validated_data['body'])
+        linked_object, text = extract_linked_object(text=validated_data['body'])
         if linked_object:
             if isinstance(linked_object, Post) and not validated_data.get('repost_of'):
                 validated_data['repost_of_id'] = linked_object.pk
+                validated_data['body'] = text
             if isinstance(linked_object, Ballot) and not validated_data.get('ballot'):
                 validated_data['ballot_id'] = linked_object.pk
+                validated_data['body'] = text
             if isinstance(linked_object, Survey) and not validated_data.get('survey'):
                 validated_data['survey_id'] = linked_object.pk
+                validated_data['body'] = text
             if isinstance(linked_object, Petition) and not validated_data.get('petition'):
                 validated_data['petition_id'] = linked_object.pk
+                validated_data['body'] = text
             if isinstance(linked_object, Meeting) and not validated_data.get('meeting'):
                 validated_data['meeting_id'] = linked_object.pk
+                validated_data['body'] = text
 
         # Calling create method with new validated data
         post = super().create(validated_data)

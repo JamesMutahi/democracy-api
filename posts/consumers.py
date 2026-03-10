@@ -212,11 +212,12 @@ class PostConsumer(
     @database_sync_to_async
     def delete_repost_(self, pk):
         post = self.get_object(pk=pk)
-        repost_qs = post.reposts.filter(repost_of=post.pk, author=self.scope["user"], body='')
+        repost_qs = post.reposts.filter(repost_of=post.pk, author=self.scope["user"], reply_to=None, body='')
         if repost_qs.exists():
             repost_pk = repost_qs.first().pk
             repost_qs.first().delete()
-            return {'pk': post.pk, 'repost_pk': repost_pk, 'reposts': post.reposts.count()}
+            post_save.send(sender=Post, instance=post, created=False)
+            return {'pk': post.pk, 'repost_pk': repost_pk, 'reposts': post.get_reposts_count()}
         return None
 
     @staticmethod

@@ -24,19 +24,16 @@ def extract_linked_object(text: str):
         parsed_url = urlparse(link)
         integer_strings = re.findall(r'\d+', parsed_url.path)
         if len(integer_strings) > 0:
-            try:
-                if 'post' in parsed_url.path:
-                    return Post.objects.get(id=integer_strings[0])
-                if 'meeting' in parsed_url.path:
-                    return Meeting.objects.get(id=integer_strings[0])
-                if 'ballot' in parsed_url.path:
-                    return Ballot.objects.get(id=integer_strings[0])
-                if 'survey' in parsed_url.path:
-                    return Survey.objects.get(id=integer_strings[0])
-                if 'petition' in parsed_url.path:
-                    return Petition.objects.get(id=integer_strings[0])
-                if 'section' in parsed_url.path:
-                    return Section.objects.get(id=integer_strings[0])
-            except:
-                continue
+            if 'post' in parsed_url.path:
+                return Post.objects.get(id=integer_strings[0]), text.replace(link, "").strip()
+            if 'meeting' in parsed_url.path:
+                return Meeting.objects.get(id=integer_strings[0]), text.replace(link, "").strip()
+            if 'ballot' in parsed_url.path:
+                return Ballot.objects.get(id=integer_strings[0]), text.replace(link, "").strip()
+            if 'survey' in parsed_url.path:
+                return Survey.objects.get(id=integer_strings[0]), text.replace(link, "").strip()
+            if 'petition' in parsed_url.path:
+                return Petition.objects.get(id=integer_strings[0]), text.replace(link, "").strip()
+            if 'section' in parsed_url.path:
+                return Section.objects.get(id=integer_strings[0]), text.replace(link, "").strip()
     return None

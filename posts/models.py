@@ -6,7 +6,6 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from ballot.models import Ballot
-from constitution.models import Section
 from meet.models import Meeting
 from petition.models import Petition
 from survey.models import Survey
@@ -84,6 +83,10 @@ class Post(BaseModel):
         if not top_note:
             return ''
         return top_note.body
+
+    def get_reposts_count(self):
+        count = self.reposts.filter(reply_to=None, community_note_of=None).count()
+        return count
 
 
 class Report(BaseModel):
