@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.contrib.sites.models import Site
 from django.db.models.signals import post_save
 from rest_framework import serializers
 
@@ -15,6 +16,7 @@ from posts.utils.link_extractor import extract_linked_object
 from survey.models import Survey
 from survey.serializers import SurveySerializer
 from users.serializers import UserSerializer
+from users.utils.base64_image_field import Base64ImageField
 
 User = get_user_model()
 
@@ -56,6 +58,15 @@ class MessageSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True
     )
+    image1 = serializers.SerializerMethodField()
+    image2 = serializers.SerializerMethodField()
+    image3 = serializers.SerializerMethodField()
+    image4 = serializers.SerializerMethodField()
+    file = serializers.SerializerMethodField()
+    image1_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
+    image2_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
+    image3_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
+    image4_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
 
     class Meta:
         model = Message
@@ -74,12 +85,57 @@ class MessageSerializer(serializers.ModelSerializer):
             'survey_id',
             'petition_id',
             'meeting_id',
+            'image1',
+            'image2',
+            'image3',
+            'image4',
+            'file',
+            'image1_base64',
+            'image2_base64',
+            'image3_base64',
+            'image4_base64',
+            'location',
             'is_read',
             'is_edited',
             'is_deleted',
             'created_at',
             'updated_at'
         ]
+
+    @staticmethod
+    def get_image1(obj):
+        if obj.image1:
+            current_site = Site.objects.get_current()
+            return current_site.domain + obj.image1.url
+        return None
+
+    @staticmethod
+    def get_image2(obj):
+        if obj.image2:
+            current_site = Site.objects.get_current()
+            return current_site.domain + obj.image2.url
+        return None
+
+    @staticmethod
+    def get_image3(obj):
+        if obj.image3:
+            current_site = Site.objects.get_current()
+            return current_site.domain + obj.image3.url
+        return None
+
+    @staticmethod
+    def get_image4(obj):
+        if obj.image4:
+            current_site = Site.objects.get_current()
+            return current_site.domain + obj.image4.url
+        return None
+
+    @staticmethod
+    def get_file(obj):
+        if obj.file:
+            current_site = Site.objects.get_current()
+            return current_site.domain + obj.file.url
+        return None
 
     def validate(self, attrs):
         if not attrs['chat'].users.contains(self.context['scope']['user']):
@@ -99,6 +155,7 @@ class MessageSerializer(serializers.ModelSerializer):
         if validated_data['meeting_id']:
             validated_data['meeting'] = validated_data.pop('meeting_id')
 
+        # Extract object if link is present in message text
         linked_object, text = extract_linked_object(text=validated_data['text'])
         if linked_object:
             if isinstance(linked_object, Post) and not validated_data.get('post'):
@@ -116,6 +173,16 @@ class MessageSerializer(serializers.ModelSerializer):
             if isinstance(linked_object, Meeting) and not validated_data.get('meeting'):
                 validated_data['meeting_id'] = linked_object.pk
                 validated_data['text'] = text
+
+        # Handle images
+        if 'image1_base64' in validated_data:
+            validated_data['image1'] = validated_data.pop('image1_base64')
+        if 'image2_base64' in validated_data:
+            validated_data['image2'] = validated_data.pop('image2_base64')
+        if 'image3_base64' in validated_data:
+            validated_data['image3'] = validated_data.pop('image3_base64')
+        if 'image4_base64' in validated_data:
+            validated_data['image4'] = validated_data.pop('image4_base64')
 
         message = super().create(validated_data)
         post_save.send(sender=Chat, instance=message.chat, created=False)
