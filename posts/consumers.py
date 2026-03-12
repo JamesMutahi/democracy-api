@@ -135,13 +135,13 @@ class PostConsumer(
         if kwargs.get('action') == 'patch':
             return queryset.filter(is_deleted=False, author=self.scope['user'], status='draft')
         if kwargs.get('action') == 'bookmarks':
-            return queryset.filter(bookmarks=self.scope['user'], is_active=True)
+            return queryset.filter(bookmarks=self.scope['user'], is_deleted=False, is_active=True)
         if kwargs.get('action') == 'user_posts':
-            return queryset.filter(author=kwargs['user'], reply_to=None, community_note_of=None, status='published')
+            return queryset.filter(author=kwargs['user'], is_deleted=False, reply_to=None, community_note_of=None, status='published')
         if kwargs.get('action') == 'liked_posts':
-            return queryset.filter(likes__id=kwargs['user'], is_active=True)
+            return queryset.filter(likes__id=kwargs['user'], is_deleted=False, is_active=True)
         if kwargs.get('action') == 'user_replies':
-            return queryset.filter(author=kwargs['user']).exclude(reply_to=None)
+            return queryset.filter(author=kwargs['user'], is_deleted=False).exclude(reply_to=None)
         if kwargs.get('action') == 'drafts':
             return queryset.filter(author=self.scope['user'], status='draft')
         if kwargs.get('action') == 'user_community_notes':

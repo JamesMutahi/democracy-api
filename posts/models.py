@@ -36,6 +36,8 @@ class Post(BaseModel):
     video1 = models.FileField(upload_to='posts/videos/', null=True, blank=True)
     video2 = models.FileField(upload_to='posts/videos/', null=True, blank=True)
     video3 = models.FileField(upload_to='posts/videos/', null=True, blank=True)
+    file = models.FileField(upload_to='messages/files/', null=True, blank=True)
+    location = models.CharField(max_length=255, null=True, blank=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='published')
     published_at = models.DateTimeField(default=timezone.now)
     reply_to = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,

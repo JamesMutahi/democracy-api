@@ -14,6 +14,7 @@ from posts.utils.link_extractor import extract_linked_object
 from survey.models import Survey
 from survey.serializers import SurveySerializer
 from users.serializers import UserSerializer
+from users.utils.base64_image_field import Base64ImageField
 
 User = get_user_model()
 
@@ -73,10 +74,15 @@ class PostSerializer(serializers.ModelSerializer):
         allow_null=True
     )
     tags = serializers.ListField(write_only=True, allow_empty=True)  # Holds both @ and # tags
-    image1 = serializers.SerializerMethodField(allow_null=True)
+    image1 = serializers.SerializerMethodField()
     image2 = serializers.SerializerMethodField()
     image3 = serializers.SerializerMethodField()
     image4 = serializers.SerializerMethodField()
+    file = serializers.SerializerMethodField()
+    image1_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
+    image2_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
+    image3_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
+    image4_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
     community_note = serializers.SerializerMethodField(read_only=True)
     is_upvoted = serializers.SerializerMethodField(read_only=True)
     is_downvoted = serializers.SerializerMethodField(read_only=True)
@@ -98,6 +104,12 @@ class PostSerializer(serializers.ModelSerializer):
             'video1',
             'video2',
             'video3',
+            'file',
+            'image1_base64',
+            'image2_base64',
+            'image3_base64',
+            'image4_base64',
+            'location',
             'is_deleted',
             'is_active',
             'likes',
@@ -159,6 +171,13 @@ class PostSerializer(serializers.ModelSerializer):
         if obj.image4:
             current_site = Site.objects.get_current()
             return current_site.domain + obj.image4.url
+        return None
+
+    @staticmethod
+    def get_file(obj):
+        if obj.file:
+            current_site = Site.objects.get_current()
+            return current_site.domain + obj.file.url
         return None
 
     def get_fields(self):
@@ -264,6 +283,7 @@ class PostSerializer(serializers.ModelSerializer):
 
         validated_data['tagged_users'] = get_tagged(validated_data.pop('tags'))
 
+        # Extract object if link is present in post body
         linked_object, text = extract_linked_object(text=validated_data['body'])
         if linked_object:
             if isinstance(linked_object, Post) and not validated_data.get('repost_of'):
@@ -281,6 +301,16 @@ class PostSerializer(serializers.ModelSerializer):
             if isinstance(linked_object, Meeting) and not validated_data.get('meeting'):
                 validated_data['meeting_id'] = linked_object.pk
                 validated_data['body'] = text
+
+        # Handle images
+        if 'image1_base64' in validated_data:
+            validated_data['image1'] = validated_data.pop('image1_base64')
+        if 'image2_base64' in validated_data:
+            validated_data['image2'] = validated_data.pop('image2_base64')
+        if 'image3_base64' in validated_data:
+            validated_data['image3'] = validated_data.pop('image3_base64')
+        if 'image4_base64' in validated_data:
+            validated_data['image4'] = validated_data.pop('image4_base64')
 
         # Calling create method with new validated data
         post = super().create(validated_data)
