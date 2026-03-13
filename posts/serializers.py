@@ -44,7 +44,7 @@ class PostSerializer(serializers.ModelSerializer):
         allow_null=True
     )
     community_note_of_id = serializers.PrimaryKeyRelatedField(
-        queryset=Post.objects.filter(community_note_of__isnull=False),
+        queryset=Post.objects.all(),
         write_only=True,
         required=False,
         allow_null=True
