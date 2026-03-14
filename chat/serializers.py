@@ -156,23 +156,18 @@ class MessageSerializer(serializers.ModelSerializer):
             validated_data['meeting'] = validated_data.pop('meeting_id')
 
         # Extract object if link is present in message text
-        linked_object, text = extract_linked_object(text=validated_data['text'])
+        linked_object = extract_linked_object(text=validated_data['text'])
         if linked_object:
             if isinstance(linked_object, Post) and not validated_data.get('post'):
                 validated_data['post_id'] = linked_object.pk
-                validated_data['text'] = text
             if isinstance(linked_object, Ballot) and not validated_data.get('ballot'):
                 validated_data['ballot_id'] = linked_object.pk
-                validated_data['text'] = text
             if isinstance(linked_object, Survey) and not validated_data.get('survey'):
                 validated_data['survey_id'] = linked_object.pk
-                validated_data['text'] = text
             if isinstance(linked_object, Petition) and not validated_data.get('petition'):
                 validated_data['petition_id'] = linked_object.pk
-                validated_data['text'] = text
             if isinstance(linked_object, Meeting) and not validated_data.get('meeting'):
                 validated_data['meeting_id'] = linked_object.pk
-                validated_data['text'] = text
 
         # Handle images
         if 'image1_base64' in validated_data:

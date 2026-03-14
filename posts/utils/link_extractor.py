@@ -25,15 +25,15 @@ def extract_linked_object(text: str):
         integer_strings = re.findall(r'\d+', parsed_url.path)
         if len(integer_strings) > 0:
             if 'post' in parsed_url.path:
-                return Post.objects.get(id=integer_strings[0]), text.replace(link, "").strip()
+                return Post.objects.get(id=integer_strings[0])
             if 'meeting' in parsed_url.path:
-                return Meeting.objects.get(id=integer_strings[0]), text.replace(link, "").strip()
+                return Meeting.objects.get(id=integer_strings[0])
             if 'ballot' in parsed_url.path:
-                return Ballot.objects.get(id=integer_strings[0]), text.replace(link, "").strip()
+                return Ballot.objects.get(id=integer_strings[0])
             if 'survey' in parsed_url.path:
-                return Survey.objects.get(id=integer_strings[0]), text.replace(link, "").strip()
+                return Survey.objects.get(id=integer_strings[0])
             if 'petition' in parsed_url.path:
-                return Petition.objects.get(id=integer_strings[0]), text.replace(link, "").strip()
+                return Petition.objects.get(id=integer_strings[0])
             if 'section' in parsed_url.path:
-                return Section.objects.get(id=integer_strings[0]), text.replace(link, "").strip()
-    return None, None
+                return Section.objects.get(id=integer_strings[0])
+    return None

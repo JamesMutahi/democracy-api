@@ -284,23 +284,18 @@ class PostSerializer(serializers.ModelSerializer):
         validated_data['tagged_users'] = get_tagged(validated_data.pop('tags'))
 
         # Extract object if link is present in post body
-        linked_object, text = extract_linked_object(text=validated_data['body'])
+        linked_object = extract_linked_object(text=validated_data['body'])
         if linked_object:
             if isinstance(linked_object, Post) and not validated_data.get('repost_of'):
                 validated_data['repost_of_id'] = linked_object.pk
-                validated_data['body'] = text
             if isinstance(linked_object, Ballot) and not validated_data.get('ballot'):
                 validated_data['ballot_id'] = linked_object.pk
-                validated_data['body'] = text
             if isinstance(linked_object, Survey) and not validated_data.get('survey'):
                 validated_data['survey_id'] = linked_object.pk
-                validated_data['body'] = text
             if isinstance(linked_object, Petition) and not validated_data.get('petition'):
                 validated_data['petition_id'] = linked_object.pk
-                validated_data['body'] = text
             if isinstance(linked_object, Meeting) and not validated_data.get('meeting'):
                 validated_data['meeting_id'] = linked_object.pk
-                validated_data['body'] = text
 
         # Handle images
         if 'image1_base64' in validated_data:

@@ -217,6 +217,7 @@ class PostConsumer(
         post.ballot = None
         post.survey = None
         post.petition = None
+        post.meeting = None
         post.image1 = None
         post.image2 = None
         post.image3 = None
