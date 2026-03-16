@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.db import models
 from django.db.models import ExpressionWrapper, Count, F, FloatField
 from django.db.models.functions import NullIf
+from django.db.models.signals import post_save
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -90,6 +91,16 @@ class Post(BaseModel):
         count = self.reposts.filter(reply_to=None, community_note_of=None).count()
         return count
 
+    def delete(self, *args, **kwargs):
+        self.reposts.filter(body='').delete()
+        if self.reply_to is None:
+            self.replies.all().delete()
+        if self.reply_to is not None and self.replies.exists():
+            return mark_deleted(self)
+        if self.reposts.exists():
+            return mark_deleted(self)
+        return super(Post, self).delete(*args, **kwargs)
+
 
 class Report(BaseModel):
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='reports')
@@ -101,3 +112,26 @@ class Report(BaseModel):
 
     def __str__(self):
         return self.issue
+
+
+def mark_deleted(post: Post):
+    post.body = ''
+    post.ballot = None
+    post.survey = None
+    post.petition = None
+    post.meeting = None
+    post.image1 = None
+    post.image2 = None
+    post.image3 = None
+    post.image4 = None
+    post.video1 = None
+    post.video2 = None
+    post.video3 = None
+    post.is_deleted = True
+    post.save()
+    post.bookmarks.clear()
+    post.likes.clear()
+    post.views.clear()
+    post.tagged_users.clear()
+    post_save.send(sender=Post, instance=post, created=False)
+    return post

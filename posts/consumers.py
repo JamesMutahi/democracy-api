@@ -7,7 +7,7 @@ from django.db.models import QuerySet, Case, When, Count, Q
 from django.db.models.signals import post_save
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
-from djangochannelsrestframework.mixins import CreateModelMixin, PatchModelMixin, RetrieveModelMixin
+from djangochannelsrestframework.mixins import CreateModelMixin, PatchModelMixin, RetrieveModelMixin, DeleteModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.pagination import WebsocketLimitOffsetPagination
 
@@ -29,6 +29,7 @@ class PostConsumer(
     CreateModelMixin,
     RetrieveModelMixin,
     PatchModelMixin,
+    DeleteModelMixin,
     GenericAsyncAPIConsumer
 ):
     queryset = Post.objects.all()
@@ -113,6 +114,8 @@ class PostConsumer(
                 'published_at'
             )
             return queryset
+        if kwargs.get('action') == 'reply_to':
+            return queryset.filter(is_active=True).order_by('-published_at')
         if kwargs.get('action') == 'community_notes':
             queryset = queryset.filter(community_note_of=kwargs['pk'], is_active=True)
             search_term = kwargs.get('search_term', None)
@@ -137,7 +140,8 @@ class PostConsumer(
         if kwargs.get('action') == 'bookmarks':
             return queryset.filter(bookmarks=self.scope['user'], is_deleted=False, is_active=True)
         if kwargs.get('action') == 'user_posts':
-            return queryset.filter(author=kwargs['user'], is_deleted=False, reply_to=None, community_note_of=None, status='published')
+            return queryset.filter(author=kwargs['user'], is_deleted=False, reply_to=None, community_note_of=None,
+                                   status='published')
         if kwargs.get('action') == 'liked_posts':
             return queryset.filter(likes__id=kwargs['user'], is_deleted=False, is_active=True)
         if kwargs.get('action') == 'user_replies':
@@ -179,21 +183,6 @@ class PostConsumer(
         return data, 200
 
     @action()
-    async def delete(self, pk: int, request_id: str, **kwargs):
-        post = await database_sync_to_async(self.get_object)(pk=pk)
-        await self.delete_(post=post)
-        return {'pk': pk}, 204
-
-    @database_sync_to_async
-    def delete_(self, post):
-        post.reposts.filter(body='').delete()
-        if post.reply_to is not None and post.replies.exists():
-            return self.mark_deleted(post)
-        if post.reposts.exists():
-            return self.mark_deleted(post)
-        return post.delete()
-
-    @action()
     async def delete_repost(self, pk: int, request_id: str, **kwargs):
         data = await self.delete_repost_(pk=pk)
         if not data:
@@ -210,29 +199,6 @@ class PostConsumer(
             post_save.send(sender=Post, instance=post, created=False)
             return {'pk': post.pk, 'repost_pk': repost_pk, 'reposts': post.get_reposts_count()}
         return None
-
-    @staticmethod
-    def mark_deleted(post: Post):
-        post.body = ''
-        post.ballot = None
-        post.survey = None
-        post.petition = None
-        post.meeting = None
-        post.image1 = None
-        post.image2 = None
-        post.image3 = None
-        post.image4 = None
-        post.video1 = None
-        post.video2 = None
-        post.video3 = None
-        post.is_deleted = True
-        post.save()
-        post.bookmarks.clear()
-        post.likes.clear()
-        post.views.clear()
-        post.tagged_users.clear()
-        post_save.send(sender=Post, instance=post, created=False)
-        return post
 
     @action()
     async def like(self, **kwargs):
@@ -270,12 +236,12 @@ class PostConsumer(
 
     @action()
     async def reply_to(self, request_id, pk: int, **kwargs):
-        post = await database_sync_to_async(self.get_object)(pk=pk)
-        data = await self.get_reply_to_posts(post=post)
+        data = await self.get_reply_to_posts(pk=pk)
         return data, 200
 
     @database_sync_to_async
-    def get_reply_to_posts(self, post: Post):
+    def get_reply_to_posts(self, pk):
+        post = Post.objects.get(pk=pk)
         posts = get_reply_to(post=post)
         serializer = PostSerializer(posts, many=True, context={'scope': self.scope})
         return serializer.data
