@@ -32,7 +32,7 @@ class PostConsumer(
     DeleteModelMixin,
     GenericAsyncAPIConsumer
 ):
-    queryset = Post.objects.all()
+    queryset = Post.objects.filter(is_active=True)
     serializer_class = PostSerializer
     lookup_field = "pk"
     pagination_class = PostListPagination
@@ -100,13 +100,13 @@ class PostConsumer(
             return queryset.filter(is_deleted=False, community_note_of=None, status='published').order_by(
                 '-published_at')
         if kwargs.get('action') == 'for_you':
-            return queryset.filter(is_deleted=False, reply_to=None, community_note_of=None, status='published',
-                                   is_active=True).order_by('-published_at')
+            return queryset.filter(is_deleted=False, reply_to=None, community_note_of=None,
+                                   status='published', ).order_by('-published_at')
         if kwargs.get('action') == 'following':
             return queryset.filter(author__in=self.scope['user'].following.all(), is_deleted=False, reply_to=None,
-                                   community_note_of=None, status='published', is_active=True).order_by('-published_at')
+                                   community_note_of=None, status='published').order_by('-published_at')
         if kwargs.get('action') == 'replies':
-            queryset = queryset.filter(reply_to=kwargs['pk'], status='published', is_active=True).order_by(
+            queryset = queryset.filter(reply_to=kwargs['pk'], status='published').order_by(
                 Case(
                     When(author=kwargs['author_pk'], then=0),
                     default=1,
@@ -115,9 +115,9 @@ class PostConsumer(
             )
             return queryset
         if kwargs.get('action') == 'reply_to':
-            return queryset.filter(is_active=True).order_by('-published_at')
+            return queryset.all().order_by('-published_at')
         if kwargs.get('action') == 'community_notes':
-            queryset = queryset.filter(community_note_of=kwargs['pk'], is_active=True)
+            queryset = queryset.filter(community_note_of=kwargs['pk'])
             search_term = kwargs.get('search_term', None)
             if search_term:
                 queryset = queryset.filter(
@@ -138,19 +138,19 @@ class PostConsumer(
         if kwargs.get('action') == 'patch':
             return queryset.filter(is_deleted=False, author=self.scope['user'], status='draft')
         if kwargs.get('action') == 'bookmarks':
-            return queryset.filter(bookmarks=self.scope['user'], is_deleted=False, is_active=True)
+            return queryset.filter(bookmarks=self.scope['user'], is_deleted=False)
         if kwargs.get('action') == 'user_posts':
             return queryset.filter(author=kwargs['user'], is_deleted=False, reply_to=None, community_note_of=None,
                                    status='published')
         if kwargs.get('action') == 'liked_posts':
-            return queryset.filter(likes__id=kwargs['user'], is_deleted=False, is_active=True)
+            return queryset.filter(likes__id=kwargs['user'], is_deleted=False)
         if kwargs.get('action') == 'user_replies':
             return queryset.filter(author=kwargs['user'], is_deleted=False).exclude(reply_to=None)
         if kwargs.get('action') == 'drafts':
             return queryset.filter(author=self.scope['user'], status='draft')
         if kwargs.get('action') == 'user_community_notes':
             return queryset.filter(author=kwargs['user']).exclude(community_note_of=None)
-        return queryset.filter(is_deleted=False, is_active=True).order_by('-published_at')
+        return queryset.filter(is_deleted=False).order_by('-published_at')
 
     @action()
     async def list(self, request_id: str, page_size=page_size, **kwargs):
@@ -312,7 +312,7 @@ class PostConsumer(
     @action()
     async def user_posts(self, request_id: str, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, post_serializer=ThreadSerializer, **kwargs)
         return data, 200
 
     @action()

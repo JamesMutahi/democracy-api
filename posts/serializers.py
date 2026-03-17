@@ -355,7 +355,10 @@ class ThreadSerializer(PostSerializer):
     thread = serializers.SerializerMethodField(read_only=True)
 
     def get_thread(self, obj):
-        author_replies = obj.replies.filter(author=obj.reply_to.author)
+        if obj.reply_to:
+            author_replies = obj.replies.filter(author=obj.reply_to.author)
+        else:
+            author_replies = obj.replies.filter(author=obj.author)
         serializer = ThreadSerializer(author_replies, many=True, context=self.context)
         return serializer.data
 
