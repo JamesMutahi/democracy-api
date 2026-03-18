@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
 from django.db.models.signals import post_save
+from django.utils import timezone
 from rest_framework import serializers
 
 from ballot.models import Ballot
@@ -21,6 +22,7 @@ User = get_user_model()
 
 class PostSerializer(serializers.ModelSerializer):
     author = UserSerializer(read_only=True)
+    published_at = serializers.DateTimeField(default=timezone.now, read_only=True)
     likes = serializers.SerializerMethodField(read_only=True)
     is_liked = serializers.SerializerMethodField(read_only=True)
     bookmarks = serializers.SerializerMethodField(read_only=True)
@@ -320,6 +322,7 @@ class PostSerializer(serializers.ModelSerializer):
         # Save validated data to instance
         instance.body = validated_data.get('body', instance.body)
         instance.status = validated_data.get('status', instance.status)
+        instance.published_at = timezone.now()
         instance.tagged_users.set(tagged_users)
         instance.save()
         return instance
