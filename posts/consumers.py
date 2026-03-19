@@ -89,7 +89,8 @@ class PostConsumer(
         previous_posts = kwargs.get('previous_posts', None)
         if previous_posts:
             queryset = queryset.exclude(id__in=previous_posts)
-        if kwargs.get('action') == 'list':
+        if kwargs.get('action') == 'list' or kwargs.get('action') == 'recent':
+            queryset = queryset.filter(is_deleted=False, community_note_of=None, status='published')
             search_term = kwargs.get('search_term', '')
             queryset = queryset.annotate(similarity=TrigramSimilarity('body', search_term)).filter(
                 similarity__gt=0.1).order_by('-similarity')
@@ -97,8 +98,9 @@ class PostConsumer(
             end_date = kwargs.get('end_date', None)
             if start_date and end_date:
                 queryset = queryset.filter(published_at__range=(start_date, end_date))
-            return queryset.filter(is_deleted=False, community_note_of=None, status='published').order_by(
-                '-published_at')
+            if kwargs.get('action') == 'recent':
+                return queryset.order_by('-published_at')
+            return queryset
         if kwargs.get('action') == 'for_you':
             return queryset.filter(is_deleted=False, reply_to=None, community_note_of=None,
                                    status='published', ).order_by('-published_at')
@@ -154,6 +156,12 @@ class PostConsumer(
 
     @action()
     async def list(self, request_id: str, page_size=page_size, **kwargs):
+        posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
+        return data, 200
+
+    @action()
+    async def recent(self, request_id: str, page_size=page_size, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.posts_paginator(posts=posts, page_size=page_size, **kwargs)
         return data, 200

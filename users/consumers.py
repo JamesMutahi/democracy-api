@@ -7,9 +7,9 @@ from djangochannelsrestframework.mixins import RetrieveModelMixin, PatchModelMix
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import action
 
-from users.utils.list_paginator import list_paginator
 from petition.models import Petition
 from users.serializers import UserSerializer
+from users.utils.list_paginator import list_paginator
 
 User = get_user_model()
 
@@ -86,6 +86,11 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         pk = response["id"]
         await self.user_activity.subscribe(pk=pk, request_id=request_id)
         return response, status
+
+    @action()
+    async def unsubscribe(self, pk: int, request_id: str, **kwargs):
+        await self.user_activity.unsubscribe(pk=pk, request_id=request_id)
+        return {}, 200
 
     def signal(self, user: User):
         # Setting many_to_many on model observer is failing
@@ -204,7 +209,8 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         return data
 
     @action()
-    async def petition_supporters(self, request_id: str, pk: int, page=1, page_size=page_size, last_user: int = None, **kwargs):
+    async def petition_supporters(self, request_id: str, pk: int, page=1, page_size=page_size, last_user: int = None,
+                                  **kwargs):
         data = await self.petition_supporters_(pk, page, page_size, last_user)
         return data, 200
 
