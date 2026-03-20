@@ -21,7 +21,7 @@ from django.conf import settings
 
 urlpatterns = [
     path('grappelli/', include('grappelli.urls')),
-    path('auth/', include('users.urls')),
+    path('auth/', include('apps.users.urls')),
     path('admin/', admin.site.urls),
     path('nested_admin/', include('nested_admin.urls')),
 ]

@@ -20,17 +20,17 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "project.settings")
 # is populated before importing code that may import ORM models.
 django_asgi_app = get_asgi_application()
 
-from users.utils.token_middleware import TokenAuthMiddleware
-from users.consumers import UserConsumer
-from posts.consumers import PostConsumer
-from chat.consumers import ChatConsumer
-from ballot.consumers import BallotConsumer
-from survey.consumers import SurveyConsumer
-from petition.consumers import PetitionConsumer
-from notification.consumers import NotificationConsumer
-from constitution.consumers import ConstitutionConsumer
-from meet.consumers import MeetingConsumer
-from geo.consumers import GeoConsumer
+from apps.utils.token_middleware import TokenAuthMiddleware
+from apps.users.consumers import UserConsumer
+from apps.posts.consumers import PostConsumer
+from apps.chat.consumers import ChatConsumer
+from apps.ballot.consumers import BallotConsumer
+from apps.survey.consumers import SurveyConsumer
+from apps.petition.consumers import PetitionConsumer
+from apps.notification.consumers import NotificationConsumer
+from apps.constitution.consumers import ConstitutionConsumer
+from apps.meeting.consumers import MeetingConsumer
+from apps.geo.consumers import GeoConsumer
 
 application = ProtocolTypeRouter({
     # Django's ASGI application to handle traditional HTTP requests

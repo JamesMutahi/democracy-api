@@ -9,7 +9,7 @@ class CustomIndexDashboard(Dashboard):
             title=_('App'),
             column=1,
             collapsible=True,
-            models=('django.contrib.sites.models.Site', 'geo.models.County',),
+            models=('django.contrib.sites.models.Site', 'apps.geo.models.County',),
         ))
         self.children.append(modules.ModelList(
             title=_('General'),

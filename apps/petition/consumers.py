@@ -1,0 +1,189 @@
+from channels.db import database_sync_to_async
+from django.db.models import QuerySet, Q, Count
+from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
+from djangochannelsrestframework.mixins import ListModelMixin, CreateModelMixin, RetrieveModelMixin
+from djangochannelsrestframework.observer import model_observer
+from djangochannelsrestframework.observer.generics import action
+
+from apps.utils.list_paginator import list_paginator
+from apps.petition.models import Petition
+from apps.petition.serializers import PetitionSerializer
+
+
+class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer):
+    serializer_class = PetitionSerializer
+    queryset = Petition.objects.all()
+    lookup_field = "pk"
+    page_size = 20
+
+    async def connect(self):
+        if self.scope['user'].is_authenticated:
+            await self.accept()
+        else:
+            await self.close()
+
+    @model_observer(Petition, many_to_many=True)
+    async def petition_activity(self, message, observer=None, action=None, **kwargs):
+        pk = message['data']
+        if message['action'] != 'delete':
+            message['data'] = await self.get_petition_serializer_data(pk=pk)
+        await self.send_json(message)
+
+    @database_sync_to_async
+    def get_petition_serializer_data(self, pk: int):
+        petition = Petition.objects.get(pk=pk)
+        serializer = PetitionSerializer(instance=petition, context={'scope': self.scope})
+        return serializer.data
+
+    @petition_activity.groups_for_signal
+    def petition_activity(self, instance: Petition, **kwargs):
+        yield f'petition__{instance.pk}'
+
+    @petition_activity.groups_for_consumer
+    def petition_activity(self, pk=None, **kwargs):
+        if pk is not None:
+            yield f'petition__{pk}'
+
+    @petition_activity.serializer
+    def petition_activity(self, instance: Petition, action, **kwargs):
+        return dict(
+            # data is overridden in @model_observer
+            # TODO: Too many database hits in model observer. Pass more fields to data in dict. Test with redis
+            data=instance.pk,
+            action=action.value,
+            request_id='petitions',
+            pk=instance.pk,
+            response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
+        )
+
+    async def disconnect(self, code):
+        await self.petition_activity.unsubscribe()
+        await super().disconnect(code)
+
+    def filter_queryset(self, queryset: QuerySet, **kwargs):
+        queryset = super().filter_queryset(queryset=queryset, **kwargs)
+        previous_petitions = kwargs.get('previous_petitions', None)
+        if previous_petitions:
+            queryset = queryset.exclude(id__in=previous_petitions)
+        if kwargs.get('action') == 'list':
+            search_term = kwargs.get('search_term', None)
+            is_open = kwargs.get('is_open', True)
+            filter_by_region = kwargs.get('filter_by_region', True)
+            sort_by = kwargs.get('sort_by', 'popular')
+            start_date = kwargs.get('start_date', None)
+            end_date = kwargs.get('end_date', None)
+            if search_term:
+                queryset = queryset.filter(Q(title__icontains=search_term) | Q(description__icontains=search_term) | Q(
+                    author__name__icontains=search_term) | Q(county__name__icontains=search_term) | Q(
+                    constituency__name__icontains=search_term) | Q(ward__name__icontains=search_term)).distinct()
+            if is_open is not None:
+                if is_open:
+                    queryset = queryset.filter(is_open=True)
+                if not is_open:
+                    queryset = queryset.filter(is_open=False)
+            if filter_by_region:
+                queryset = queryset.filter(Q(county__isnull=True) | Q(county=kwargs['county'])).filter(
+                    Q(constituency__isnull=True) | Q(constituency=kwargs['constituency'])).filter(
+                    Q(ward__isnull=True) | Q(ward=kwargs['ward']))
+            if start_date and end_date:
+                queryset = queryset.filter(created_at__range=(start_date, end_date))
+            if sort_by:
+                if sort_by == 'recent':
+                    return queryset.order_by('-created_at')
+                if sort_by == 'oldest':
+                    return queryset.order_by('created_at')
+            return queryset.annotate(supporters_count=Count('supporters')).order_by('-supporters_count', '-created_at')
+        if kwargs.get('action') == 'user_petitions':
+            return queryset.filter(author=kwargs.get('user')).order_by('-created_at')
+        if kwargs.get('action') == 'delete' or kwargs.get('action') == 'patch':
+            return queryset.filter(author=self.scope['user'])
+        return queryset
+
+    @action()
+    async def create(self, data: dict, request_id: str, **kwargs):
+        response, status = await super().create(data, **kwargs)
+        await self.petition_activity.subscribe(pk=response["id"], request_id=request_id)
+        return response, status
+
+    @action()
+    async def list(self, request_id, page_size=page_size, **kwargs):
+        kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_user_regions()
+        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        data = await self.list_(queryset=queryset, page_size=page_size, **kwargs)
+        await self.reply(action='list', data=data, request_id=request_id)
+
+    @database_sync_to_async
+    def get_user_regions(self):
+        return self.scope['user'].county, self.scope['user'].constituency, self.scope['user'].ward
+
+    @database_sync_to_async
+    def list_(self, queryset, page_size, **kwargs):
+        page_obj = list_paginator(queryset=queryset, page=1, page_size=page_size, )
+        serializer = PetitionSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
+        return dict(results=serializer.data, previous_petitions=kwargs.get('previous_petitions', None),
+                    has_next=page_obj.has_next())
+
+    @action()
+    async def retrieve(self, request_id: str, **kwargs):
+        response, status = await super().retrieve(**kwargs)
+        pk = response["id"]
+        await self.petition_activity.subscribe(pk=pk, request_id=request_id)
+        return response, status
+
+    @action()
+    async def unsubscribe(self, pk: int, request_id: str, **kwargs):
+        await self.petition_activity.unsubscribe(pk=pk, request_id=request_id)
+        return {}, 200
+
+    @action()
+    async def support(self, pk: int, request_id: str, **kwargs):
+        petition = await database_sync_to_async(self.get_object)(pk=pk, is_open=True, is_active=True)
+        in_region = await self.check_in_region(petition=petition)
+        if not in_region:
+            return await self.reply(action='support', errors=['You are not a registered voter in the region'],
+                                    status=403)
+        data = await self.support_(petition=petition)
+        return data, 200
+
+    @database_sync_to_async
+    def check_in_region(self, petition: Petition):
+        if not petition.county:
+            return True
+        if petition.county != self.scope['user'].county:
+            return False
+        if petition.constituency:
+            if petition.constituency != self.scope['user'].constituency:
+                return False
+        if petition.ward:
+            if petition.ward != self.scope['user'].ward:
+                return False
+        return True
+
+    @database_sync_to_async
+    def support_(self, petition: Petition):
+        user = self.scope['user']
+        if petition.supporters.filter(pk=user.pk).exists():
+            petition.supporters.remove(user)
+            is_supported = False
+        else:
+            petition.supporters.add(user)
+            is_supported = True
+        return {'pk': petition.pk, 'is_supported': is_supported, 'supporters': petition.supporters.count()}
+
+    @action()
+    async def change_status(self, pk: int, request_id: str, **kwargs):
+        petition = await database_sync_to_async(self.get_object)(pk=pk, author=self.scope['user'])
+        data = await self.change_status_(petition=petition)
+        return data, 200
+
+    @database_sync_to_async
+    def change_status_(self, petition: Petition):
+        petition.is_open = not petition.is_open
+        petition.save()
+        return {'pk': petition.pk, 'is_open': petition.is_open}
+
+    @action()
+    async def user_petitions(self, request_id, page_size=page_size, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        data = await self.list_(queryset=queryset, page_size=page_size, **kwargs)
+        return data, 200

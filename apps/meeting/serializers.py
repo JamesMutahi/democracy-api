@@ -1,0 +1,51 @@
+from django.contrib.auth import get_user_model
+from rest_framework import serializers
+
+from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
+from apps.meeting.models import Meeting
+from apps.users.serializers import UserSerializer
+
+User = get_user_model()
+
+
+class MeetingSerializer(serializers.ModelSerializer):
+    host = UserSerializer(read_only=True)
+    listeners = serializers.SerializerMethodField(read_only=True)
+    recent_listeners = serializers.SerializerMethodField(read_only=True)
+    county = CountySerializer(read_only=True)
+    constituency = ConstituencySerializer(read_only=True)
+    ward = WardSerializer(read_only=True)
+
+    class Meta:
+        model = Meeting
+        fields = [
+            'id',
+            'host',
+            'title',
+            'description',
+            'county',
+            'constituency',
+            'ward',
+            'listeners',
+            'recent_listeners',
+            'start_time',
+            'end_time',
+            'is_active',
+        ]
+
+    @staticmethod
+    def get_listeners(instance: Meeting):
+        return instance.listeners.count()
+
+    def get_recent_listeners(self, instance: Meeting):
+        recent_listeners = []
+        if instance.listeners.exists():
+            # Using through only returns object id
+            related = instance.listeners.through.objects.filter(meeting_id=instance.pk).order_by('-id')[:5]
+            user_list = []
+            for obj in related:
+                user = User.objects.get(id=obj.customuser_id)
+                user_list.append(user)
+            serializer = UserSerializer(user_list, many=True, context=self.context)
+            recent_listeners = serializer.data
+        return recent_listeners

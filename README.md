@@ -1,2 +1,8 @@
-docker build -t democracy .
-docker compose up --build 
+# Democracy-API
+
+```
+cd docker
+docker-compose config
+docker compose up 
+docker compose up --build
+```
