@@ -15,21 +15,22 @@ class CustomIndexDashboard(Dashboard):
             title=_('General'),
             column=1,
             collapsible=True,
-            models=('ballot.models.Ballot', 'survey.models.Survey', 'survey.models.Response', 'posts.models.Report', 'meet.models.Meeting',),
+            models=('apps.ballot.models.Ballot', 'apps.survey.models.Survey', 'apps.survey.models.Response',
+                    'apps.posts.models.Report', 'apps.meet.models.Meeting',),
         ))
         self.children.append(modules.ModelList(
             title=_('User data'),
             column=1,
             collapsible=True,
             models=(
-                'users.models.CustomUser', 'posts.models.Post', 'petition.models.Petition', 'chat.models.Chat',
-                'notification.models.Notification',),
+                'apps.users.models.CustomUser', 'apps.posts.models.Post', 'apps.petition.models.Petition',
+                'apps.chat.models.Chat', 'apps.notification.models.Notification',),
         ))
         self.children.append(modules.ModelList(
             title=_('Constitution'),
             column=1,
             collapsible=True,
-            models=('constitution.models.Section',),
+            models=('apps.constitution.models.Section',),
         ))
         # append a recent actions module
         self.children.append(modules.RecentActions(
