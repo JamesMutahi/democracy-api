@@ -14,10 +14,6 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     queryset = Notification.objects.all()
     lookup_field = "pk"
 
-    def filter_queryset(self, queryset: QuerySet, **kwargs):
-        queryset = super().filter_queryset(queryset=queryset, **kwargs)
-        return queryset.filter(user=self.scope['user'])
-
     async def connect(self):
         if self.scope['user'].is_authenticated:
             await self.accept()
@@ -57,6 +53,14 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
             response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
         )
 
+    async def disconnect(self, code):
+        await self.notification_activity.unsubscribe()
+        await super().disconnect(code)
+
+    def filter_queryset(self, queryset: QuerySet, **kwargs):
+        queryset = super().filter_queryset(queryset=queryset, **kwargs)
+        return queryset.filter(user=self.scope['user'])
+
     @action()
     async def mark_as_read(self, pk: int, request_id, **kwargs):
         data = await self.mark_as_read_(pk=pk)
@@ -85,5 +89,5 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         return serializer.data, 200
 
     def mute_post(self, pk: int, **kwargs):
-        # Disable notifications for the post
+        #TODO: Disable notifications for the post
         pass
