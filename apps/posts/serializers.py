@@ -1,7 +1,11 @@
+import os
+
+import filetype
 from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
 from django.db.models.signals import post_save
 from django.utils import timezone
+from drf_extra_fields.fields import Base64ImageField
 from rest_framework import serializers
 
 from apps.ballot.models import Ballot
@@ -11,11 +15,11 @@ from apps.meeting.serializers import MeetingSerializer
 from apps.petition.models import Petition
 from apps.petition.serializers import PetitionSerializer
 from apps.posts.models import Post, Report
-from apps.utils.link_extractor import extract_linked_object
 from apps.survey.models import Survey
 from apps.survey.serializers import SurveySerializer
 from apps.users.serializers import UserSerializer
-from apps.utils.base64_image_field import Base64ImageField
+from apps.utils.base64_file_field import CustomBase64FileField
+from apps.utils.link_extractor import extract_linked_object
 
 User = get_user_model()
 
@@ -85,6 +89,14 @@ class PostSerializer(serializers.ModelSerializer):
     image2_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
     image3_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
     image4_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
+    file_base64 = CustomBase64FileField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
+    file_name = serializers.CharField(
+        write_only=True,
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        max_length=255
+    )
     community_note = serializers.SerializerMethodField(read_only=True)
     is_upvoted = serializers.SerializerMethodField(read_only=True)
     is_downvoted = serializers.SerializerMethodField(read_only=True)
@@ -106,11 +118,13 @@ class PostSerializer(serializers.ModelSerializer):
             'video1',
             'video2',
             'video3',
-            'file',
             'image1_base64',
             'image2_base64',
             'image3_base64',
             'image4_base64',
+            'file',
+            'file_base64',
+            'file_name',
             'location',
             'is_deleted',
             'is_active',
@@ -299,7 +313,7 @@ class PostSerializer(serializers.ModelSerializer):
             if isinstance(linked_object, Meeting) and not validated_data.get('meeting'):
                 validated_data['meeting_id'] = linked_object.pk
 
-        # Handle images
+        # Handle files
         if 'image1_base64' in validated_data:
             validated_data['image1'] = validated_data.pop('image1_base64')
         if 'image2_base64' in validated_data:
@@ -308,6 +322,24 @@ class PostSerializer(serializers.ModelSerializer):
             validated_data['image3'] = validated_data.pop('image3_base64')
         if 'image4_base64' in validated_data:
             validated_data['image4'] = validated_data.pop('image4_base64')
+
+        file_obj = validated_data.pop('file_base64', None)
+        file_name = validated_data.pop('file_name', None)
+        print(file_name)
+        # Change file name
+        if file_obj and file_name:
+            # Optional: append extension if missing (recommended)
+            detected_ext = filetype.guess_extension(file_obj.read())
+            file_obj.seek(0)
+            if detected_ext:
+                base, ext = os.path.splitext(file_name)
+                if not ext or ext.lower() == '.':
+                    file_name = f"{base}.{detected_ext}"
+
+            file_obj.name = file_name
+
+        if file_obj:
+            validated_data['file'] = file_obj
 
         # Calling create method with new validated data
         post = super().create(validated_data)

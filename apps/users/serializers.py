@@ -1,10 +1,10 @@
 from django.contrib.auth import get_user_model, authenticate
 from django.contrib.sites.models import Site
 from django.utils.translation import gettext_lazy as _
+from drf_extra_fields.fields import Base64ImageField
 from rest_framework import serializers
 
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
-from apps.utils.base64_image_field import Base64ImageField
 
 User = get_user_model()
 

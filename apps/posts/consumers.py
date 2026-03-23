@@ -1,5 +1,3 @@
-from typing import Dict, Any
-
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from django.contrib.postgres.search import TrigramSimilarity
@@ -80,9 +78,6 @@ class PostConsumer(
     async def disconnect(self, code):
         await self.post_activity.unsubscribe()
         await super().disconnect(code)
-
-    def get_serializer_context(self, **kwargs) -> Dict[str, Any]:
-        return {'scope': self.scope}
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)

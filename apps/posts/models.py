@@ -37,20 +37,18 @@ class Post(BaseModel):
     video1 = models.FileField(upload_to='posts/videos/', null=True, blank=True)
     video2 = models.FileField(upload_to='posts/videos/', null=True, blank=True)
     video3 = models.FileField(upload_to='posts/videos/', null=True, blank=True)
-    file = models.FileField(upload_to='messages/files/', null=True, blank=True)
+    file = models.FileField(upload_to='posts/files/', null=True, blank=True)
     location = models.CharField(max_length=255, null=True, blank=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='published')
     published_at = models.DateTimeField(default=timezone.now)
-    reply_to = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
-                                 related_name='replies')
-    repost_of = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
-                                  related_name='reposts')
-    community_note_of = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
+    reply_to = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='replies')
+    repost_of = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='reposts')
+    community_note_of = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True,
                                           related_name='community_notes')
-    ballot = models.ForeignKey(Ballot, on_delete=models.SET_NULL, null=True, blank=True, related_name='posts')
-    survey = models.ForeignKey(Survey, on_delete=models.SET_NULL, null=True, blank=True, related_name='posts')
-    petition = models.ForeignKey(Petition, on_delete=models.SET_NULL, null=True, blank=True, related_name='posts')
-    meeting = models.ForeignKey(Meeting, on_delete=models.SET_NULL, null=True, blank=True, related_name='posts')
+    ballot = models.ForeignKey(Ballot, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
+    survey = models.ForeignKey(Survey, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
+    petition = models.ForeignKey(Petition, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
+    meeting = models.ForeignKey(Meeting, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
     likes = models.ManyToManyField(User, blank=True, related_name='liked_posts')
     bookmarks = models.ManyToManyField(User, blank=True, related_name='bookmarked_posts')
     views = models.ManyToManyField(User, blank=True, related_name='viewed_posts')
@@ -98,6 +96,8 @@ class Post(BaseModel):
         if self.reply_to is not None and self.replies.exists():
             return mark_deleted(self)
         if self.reposts.exists():
+            return mark_deleted(self)
+        if self.messages.exists():
             return mark_deleted(self)
         return super(Post, self).delete(*args, **kwargs)
 
