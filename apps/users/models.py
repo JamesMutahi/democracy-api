@@ -10,14 +10,25 @@ from apps.geo.models import County, Constituency, Ward
 from .managers import UserManager
 
 
+class UploadImageTo:
+    def __init__(self, name):
+        self.name = name
+
+    def __call__(self, instance, filename):
+        return '{}/profile/{}'.format(instance.author.id, filename)
+
+    def deconstruct(self):
+        return 'apps.users.models.UploadImageTo', [self.name], {}
+
+
 class CustomUser(AbstractBaseUser, PermissionsMixin):
     username = models.CharField(_('username'), max_length=30, unique=True)
     name = models.CharField(_('name'), max_length=50)
     id_number = models.IntegerField(_('ID number'), unique=True, null=True, blank=True)
     email = models.EmailField(_('email'), unique=True, null=True, blank=True)
     bio = models.TextField(_('bio'), blank=True)
-    image = models.ImageField(upload_to='profile_pics/', default='profile_pics/default.jpg')
-    cover_photo = models.ImageField(upload_to='cover_photos/', default='cover_photos/default.jpg')
+    image = models.ImageField(upload_to=UploadImageTo('images/'), default='profile_pics/default.jpg')
+    cover_photo = models.ImageField(upload_to=UploadImageTo('cover_photos/'), default='cover_photos/default.jpg')
     following = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='followers')
     muted = models.ManyToManyField('self', symmetrical=False, blank=True)
     blocked = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='blockers')

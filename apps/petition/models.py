@@ -16,6 +16,28 @@ class BaseModel(models.Model):
         abstract = True
 
 
+class UploadImageTo:
+    def __init__(self, name):
+        self.name = name
+
+    def __call__(self, instance, filename):
+        return '{}/petitions/{}'.format(instance.author.id, filename)
+
+    def deconstruct(self):
+        return 'apps.petition.models.UploadImageTo', [self.name], {}
+
+
+class UploadVideoTo:
+    def __init__(self, name):
+        self.name = name
+
+    def __call__(self, instance, filename):
+        return '{}/petitions/{}'.format(instance.author.id, filename)
+
+    def deconstruct(self):
+        return 'apps.petition.models.UploadVideoTo', [self.name], {}
+
+
 class Petition(BaseModel):
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='petitions')
     title = models.CharField(max_length=255)
@@ -24,8 +46,8 @@ class Petition(BaseModel):
     constituency = models.ForeignKey(Constituency, on_delete=models.PROTECT, null=True, blank=True,
                                      related_name='petitions')
     ward = models.ForeignKey(Ward, on_delete=models.PROTECT, null=True, blank=True, related_name='petitions')
-    image = models.ImageField(upload_to='petitions/images/')
-    video = models.FileField(upload_to='petitions/videos/', null=True, blank=True)
+    image = models.ImageField(upload_to=UploadImageTo('images/'))
+    video = models.FileField(upload_to=UploadVideoTo('videos/'), null=True, blank=True)
     supporters = models.ManyToManyField(User, blank=True, related_name='supported_petitions')
     is_open = models.BooleanField(_('open'), default=True)
     is_active = models.BooleanField(_('active'), default=True)
