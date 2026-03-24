@@ -1,6 +1,3 @@
-import os
-
-import filetype
 from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
 from django.db.models.signals import post_save
@@ -193,19 +190,11 @@ class MessageSerializer(serializers.ModelSerializer):
         if 'image4_base64' in validated_data:
             validated_data['image4'] = validated_data.pop('image4_base64')
 
-        # Change file name
         file_obj = validated_data.pop('file_base64', None)
         file_name = validated_data.pop('file_name', None)
 
-        if file_obj and file_name:
-            # Optional: append extension if missing (recommended)
-            detected_ext = filetype.guess_extension(file_obj.read())
-            file_obj.seek(0)
-            if detected_ext:
-                base, ext = os.path.splitext(file_name)
-                if not ext or ext.lower() == '.':
-                    file_name = f"{base}.{detected_ext}"
-
+        # Change file name
+        if file_name:
             file_obj.name = file_name
 
         if file_obj:
