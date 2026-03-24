@@ -23,6 +23,39 @@ class BaseModel(models.Model):
         abstract = True
 
 
+class UploadVideoTo:
+    def __init__(self, name):
+        self.name = name
+
+    def __call__(self, instance, filename):
+        return '{}/posts/{}'.format(instance.author.id, filename)
+
+    def deconstruct(self):
+        return 'apps.posts.models.UploadVideoTo', [self.name], {}
+
+
+class UploadImageTo:
+    def __init__(self, name):
+        self.name = name
+
+    def __call__(self, instance, filename):
+        return '{}/posts/{}'.format(instance.author.id, filename)
+
+    def deconstruct(self):
+        return 'apps.posts.models.UploadImageTo', [self.name], {}
+
+
+class UploadFileTo:
+    def __init__(self, name):
+        self.name = name
+
+    def __call__(self, instance, filename):
+        return '{}/posts/{}'.format(instance.author.id, filename)
+
+    def deconstruct(self):
+        return 'apps.posts.models.UploadFileTo', [self.name], {}
+
+
 class Post(BaseModel):
     STATUS_CHOICES = (
         ('draft', 'Draft'),
@@ -30,14 +63,14 @@ class Post(BaseModel):
     )
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='posts')
     body = models.TextField(blank=True)
-    image1 = models.ImageField(upload_to='posts/images/', null=True, blank=True)
-    image2 = models.ImageField(upload_to='posts/images/', null=True, blank=True)
-    image3 = models.ImageField(upload_to='posts/images/', null=True, blank=True)
-    image4 = models.ImageField(upload_to='posts/images/', null=True, blank=True)
-    video1 = models.FileField(upload_to='posts/videos/', null=True, blank=True)
-    video2 = models.FileField(upload_to='posts/videos/', null=True, blank=True)
-    video3 = models.FileField(upload_to='posts/videos/', null=True, blank=True)
-    file = models.FileField(upload_to='posts/files/', null=True, blank=True)
+    image1 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
+    image2 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
+    image3 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
+    image4 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
+    video1 = models.FileField(upload_to=UploadVideoTo('videos/'), null=True, blank=True)
+    video2 = models.FileField(upload_to=UploadImageTo('videos/'), null=True, blank=True)
+    video3 = models.FileField(upload_to=UploadImageTo('videos/'), null=True, blank=True)
+    file = models.FileField(upload_to=UploadFileTo('files/'), null=True, blank=True)
     location = models.CharField(max_length=255, null=True, blank=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='published')
     published_at = models.DateTimeField(default=timezone.now)
