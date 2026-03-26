@@ -73,6 +73,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_filters',
     'nested_admin',
+    'leaflet',
 ]
 
 DATA_UPLOAD_MAX_NUMBER_FIELDS = None

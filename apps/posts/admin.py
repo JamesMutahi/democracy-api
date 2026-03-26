@@ -1,5 +1,5 @@
 from django.contrib import admin
-
+from leaflet.admin import LeafletGeoAdmin
 from apps.posts.models import Post, Report
 
 
@@ -11,7 +11,7 @@ class ReportInline(admin.TabularInline):
 
 
 @admin.register(Post)
-class PostAdmin(admin.ModelAdmin):
+class PostAdmin(LeafletGeoAdmin, admin.ModelAdmin):
     list_display = ['id', 'author', 'body', 'repost_of', 'reply_to', 'community_note_of', 'ballot', 'survey',
                     'created_at']
     list_filter = ['status']

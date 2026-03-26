@@ -1,9 +1,10 @@
 from django.contrib import admin
+from leaflet.admin import LeafletGeoAdminMixin
 
 from apps.chat.models import Message, Chat
 
 
-class MessageInline(admin.TabularInline):
+class MessageInline(LeafletGeoAdminMixin, admin.TabularInline):
     model = Message
     fieldsets = [
         (None, {
