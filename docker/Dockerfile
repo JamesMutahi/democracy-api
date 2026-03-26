@@ -1,6 +1,9 @@
 # Use the official Python runtime image
 FROM python:3.12.3
 
+# Install geospatial libraries
+RUN apt-get update && apt-get install -y binutils libproj-dev gdal-bin
+
 # Create the app directory
 RUN mkdir /democracy
 

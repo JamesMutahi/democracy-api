@@ -2,7 +2,7 @@ name: democracy
 
 services:
   db:
-    image: postgres:17
+    image: postgis/postgis:17-3.5
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
