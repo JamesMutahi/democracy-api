@@ -2,8 +2,8 @@ from django.contrib.auth import get_user_model
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
-from apps.chat import Message
-from apps.meeting import Meeting
+from apps.chat.models import Message
+from apps.meeting.models import Meeting
 from apps.notification.models import Notification, Preferences
 from apps.ballot.models import Ballot
 from apps.petition.models import Petition

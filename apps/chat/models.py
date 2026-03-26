@@ -1,5 +1,5 @@
 from django.contrib.auth import get_user_model
-from django.db import models
+from django.contrib.gis.db import models
 from django.utils.translation import gettext_lazy as _
 
 from apps.ballot.models import Ballot
@@ -66,7 +66,7 @@ class Message(BaseModel):
     image3 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
     image4 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
     file = models.FileField(upload_to=UploadFileTo('files/'), null=True, blank=True)
-    location = models.CharField(max_length=255, null=True, blank=True)
+    location = models.PointField(srid=4326, null=True)
     is_read = models.BooleanField(_('read'), default=False)
     is_edited = models.BooleanField(_('edited'), default=False)
     is_deleted = models.BooleanField(_('deleted'), default=False)

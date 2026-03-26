@@ -1,5 +1,5 @@
 from django.contrib.auth import get_user_model
-from django.db import models
+from django.contrib.gis.db import models
 from django.db.models import ExpressionWrapper, Count, F, FloatField
 from django.db.models.functions import NullIf
 from django.db.models.signals import post_save
@@ -71,7 +71,7 @@ class Post(BaseModel):
     video2 = models.FileField(upload_to=UploadImageTo('videos/'), null=True, blank=True)
     video3 = models.FileField(upload_to=UploadImageTo('videos/'), null=True, blank=True)
     file = models.FileField(upload_to=UploadFileTo('files/'), null=True, blank=True)
-    location = models.CharField(max_length=255, null=True, blank=True)
+    location = models.PointField(srid=4326, null=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='published')
     published_at = models.DateTimeField(default=timezone.now)
     reply_to = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='replies')
