@@ -8,9 +8,9 @@ from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import action
 
 from apps.notification.models import Notification
+from apps.utils.list_paginator import list_paginator
 from .models import Message, Chat
 from .serializers import MessageSerializer, ChatSerializer
-from apps.utils.list_paginator import list_paginator
 
 User = get_user_model()
 
@@ -179,15 +179,18 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
         return dict(results=serializer.data, last_chat=last_chat, has_next=page_obj.has_next())
 
     @action()
-    def messages(self, chat: int, last_message: int = None, page_size=20, **kwargs):
+    def messages(self, chat: int, oldest_message: int = None, newest_message: int = None, page_size=20, **kwargs):
         chat = self.get_object(pk=chat)
-        if last_message:
-            queryset = chat.messages.filter(id__lt=last_message)
+        if oldest_message:
+            queryset = chat.messages.filter(id__lt=oldest_message)
+        elif newest_message:
+            queryset = chat.messages.filter(id__gt=newest_message)
         else:
             queryset = chat.messages.all()
         page_obj = list_paginator(queryset=queryset, page=1, page_size=page_size)
         serializer = MessageSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
-        data = dict(results=serializer.data, last_message=last_message, has_next=page_obj.has_next())
+        data = dict(results=serializer.data, oldest_message=oldest_message, newest_message=newest_message,
+                    has_next=page_obj.has_next())
         return data, 200
 
     @action()
