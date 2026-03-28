@@ -257,7 +257,7 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
     @database_sync_to_async
     def mark_as_read_(self, pk):
         chat = Chat.objects.get(pk=pk)
-        messages = chat.messages.filter(is_read=False)
+        messages = chat.messages.filter(is_read=False).exclude(user=self.scope["user"])
         for message in messages:
             message.is_read = True
             message.save()
