@@ -41,6 +41,17 @@ class UploadImageTo:
         return 'apps.chat.models.UploadImageTo', [self.name], {}
 
 
+class UploadVideoTo:
+    def __init__(self, name):
+        self.name = name
+
+    def __call__(self, instance, filename):
+        return '{}/messages/{}'.format(instance.user.id, filename)
+
+    def deconstruct(self):
+        return 'apps.chat.models.UploadVideoTo', [self.name], {}
+
+
 class UploadFileTo:
     def __init__(self, name):
         self.name = name
@@ -65,6 +76,7 @@ class Message(BaseModel):
     image2 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
     image3 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
     image4 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
+    video = models.FileField(upload_to=UploadVideoTo('videos/'), null=True, blank=True)
     file = models.FileField(upload_to=UploadFileTo('files/'), null=True, blank=True)
     location = models.PointField(srid=4326, null=True)
     is_read = models.BooleanField(_('read'), default=False)

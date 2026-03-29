@@ -1,7 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
 from django.db.models.signals import post_save
-from drf_extra_fields.fields import Base64ImageField
 from rest_framework import serializers
 
 from apps.ballot.models import Ballot
@@ -16,7 +15,6 @@ from apps.posts.serializers import PostSerializer
 from apps.survey.models import Survey
 from apps.survey.serializers import SurveySerializer
 from apps.users.serializers import UserSerializer
-from apps.utils.base64_file_field import CustomBase64FileField
 from apps.utils.link_extractor import extract_linked_object
 
 User = get_user_model()
@@ -64,11 +62,6 @@ class MessageSerializer(serializers.ModelSerializer):
     image3 = serializers.SerializerMethodField()
     image4 = serializers.SerializerMethodField()
     file = serializers.SerializerMethodField()
-    image1_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
-    image2_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
-    image3_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
-    image4_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
-    file_base64 = CustomBase64FileField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
     file_name = serializers.CharField(
         write_only=True,
         required=False,
@@ -98,12 +91,8 @@ class MessageSerializer(serializers.ModelSerializer):
             'image2',
             'image3',
             'image4',
-            'image1_base64',
-            'image2_base64',
-            'image3_base64',
-            'image4_base64',
+            'video',
             'file',
-            'file_base64',
             'file_name',
             'location',
             'is_read',
@@ -112,6 +101,22 @@ class MessageSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at'
         ]
+
+    def to_internal_value(self, data):
+        internal_value = super().to_internal_value(data)
+        if 'image1' in data:
+            internal_value['image1'] = data['image1']
+        if 'image2' in data:
+            internal_value['image2'] = data['image2']
+        if 'image3' in data:
+            internal_value['image3'] = data['image3']
+        if 'image4' in data:
+            internal_value['image4'] = data['image4']
+        if 'video' in data:
+            internal_value['video'] = data['video']
+        if 'file' in data:
+            internal_value['file'] = data['file']
+        return internal_value
 
     @staticmethod
     def get_image1(obj):
@@ -142,6 +147,13 @@ class MessageSerializer(serializers.ModelSerializer):
         return None
 
     @staticmethod
+    def get_video(obj):
+        if obj.video:
+            current_site = Site.objects.get_current()
+            return current_site.domain + obj.video.url
+        return None
+
+    @staticmethod
     def get_file(obj):
         if obj.file:
             current_site = Site.objects.get_current()
@@ -155,15 +167,15 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data['user'] = self.context['scope']['user']
-        if validated_data['post_id']:
+        if validated_data.get('post_id'):
             validated_data['post'] = validated_data.pop('post_id')
-        if validated_data['ballot_id']:
+        if validated_data.get('ballot_id'):
             validated_data['ballot'] = validated_data.pop('ballot_id')
-        if validated_data['survey_id']:
+        if validated_data.get('survey_id'):
             validated_data['survey'] = validated_data.pop('survey_id')
-        if validated_data['petition_id']:
+        if validated_data.get('petition_id'):
             validated_data['petition'] = validated_data.pop('petition_id')
-        if validated_data['meeting_id']:
+        if validated_data.get('meeting_id'):
             validated_data['meeting'] = validated_data.pop('meeting_id')
 
         # Extract object if link is present in message text
@@ -180,25 +192,13 @@ class MessageSerializer(serializers.ModelSerializer):
             if isinstance(linked_object, Meeting) and not validated_data.get('meeting'):
                 validated_data['meeting_id'] = linked_object.pk
 
-        # Handle files
-        if 'image1_base64' in validated_data:
-            validated_data['image1'] = validated_data.pop('image1_base64')
-        if 'image2_base64' in validated_data:
-            validated_data['image2'] = validated_data.pop('image2_base64')
-        if 'image3_base64' in validated_data:
-            validated_data['image3'] = validated_data.pop('image3_base64')
-        if 'image4_base64' in validated_data:
-            validated_data['image4'] = validated_data.pop('image4_base64')
-
-        file_obj = validated_data.pop('file_base64', None)
+        file = validated_data.pop('file', None)
         file_name = validated_data.pop('file_name', None)
 
         # Change file name
         if file_name:
-            file_obj.name = file_name
-
-        if file_obj:
-            validated_data['file'] = file_obj
+            file.name = file_name
+            validated_data['file'] = file
 
         message = super().create(validated_data)
         post_save.send(sender=Chat, instance=message.chat, created=False)

@@ -21,7 +21,6 @@ DB_PORT='5432'
 
 ```
 cd docker
-docker-compose config
-docker compose up 
+docker-compose config 
 docker compose up --build
 ```

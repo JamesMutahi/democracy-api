@@ -100,7 +100,7 @@ class PostConsumer(
             return queryset
         if kwargs.get('action') == 'for_you':
             return queryset.filter(is_deleted=False, reply_to=None, community_note_of=None,
-                                   status='published', ).order_by('-published_at')
+                                   status='published').order_by('-published_at')
         if kwargs.get('action') == 'following':
             return queryset.filter(author__followers=self.scope['user'], is_deleted=False, reply_to=None,
                                    community_note_of=None, status='published').order_by('-published_at')

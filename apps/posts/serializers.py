@@ -76,17 +76,13 @@ class PostSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True
     )
-    tags = serializers.ListField(write_only=True, allow_empty=True)  # Holds both @ and # tags
+    tags = serializers.ListField(required=False, write_only=True, allow_empty=True)  # Holds both @ and # tags
     image1 = serializers.SerializerMethodField()
     image2 = serializers.SerializerMethodField()
     image3 = serializers.SerializerMethodField()
     image4 = serializers.SerializerMethodField()
+    video = serializers.SerializerMethodField()
     file = serializers.SerializerMethodField()
-    image1_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
-    image2_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
-    image3_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
-    image4_base64 = Base64ImageField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
-    file_base64 = CustomBase64FileField(write_only=True, required=False, allow_null=True, allow_empty_file=True)
     file_name = serializers.CharField(
         write_only=True,
         required=False,
@@ -112,15 +108,8 @@ class PostSerializer(serializers.ModelSerializer):
             'image2',
             'image3',
             'image4',
-            'video1',
-            'video2',
-            'video3',
-            'image1_base64',
-            'image2_base64',
-            'image3_base64',
-            'image4_base64',
+            'video',
             'file',
-            'file_base64',
             'file_name',
             'location',
             'is_deleted',
@@ -157,6 +146,23 @@ class PostSerializer(serializers.ModelSerializer):
             'petition_id',
             'meeting_id',
         )
+        extra_kwargs = {'is_active': {'read_only': True}}
+
+    def to_internal_value(self, data):
+        internal_value = super().to_internal_value(data)
+        if 'image1' in data:
+            internal_value['image1'] = data['image1']
+        if 'image2' in data:
+            internal_value['image2'] = data['image2']
+        if 'image3' in data:
+            internal_value['image3'] = data['image3']
+        if 'image4' in data:
+            internal_value['image4'] = data['image4']
+        if 'video' in data:
+            internal_value['video'] = data['video']
+        if 'file' in data:
+            internal_value['file'] = data['file']
+        return internal_value
 
     @staticmethod
     def get_image1(obj):
@@ -184,6 +190,13 @@ class PostSerializer(serializers.ModelSerializer):
         if obj.image4:
             current_site = Site.objects.get_current()
             return current_site.domain + obj.image4.url
+        return None
+
+    @staticmethod
+    def get_video(obj):
+        if obj.video:
+            current_site = Site.objects.get_current()
+            return current_site.domain + obj.video.url
         return None
 
     @staticmethod
@@ -272,9 +285,9 @@ class PostSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data['author'] = self.context['scope']['user']
-        if validated_data['reply_to_id']:
+        if validated_data.get('reply_to_id'):
             validated_data['reply_to'] = Post.objects.get(id=validated_data['reply_to_id'])
-        if validated_data['repost_of_id']:
+        if validated_data.get('repost_of_id'):
             # Author can only have one repost of a post without body
             if validated_data['body'] == '':
                 validated_data['repost_of_id'].reposts.filter(author=self.context['scope']['user'], body='',
@@ -283,18 +296,19 @@ class PostSerializer(serializers.ModelSerializer):
                                                               ballot=None, survey=None, petition=None,
                                                               meeting=None).delete()
             validated_data['repost_of'] = validated_data.pop('repost_of_id')
-        if validated_data['community_note_of_id']:
+        if validated_data.get('community_note_of_id'):
             validated_data['community_note_of'] = validated_data.pop('community_note_of_id')
-        if validated_data['ballot_id']:
+        if validated_data.get('ballot_id'):
             validated_data['ballot'] = validated_data.pop('ballot_id')
-        if validated_data['survey_id']:
+        if validated_data.get('survey_id'):
             validated_data['survey'] = validated_data.pop('survey_id')
-        if validated_data['petition_id']:
+        if validated_data.get('petition_id'):
             validated_data['petition'] = validated_data.pop('petition_id')
-        if validated_data['meeting_id']:
+        if validated_data.get('meeting_id'):
             validated_data['meeting'] = validated_data.pop('meeting_id')
 
-        validated_data['tagged_users'] = get_tagged(validated_data.pop('tags'))
+        if validated_data.get('tags'):
+            validated_data['tagged_users'] = get_tagged(validated_data.pop('tags'))
 
         # Extract object if link is present in post body
         linked_object = extract_linked_object(text=validated_data['body'])
@@ -310,25 +324,13 @@ class PostSerializer(serializers.ModelSerializer):
             if isinstance(linked_object, Meeting) and not validated_data.get('meeting'):
                 validated_data['meeting_id'] = linked_object.pk
 
-        # Handle files
-        if 'image1_base64' in validated_data:
-            validated_data['image1'] = validated_data.pop('image1_base64')
-        if 'image2_base64' in validated_data:
-            validated_data['image2'] = validated_data.pop('image2_base64')
-        if 'image3_base64' in validated_data:
-            validated_data['image3'] = validated_data.pop('image3_base64')
-        if 'image4_base64' in validated_data:
-            validated_data['image4'] = validated_data.pop('image4_base64')
-
-        file_obj = validated_data.pop('file_base64', None)
+        file = validated_data.get('file', None)
         file_name = validated_data.pop('file_name', None)
 
         # Change file name
         if file_name:
-            file_obj.name = file_name
-
-        if file_obj:
-            validated_data['file'] = file_obj
+            file.name = file_name
+            validated_data['file'] = file
 
         # Calling create method with new validated data
         post = super().create(validated_data)
