@@ -2,11 +2,12 @@ from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
 from django.db.models.signals import post_save
 from django.utils import timezone
-from drf_extra_fields.fields import Base64ImageField
 from rest_framework import serializers
 
 from apps.ballot.models import Ballot
 from apps.ballot.serializers import BallotSerializer
+from apps.constitution.models import Section
+from apps.constitution.serializers import SectionSerializer
 from apps.meeting.models import Meeting
 from apps.meeting.serializers import MeetingSerializer
 from apps.petition.models import Petition
@@ -15,7 +16,6 @@ from apps.posts.models import Post, Report
 from apps.survey.models import Survey
 from apps.survey.serializers import SurveySerializer
 from apps.users.serializers import UserSerializer
-from apps.utils.base64_file_field import CustomBase64FileField
 from apps.utils.link_extractor import extract_linked_object
 
 User = get_user_model()
@@ -38,6 +38,7 @@ class PostSerializer(serializers.ModelSerializer):
     survey = SurveySerializer(read_only=True)
     petition = PetitionSerializer(read_only=True)
     meeting = MeetingSerializer(read_only=True)
+    section = SectionSerializer(read_only=True)
     tagged_users = UserSerializer(read_only=True, many=True)
     reply_to_id = serializers.IntegerField(write_only=True, allow_null=True)
     repost_of_id = serializers.PrimaryKeyRelatedField(
@@ -72,6 +73,12 @@ class PostSerializer(serializers.ModelSerializer):
     )
     meeting_id = serializers.PrimaryKeyRelatedField(
         queryset=Meeting.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
+    section_id = serializers.PrimaryKeyRelatedField(
+        queryset=Section.objects.all(),
         write_only=True,
         required=False,
         allow_null=True
@@ -133,6 +140,7 @@ class PostSerializer(serializers.ModelSerializer):
             'survey',
             'petition',
             'meeting',
+            'section',
             'community_note',
             'is_upvoted',
             'is_downvoted',
@@ -145,6 +153,7 @@ class PostSerializer(serializers.ModelSerializer):
             'survey_id',
             'petition_id',
             'meeting_id',
+            'section_id',
         )
         extra_kwargs = {'is_active': {'read_only': True}}
 
@@ -291,9 +300,8 @@ class PostSerializer(serializers.ModelSerializer):
             # Author can only have one repost of a post without body
             if validated_data['body'] == '':
                 validated_data['repost_of_id'].reposts.filter(author=self.context['scope']['user'], body='',
-                                                              reply_to=None, community_note_of=None,
-                                                              image1=None, video1=None,
-                                                              ballot=None, survey=None, petition=None,
+                                                              reply_to=None, community_note_of=None, image1=None,
+                                                              video=None, ballot=None, survey=None, petition=None,
                                                               meeting=None).delete()
             validated_data['repost_of'] = validated_data.pop('repost_of_id')
         if validated_data.get('community_note_of_id'):
@@ -306,6 +314,8 @@ class PostSerializer(serializers.ModelSerializer):
             validated_data['petition'] = validated_data.pop('petition_id')
         if validated_data.get('meeting_id'):
             validated_data['meeting'] = validated_data.pop('meeting_id')
+        if validated_data.get('section_id'):
+            validated_data['section'] = validated_data.pop('section_id')
 
         if validated_data.get('tags'):
             validated_data['tagged_users'] = get_tagged(validated_data.pop('tags'))
@@ -323,6 +333,8 @@ class PostSerializer(serializers.ModelSerializer):
                 validated_data['petition_id'] = linked_object.pk
             if isinstance(linked_object, Meeting) and not validated_data.get('meeting'):
                 validated_data['meeting_id'] = linked_object.pk
+            if isinstance(linked_object, Section) and not validated_data.get('section'):
+                validated_data['section_id'] = linked_object.pk
 
         file = validated_data.get('file', None)
         file_name = validated_data.pop('file_name', None)

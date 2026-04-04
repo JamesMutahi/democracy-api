@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from apps.ballot.models import Ballot
+from apps.constitution.models import Section
 from apps.meeting.models import Meeting
 from apps.petition.models import Petition
 from apps.survey.models import Survey
@@ -69,7 +70,7 @@ class Post(BaseModel):
     image4 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
     video = models.FileField(upload_to=UploadVideoTo('videos/'), null=True, blank=True)
     file = models.FileField(upload_to=UploadFileTo('files/'), null=True, blank=True)
-    location = models.PointField(srid=4326, null=True)
+    location = models.PointField(srid=4326, null=True, blank=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='published')
     published_at = models.DateTimeField(default=timezone.now)
     reply_to = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='replies')
@@ -80,6 +81,7 @@ class Post(BaseModel):
     survey = models.ForeignKey(Survey, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
     petition = models.ForeignKey(Petition, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
     meeting = models.ForeignKey(Meeting, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
+    section = models.ForeignKey(Section, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
     likes = models.ManyToManyField(User, blank=True, related_name='liked_posts')
     bookmarks = models.ManyToManyField(User, blank=True, related_name='bookmarked_posts')
     views = models.ManyToManyField(User, blank=True, related_name='viewed_posts')

@@ -6,6 +6,8 @@ from rest_framework import serializers
 from apps.ballot.models import Ballot
 from apps.ballot.serializers import BallotSerializer
 from apps.chat.models import Message, Chat
+from apps.constitution.models import Section
+from apps.constitution.serializers import SectionSerializer
 from apps.meeting.models import Meeting
 from apps.meeting.serializers import MeetingSerializer
 from apps.petition.models import Petition
@@ -27,6 +29,7 @@ class MessageSerializer(serializers.ModelSerializer):
     survey = SurveySerializer(read_only=True)
     petition = PetitionSerializer(read_only=True)
     meeting = MeetingSerializer(read_only=True)
+    section = SectionSerializer(read_only=True)
     post_id = serializers.PrimaryKeyRelatedField(
         queryset=Post.objects.all(),
         write_only=True,
@@ -57,6 +60,12 @@ class MessageSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True
     )
+    section_id = serializers.PrimaryKeyRelatedField(
+        queryset=Section.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
     image1 = serializers.SerializerMethodField()
     image2 = serializers.SerializerMethodField()
     image3 = serializers.SerializerMethodField()
@@ -82,11 +91,13 @@ class MessageSerializer(serializers.ModelSerializer):
             'survey',
             'petition',
             'meeting',
+            'section',
             'post_id',
             'ballot_id',
             'survey_id',
             'petition_id',
             'meeting_id',
+            'section_id',
             'image1',
             'image2',
             'image3',
@@ -177,6 +188,8 @@ class MessageSerializer(serializers.ModelSerializer):
             validated_data['petition'] = validated_data.pop('petition_id')
         if validated_data.get('meeting_id'):
             validated_data['meeting'] = validated_data.pop('meeting_id')
+        if validated_data.get('section_id'):
+            validated_data['section'] = validated_data.pop('section_id')
 
         # Extract object if link is present in message text
         linked_object = extract_linked_object(text=validated_data['text'])
@@ -191,6 +204,8 @@ class MessageSerializer(serializers.ModelSerializer):
                 validated_data['petition_id'] = linked_object.pk
             if isinstance(linked_object, Meeting) and not validated_data.get('meeting'):
                 validated_data['meeting_id'] = linked_object.pk
+            if isinstance(linked_object, Section) and not validated_data.get('section'):
+                validated_data['section_id'] = linked_object.pk
 
         file = validated_data.pop('file', None)
         file_name = validated_data.pop('file_name', None)

@@ -3,6 +3,7 @@ from django.contrib.gis.db import models
 from django.utils.translation import gettext_lazy as _
 
 from apps.ballot.models import Ballot
+from apps.constitution.models import Section
 from apps.meeting.models import Meeting
 from apps.petition.models import Petition
 from apps.posts.models import Post
@@ -72,6 +73,7 @@ class Message(BaseModel):
     survey = models.ForeignKey(Survey, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
     petition = models.ForeignKey(Petition, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
     meeting = models.ForeignKey(Meeting, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
+    section = models.ForeignKey(Section, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
     image1 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
     image2 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
     image3 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)

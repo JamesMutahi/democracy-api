@@ -23,7 +23,7 @@ class ConstitutionConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
         if kwargs.get('action') == 'list':
-            return queryset.filter(parent=None)
+            return queryset
         if kwargs.get('action') == 'tags':
             search_term = kwargs.get('search_term', None)
             if search_term:
