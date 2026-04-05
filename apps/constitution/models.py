@@ -10,7 +10,7 @@ class Section(models.Model):
     numeral = models.CharField(max_length=5, blank=True, default='')
     text = models.TextField()
     is_title = models.BooleanField()
-    parent = models.ForeignKey('self', on_delete=models.PROTECT, null=True, blank=True, related_name='subsections')
+    parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='subsections')
     bookmarks = models.ManyToManyField(User, blank=True, related_name='constitution_bookmarks')
 
     class Meta:

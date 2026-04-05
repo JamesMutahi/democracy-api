@@ -77,7 +77,8 @@ INSTALLED_APPS = [
     'leaflet',
 ]
 
-DATA_UPLOAD_MAX_NUMBER_FIELDS = None
+if DEBUG and MODE == "dev":
+    DATA_UPLOAD_MAX_NUMBER_FIELDS = None
 
 AUTH_USER_MODEL = 'users.CustomUser'
 
