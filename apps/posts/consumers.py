@@ -24,9 +24,7 @@ class PostListPagination(WebsocketLimitOffsetPagination):
 
 
 class PostConsumer(
-    CreateModelMixin,
     RetrieveModelMixin,
-    PatchModelMixin,
     DeleteModelMixin,
     GenericAsyncAPIConsumer
 ):

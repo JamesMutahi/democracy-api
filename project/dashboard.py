@@ -16,7 +16,7 @@ class CustomIndexDashboard(Dashboard):
             column=1,
             collapsible=True,
             models=('apps.ballot.models.Ballot', 'apps.survey.models.Survey', 'apps.survey.models.Response',
-                    'apps.posts.models.Report', 'apps.meet.models.Meeting',),
+                    'apps.posts.models.Report', 'apps.meeting.models.Meeting',),
         ))
         self.children.append(modules.ModelList(
             title=_('User data'),
