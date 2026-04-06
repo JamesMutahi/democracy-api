@@ -63,7 +63,7 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
 
     @model_observer(Message)
     async def message_activity(self, message, observer=None, action=None, **kwargs):
-        pk = message['data']
+        pk = message['data']['pk']
         if message['action'] != 'delete':
             message['data'] = await self.get_message_serializer_data(pk=pk)
         await self.send_json(message)
@@ -88,7 +88,7 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
         return dict(
             # data is overridden in model_observer to pass scope required for UserSerializer
             # TODO: Too many database hits. Pass more fields to data in dict
-            data=instance.pk,
+            data={'pk': instance.pk, 'chat_id': instance.chat.id},
             action=action.value,
             request_id='messages',
             pk=instance.pk,
@@ -179,8 +179,8 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
         return dict(results=serializer.data, last_chat=last_chat, has_next=page_obj.has_next())
 
     @action()
-    def messages(self, chat: int, oldest_message: int = None, newest_message: int = None, page_size=20, **kwargs):
-        chat = self.get_object(pk=chat)
+    def messages(self, chat_id: int = None, oldest_message: int = None, newest_message: int = None, page_size=20, **kwargs):
+        chat = self.get_object(pk=chat_id)
         if oldest_message:
             queryset = chat.messages.filter(id__lt=oldest_message)
         elif newest_message:
@@ -190,19 +190,8 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
         page_obj = list_paginator(queryset=queryset, page=1, page_size=page_size)
         serializer = MessageSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
         data = dict(results=serializer.data, oldest_message=oldest_message, newest_message=newest_message,
-                    has_next=page_obj.has_next())
+                    has_next=page_obj.has_next(), chat_id=chat_id)
         return data, 200
-
-    @action()
-    async def create_message(self, data, **kwargs):
-        await self.create_message_(data=data)
-
-    @database_sync_to_async
-    def create_message_(self, data: dict):
-        serializer = MessageSerializer(data=data, context={'scope': self.scope})
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return serializer.data
 
     @action()
     async def delete_message(self, request_id, pk, **kwargs):
