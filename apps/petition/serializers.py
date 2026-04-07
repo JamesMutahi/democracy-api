@@ -16,7 +16,6 @@ class PetitionSerializer(serializers.ModelSerializer):
     supporters = serializers.SerializerMethodField(read_only=True)
     recent_supporters = serializers.SerializerMethodField(read_only=True)
     is_supported = serializers.SerializerMethodField(read_only=True)
-    image_base64 = Base64ImageField(write_only=True, max_length=None, use_url=True, allow_null=True)
     county = CountySerializer(read_only=True)
     county_id = serializers.IntegerField(write_only=True, allow_null=True)
     constituency = ConstituencySerializer(read_only=True)
@@ -45,8 +44,14 @@ class PetitionSerializer(serializers.ModelSerializer):
             'is_open',
             'created_at',
             'is_active',
-            'image_base64',
         ]
+        extra_kwargs = {'is_active': {'read_only': True}}
+
+    def to_internal_value(self, data):
+        internal_value = super().to_internal_value(data)
+        if 'image' in data:
+            internal_value['image'] = data['image']
+        return internal_value
 
     @staticmethod
     def get_image(obj):
@@ -78,6 +83,5 @@ class PetitionSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data['author'] = self.context['scope']['user']
-        if 'image_base64' in validated_data:
-            validated_data['image'] = validated_data.pop('image_base64')
+        validated_data['is_open'] = True
         return super().create(validated_data)

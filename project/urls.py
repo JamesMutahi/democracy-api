@@ -24,6 +24,7 @@ urlpatterns = [
     path('auth/', include('apps.users.urls')),
     path('posts/', include('apps.posts.urls')),
     path('chat/', include('apps.chat.urls')),
+    path('petition/', include('apps.petition.urls')),
     path('admin/', admin.site.urls),
     path('nested_admin/', include('nested_admin.urls')),
 ]
