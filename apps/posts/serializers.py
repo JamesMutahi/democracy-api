@@ -242,7 +242,7 @@ class PostSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_replies(obj):
-        count = obj.replies.count()
+        count = obj.replies.filter(status='published').count()
         return count
 
     @staticmethod

@@ -179,7 +179,8 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
         return dict(results=serializer.data, last_chat=last_chat, has_next=page_obj.has_next())
 
     @action()
-    def messages(self, chat_id: int = None, oldest_message: int = None, newest_message: int = None, page_size=20, **kwargs):
+    def messages(self, chat_id: int = None, oldest_message: int = None, newest_message: int = None, page_size=20,
+                 **kwargs):
         chat = self.get_object(pk=chat_id)
         if oldest_message:
             queryset = chat.messages.filter(id__lt=oldest_message)
@@ -256,19 +257,6 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
                 notification.save()
         self.signal_chat(chat)
         return messages
-
-    @action()
-    async def direct_message(self, user_pks: list, data, request_id, **kwargs):
-        chats = []
-        for pk in user_pks:
-            chat_data = await self.get_chat_data(dict(user=pk))
-            if not chat_data:
-                chat_data, status = await super().create(dict(user=pk), **kwargs)
-                await self.join_chat(pk=chat_data["id"], request_id=request_id)
-            data['chat'] = chat_data['id']
-            await self.create_message_(data)
-            chats.append(chat_data)
-        return chats, 200
 
     @staticmethod
     def signal_chat(chat: Chat):

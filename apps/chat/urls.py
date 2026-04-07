@@ -4,4 +4,5 @@ from apps.chat import views
 
 urlpatterns = [
     path('create-message/', views.MessageCreateView.as_view()),
+    path('direct-message/', views.direct_message),
 ]

@@ -225,10 +225,11 @@ class ChatSerializer(serializers.ModelSerializer):
     user = serializers.IntegerField(write_only=True)
     last_message = serializers.SerializerMethodField(read_only=True)
     unread_messages = serializers.SerializerMethodField(read_only=True)
+    is_self_chat = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Chat
-        fields = ['id', 'users', 'last_message', 'unread_messages', 'user']
+        fields = ['id', 'users', 'last_message', 'unread_messages', 'user', 'is_self_chat']
         read_only_fields = ['last_message']
 
     def get_last_message(self, obj: Chat):
@@ -240,6 +241,10 @@ class ChatSerializer(serializers.ModelSerializer):
 
     def get_unread_messages(self, instance: Chat):
         return instance.messages.filter(is_read=False).exclude(user=self.context['scope']['user']).count()
+
+    @staticmethod
+    def get_is_self_chat(obj: Chat):
+        return obj.users.count() == 1
 
     def create(self, validated_data):
         user = User.objects.get(id=validated_data.pop('user'))
