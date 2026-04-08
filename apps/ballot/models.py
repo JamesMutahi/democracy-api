@@ -45,11 +45,14 @@ class Option(models.Model):
     ballot = models.ForeignKey(Ballot, on_delete=models.CASCADE, related_name='options')
     number = models.IntegerField()
     text = models.CharField(max_length=255)
-    votes = models.ManyToManyField(User, blank=True)
+    votes = models.ManyToManyField(User, blank=True, related_name='voted_options')
 
     class Meta:
         ordering = ['id']
         unique_together = ['ballot', 'text']
+        indexes = [
+            models.Index(fields=['ballot']),
+        ]
         db_table = 'Option'
 
     def __str__(self):
@@ -62,6 +65,10 @@ class Reason(BaseModel):
     text = models.TextField()
 
     class Meta:
+        unique_together = ('ballot', 'user')
+        indexes = [
+            models.Index(fields=['ballot', 'user']),
+        ]
         db_table = 'Reason'
 
     def __str__(self):
