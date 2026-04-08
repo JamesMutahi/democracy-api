@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.contrib.gis.db import models
+from django.db.models import Manager, Max, Q, Exists, OuterRef
 from django.utils.translation import gettext_lazy as _
 
 from apps.ballot.models import Ballot
@@ -21,8 +22,37 @@ class BaseModel(models.Model):
         abstract = True
 
 
+class ChatQuerySet(models.QuerySet):
+    def for_user(self, user):
+        return self.filter(users=user)
+
+    def with_latest_message(self):
+        return self.annotate(latest_message_id=Max('messages__id'))
+
+    def search_by_other_user(self, user, search_term: str):
+        if not search_term:
+            return self
+        search_term = search_term.strip().lower()
+
+        other_user_match = User.objects.filter(
+            chats=OuterRef('pk')
+        ).exclude(id=user.id).filter(
+            Q(username__icontains=search_term) |
+            Q(name__icontains=search_term) if hasattr(User, 'name') else Q()
+        )
+
+        return self.annotate(
+            has_matching_user=Exists(other_user_match)
+        ).filter(has_matching_user=True)
+
+
+class ChatManager(Manager.from_queryset(ChatQuerySet)):
+    pass
+
+
 class Chat(BaseModel):
     users = models.ManyToManyField(User, related_name="chats")
+    objects = ChatManager()
 
     class Meta:
         db_table = 'Chat'
