@@ -30,6 +30,12 @@ class Survey(BaseModel):
 
     class Meta:
         db_table = 'Survey'
+        indexes = [
+            models.Index(fields=['is_active', 'created_at']),
+            models.Index(fields=['county']),
+            models.Index(fields=['constituency']),
+            models.Index(fields=['ward']),
+        ]
         ordering = ['-start_time']
 
     def __str__(self):

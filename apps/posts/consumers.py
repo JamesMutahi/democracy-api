@@ -58,6 +58,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     @post_activity.serializer
     def post_activity_serializer(self, instance: Post, action, **kwargs):
+        # TODO: Too many database hits in model observer. Pass more fields to data in dict. Test with redis
         return {
             'data': {'pk': instance.pk},
             'action': action.value,
@@ -299,7 +300,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     @database_sync_to_async
     def get_reply_to_posts(self, pk: int):
         post = Post.objects.get(pk=pk)
-        posts = get_reply_to(post)  # ← Now properly referenced
+        posts = get_reply_to(post)
         return PostSerializer(posts, many=True, context={'scope': self.scope}).data
 
     @database_sync_to_async

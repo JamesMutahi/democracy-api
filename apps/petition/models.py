@@ -54,6 +54,13 @@ class Petition(BaseModel):
 
     class Meta:
         db_table = 'Petition'
+        indexes = [
+            models.Index(fields=['is_open', 'is_active', 'created_at']),
+            models.Index(fields=['author']),
+            models.Index(fields=['county']),
+            models.Index(fields=['constituency']),
+            models.Index(fields=['ward']),
+        ]
         ordering = ['-created_at']
 
     def __str__(self):
