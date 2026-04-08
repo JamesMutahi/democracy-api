@@ -20,6 +20,10 @@ from apps.utils.link_extractor import extract_linked_object
 
 User = get_user_model()
 
+class TagSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    text = serializers.CharField()
+
 
 class PostSerializer(serializers.ModelSerializer):
     author = UserSerializer(read_only=True)
@@ -83,7 +87,7 @@ class PostSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True
     )
-    tags = serializers.ListField(required=False, write_only=True, allow_empty=True)  # Holds both @ and # tags
+    tags = TagSerializer(many=True, required=True, allow_null=True)
     image1 = serializers.SerializerMethodField()
     image2 = serializers.SerializerMethodField()
     image3 = serializers.SerializerMethodField()
@@ -354,12 +358,9 @@ class PostSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         tagged_users = get_tagged(validated_data.pop('tags'))
-        # Save validated data to instance
-        instance.body = validated_data.get('body', instance.body)
-        instance.status = validated_data.get('status', instance.status)
         instance.published_at = timezone.now()
         instance.tagged_users.set(tagged_users)
-        instance.save()
+        super().update(instance, validated_data)
         return instance
 
 

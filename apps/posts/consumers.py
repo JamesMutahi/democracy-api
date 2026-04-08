@@ -19,7 +19,7 @@ User = get_user_model()
 class PostListPagination(WebsocketLimitOffsetPagination):
     page_size = 10
     page_size_query_param = 'page_size'
-    max_page_size = 20  # Increased a bit for better UX
+    max_page_size = 20
 
 
 class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer):

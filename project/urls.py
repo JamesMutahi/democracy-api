@@ -22,7 +22,7 @@ from django.conf import settings
 urlpatterns = [
     path('grappelli/', include('grappelli.urls')),
     path('auth/', include('apps.users.urls')),
-    path('posts/', include('apps.posts.urls')),
+    path('post/', include('apps.posts.urls')),
     path('chat/', include('apps.chat.urls')),
     path('petition/', include('apps.petition.urls')),
     path('admin/', admin.site.urls),

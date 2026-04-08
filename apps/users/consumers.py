@@ -87,9 +87,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     @action()
     def list(self, page: int = 1, page_size=None, last_user: int = None, **kwargs):
         users = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        print(users)
         data = self.users_paginator(users, page, page_size or self.page_size, last_user)
-        print(data)
         return data, 200
 
     def users_paginator(self, users, page: int, page_size: int, last_user: int = None):
