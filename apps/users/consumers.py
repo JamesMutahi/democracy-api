@@ -2,10 +2,11 @@ from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from django.db.models import QuerySet, Q
 from django.db.models.signals import post_save
+from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin, PatchModelMixin
 from djangochannelsrestframework.observer import model_observer
-from djangochannelsrestframework.observer.generics import action
+from rest_framework.exceptions import PermissionDenied
 
 from apps.petition.models import Petition
 from apps.users.serializers import UserSerializer
@@ -26,65 +27,96 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         else:
             await self.close()
 
-    @model_observer(User, many_to_many=True)  # many_to_many may be failing due to the nature of user model
-    async def user_activity(self, message, observer=None, action=None, **kwargs):
-        pk = message['data']
-        message['data'] = await self.get_user_serializer_data(pk=pk)
+    # ====================== Real-time Observer ======================
+    @model_observer(User)
+    async def user_activity(self, message, **kwargs):
+        if message['action'] != 'delete':
+            message['data'] = await self.get_user_serializer_data(pk=message['data'])
         await self.send_json(message)
 
     @database_sync_to_async
     def get_user_serializer_data(self, pk: int):
-        user = User.objects.get(pk=pk)
-        serializer = UserSerializer(instance=user, context={'scope': self.scope})
-        return serializer.data
+        user = User.objects.select_related('preferences').prefetch_related(
+            'following', 'followers', 'muted', 'blocked'
+        ).get(pk=pk)
+        return UserSerializer(user, context={'scope': self.scope}).data
 
     @user_activity.groups_for_signal
-    def user_activity(self, instance: User, **kwargs):
+    def user_activity_groups(self, instance: User, **kwargs):
         yield f'user__{instance.pk}'
 
     @user_activity.groups_for_consumer
-    def user_activity(self, pk=None, **kwargs):
+    def user_activity_groups(self, pk=None, **kwargs):
         if pk is not None:
             yield f'user__{pk}'
 
     @user_activity.serializer
-    def user_activity(self, instance: User, action, **kwargs):
-        return dict(
-            # data is overridden in model_observer
-            # TODO: Too many database hits in model observer. Pass more fields to data in dict. Test with redis
-            data=instance.pk,
-            action=action.value,
-            pk=instance.pk,
-            response_status=200
-        )
+    def user_activity_serializer(self, instance: User, action, **kwargs):
+        return {
+            'data': instance.pk,
+            'action': action.value,
+            'pk': instance.pk,
+            'response_status': 200
+        }
 
     async def disconnect(self, code):
         await self.user_activity.unsubscribe()
         await super().disconnect(code)
 
+    # ====================== Filter with Permission ======================
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
-        if kwargs.get('action') == 'list':
-            search_term = kwargs.get('search_term', None)
+        action = kwargs.get('action')
+
+        if action == 'list':
+            search_term = kwargs.get('search_term')
             if search_term:
-                return queryset.filter(Q(username__icontains=search_term) |
-                                       Q(name__icontains=search_term)
-                                       ).distinct()
-        if kwargs.get('action') == 'patch' and self.scope['user'].id != kwargs.get('pk'):
-            return None
+                queryset = queryset.filter(
+                    Q(username__icontains=search_term) |
+                    Q(name__icontains=search_term)
+                ).distinct()
+
+        # Restrict patch to self only
+        if action == 'patch':
+            if self.scope['user'].id != kwargs.get('pk'):
+                return queryset.none()
+
         return queryset
 
+    # ====================== List ======================
     @action()
-    def list(self, page=1, page_size=page_size, last_user: int = None, **kwargs):
+    def list(self, page: int = 1, page_size=None, last_user: int = None, **kwargs):
         users = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = self.users_paginator(users, page, page_size, last_user)
+        print(users)
+        data = self.users_paginator(users, page, page_size or self.page_size, last_user)
+        print(data)
         return data, 200
 
+    def users_paginator(self, users, page: int, page_size: int, last_user: int = None):
+        if last_user:
+            try:
+                last = User.objects.get(pk=last_user)
+                users = users.filter(name__gt=last.name)
+            except User.DoesNotExist:
+                pass
+
+        page_obj = list_paginator(queryset=users, page=page, page_size=page_size)
+        serializer = UserSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
+
+        return {
+            'results': serializer.data,
+            'last_user': last_user,
+            'has_next': page_obj.has_next()
+        }
+
+    # ====================== Retrieve & Subscription ======================
     @action()
     async def retrieve(self, request_id: str, **kwargs):
         response, status = await super().retrieve(**kwargs)
-        pk = response["id"]
-        await self.user_activity.subscribe(pk=pk, request_id=request_id)
+        if isinstance(response, dict):
+            pk = response.get("id")
+            if pk:
+                await self.user_activity.subscribe(pk=pk, request_id=request_id)
         return response, status
 
     @action()
@@ -92,140 +124,168 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         await self.user_activity.unsubscribe(pk=pk, request_id=request_id)
         return {}, 200
 
-    def signal(self, user: User):
-        # Setting many_to_many on model observer is failing
-        post_save.send(sender=User, instance=self.scope['user'], created=False)
-        post_save.send(sender=User, instance=user, created=False)
-        return
-
+    # ====================== Social Actions with Permission Checks ======================
     @action()
     async def mute(self, pk: int, **kwargs):
-        user = await database_sync_to_async(self.get_object)(pk=pk)
-        data = await self.mute_(user=user)
-        return data, 200
+        if pk == self.scope['user'].id:
+            return await self.reply(errors=["You cannot mute yourself"], status=400)
+
+        result = await self.toggle_mute(pk=pk)
+        return result, 200
 
     @database_sync_to_async
-    def mute_(self, user: User):
-        if user in self.scope['user'].muted.all():
-            self.scope['user'].muted.remove(user)
+    def toggle_mute(self, pk: int):
+        target = User.objects.get(pk=pk)
+        current = self.scope['user']
+
+        if target in current.muted.all():
+            current.muted.remove(target)
         else:
-            self.scope['user'].muted.add(user)
-        return UserSerializer(user, context={'scope': self.scope}).data
+            current.muted.add(target)
+
+        return UserSerializer(target, context={'scope': self.scope}).data
 
     @action()
     async def block(self, pk: int, **kwargs):
-        user = await database_sync_to_async(self.get_object)(pk=pk)
-        data = await self.block_(user=user)
-        return data, 200
+        if pk == self.scope['user'].id:
+            return await self.reply(errors=["You cannot block yourself"], status=400)
+
+        result = await self.toggle_block(pk=pk)
+        return result, 200
 
     @database_sync_to_async
-    def block_(self, user: User):
-        if user in self.scope['user'].blocked.all():
-            self.scope['user'].blocked.remove(user)
+    def toggle_block(self, pk: int):
+        target = User.objects.get(pk=pk)
+        current = self.scope['user']
+
+        if target in current.blocked.all():
+            current.blocked.remove(target)
         else:
-            self.scope['user'].blocked.add(user)
-            self.scope['user'].muted.remove(user)
-            self.scope['user'].following.remove(user)
-            self.scope['user'].followers.remove(user)
-        self.signal(user)
-        return UserSerializer(user, context={'scope': self.scope}).data
+            current.blocked.add(target)
+            current.muted.remove(target)
+            current.following.remove(target)
+
+        self._signal_user_update(target)
+        return UserSerializer(target, context={'scope': self.scope}).data
 
     @action()
     async def follow(self, pk: int, **kwargs):
-        user = await database_sync_to_async(self.get_object)(pk=pk)
-        data = await self.follow_(user=user)
-        return data, 200
+        if pk == self.scope['user'].id:
+            return await self.reply(errors=["You cannot follow yourself"], status=400)
+
+        result = await self.toggle_follow(pk=pk)
+        return result, 200
 
     @database_sync_to_async
-    def follow_(self, user: User):
-        if user in self.scope['user'].following.all():
-            self.scope['user'].preferences.allowed_users.remove(user)
-            self.scope['user'].following.remove(user)
+    def toggle_follow(self, pk: int):
+        target = User.objects.get(pk=pk)
+        current = self.scope['user']
+
+        if target in current.following.all():
+            current.following.remove(target)
+            if hasattr(current, 'preferences'):
+                current.preferences.allowed_users.remove(target)
         else:
-            self.scope['user'].following.add(user)
-            self.scope['user'].preferences.allowed_users.add(user)
-        self.signal(user)
-        return UserSerializer(user, context={'scope': self.scope}).data
+            current.following.add(target)
+            if hasattr(current, 'preferences'):
+                current.preferences.allowed_users.add(target)
+
+        self._signal_user_update(target)
+        return UserSerializer(target, context={'scope': self.scope}).data
 
     @action()
     async def notify(self, pk: int, **kwargs):
-        user = await database_sync_to_async(self.get_object)(pk=pk)
-        data = await self.notify_(user=user)
-        return await self.reply(data=data, action='update', status=200)
+        if pk == self.scope['user'].id:
+            return await self.reply(errors=["Cannot change notification for yourself"], status=400)
 
-    @action()
-    def notify_(self, user: User):
-        if user in self.scope['user'].preferences.allowed_users.all():
-            self.scope['user'].preferences.allowed_users.remove(user)
-        else:
-            self.scope['user'].preferences.allowed_users.add(user)
-        serializer = UserSerializer(user, context={'scope': self.scope})
-        return serializer.data
-
-    @action()
-    async def following(self, request_id: str, pk: int, page=1, page_size=page_size, last_user: int = None, **kwargs):
-        data = await self.following_(pk, page, page_size, last_user)
-        return data, 200
+        result = await self.toggle_notify(pk=pk)
+        return await self.reply(data=result, action='update', status=200)
 
     @database_sync_to_async
-    def following_(self, pk: int, page, page_size, last_user):
+    def toggle_notify(self, pk: int):
+        target = User.objects.get(pk=pk)
+        current = self.scope['user']
+
+        if hasattr(current, 'preferences'):
+            if target in current.preferences.allowed_users.all():
+                current.preferences.allowed_users.remove(target)
+            else:
+                current.preferences.allowed_users.add(target)
+
+        return UserSerializer(target, context={'scope': self.scope}).data
+
+    # ====================== Private Lists (with Permission) ======================
+    @action()
+    async def muted(self, request_id: str, page: int = 1, page_size=None, last_user: int = None, **kwargs):
+        """Only the owner can see their muted list"""
+        if not self._is_current_user(self.scope['user'].id):
+            raise PermissionDenied("You can only view your own muted list")
+
+        data = await self.get_muted_list(page, page_size or self.page_size, last_user)
+        return data, 200
+
+    @action()
+    async def blocked(self, request_id: str, page: int = 1, page_size=None, last_user: int = None, **kwargs):
+        """Only the owner can see their blocked list"""
+        if not self._is_current_user(self.scope['user'].id):
+            raise PermissionDenied("You can only view your own blocked list")
+
+        data = await self.get_blocked_list(page, page_size or self.page_size, last_user)
+        return data, 200
+
+    # ====================== Public Lists ======================
+    @action()
+    async def following(self, request_id: str, pk: int, page: int = 1, page_size=None, last_user: int = None, **kwargs):
+        data = await self.get_following_list(pk, page, page_size or self.page_size, last_user)
+        return data, 200
+
+    @action()
+    async def followers(self, request_id: str, pk: int, page: int = 1, page_size=None, last_user: int = None, **kwargs):
+        data = await self.get_followers_list(pk, page, page_size or self.page_size, last_user)
+        return data, 200
+
+    @action()
+    async def petition_supporters(self, request_id: str, pk: int, page: int = 1, page_size=None, last_user: int = None,
+                                  **kwargs):
+        data = await self.get_petition_supporters(pk, page, page_size or self.page_size, last_user)
+        return data, 200
+
+    # ====================== Private List Helpers ======================
+    @database_sync_to_async
+    def get_muted_list(self, page: int, page_size: int, last_user: int = None):
+        users = self.scope['user'].muted.all()
+        return self.users_paginator(users, page, page_size, last_user)
+
+    @database_sync_to_async
+    def get_blocked_list(self, page: int, page_size: int, last_user: int = None):
+        users = self.scope['user'].blocked.all()
+        return self.users_paginator(users, page, page_size, last_user)
+
+    # ====================== Public List Helpers ======================
+    @database_sync_to_async
+    def get_following_list(self, pk: int, page: int, page_size: int, last_user: int = None):
         user = User.objects.get(pk=pk)
         users = user.following.all()
-        data = self.users_paginator(users, page, page_size, last_user)
-        return data
-
-    @action()
-    async def followers(self, request_id: str, pk: int, page=1, page_size=page_size, last_user: int = None, **kwargs):
-        data = await self.followers_(pk, page, page_size, last_user)
-        return data, 200
+        return self.users_paginator(users, page, page_size, last_user)
 
     @database_sync_to_async
-    def followers_(self, pk: int, page, page_size, last_user):
+    def get_followers_list(self, pk: int, page: int, page_size: int, last_user: int = None):
         user = User.objects.get(pk=pk)
         users = user.followers.all()
-        data = self.users_paginator(users, page, page_size, last_user)
-        return data
-
-    @action()
-    async def muted(self, request_id: str, page=1, page_size=page_size, last_user: int = None, **kwargs):
-        data = await self.muted_(page, page_size, last_user)
-        return data, 200
+        return self.users_paginator(users, page, page_size, last_user)
 
     @database_sync_to_async
-    def muted_(self, page, page_size, last_user):
-        users = self.scope['user'].muted.all()
-        data = self.users_paginator(users, page, page_size, last_user)
-        return data
-
-    @action()
-    async def blocked(self, request_id: str, page=1, page_size=page_size, last_user: int = None, **kwargs):
-        data = await self.blocked_(page, page_size, last_user)
-        return data, 200
-
-    @database_sync_to_async
-    def blocked_(self, page, page_size, last_user):
-        users = self.scope['user'].blocked.all()
-        data = self.users_paginator(users, page, page_size, last_user)
-        return data
-
-    @action()
-    async def petition_supporters(self, request_id: str, pk: int, page=1, page_size=page_size, last_user: int = None,
-                                  **kwargs):
-        data = await self.petition_supporters_(pk, page, page_size, last_user)
-        return data, 200
-
-    @database_sync_to_async
-    def petition_supporters_(self, pk: int, page, page_size, last_user):
+    def get_petition_supporters(self, pk: int, page: int, page_size: int, last_user: int = None):
         petition = Petition.objects.get(pk=pk)
         users = petition.supporters.all()
-        data = self.users_paginator(users, page, page_size, last_user)
-        return data
+        return self.users_paginator(users, page, page_size, last_user)
 
-    def users_paginator(self, users, page: int, page_size, last_user: int = None, **kwargs):
-        if last_user:
-            user: User = User.objects.get(pk=last_user)
-            users = users.filter(name__gt=user.name)
-        page_obj = list_paginator(users, page, page_size)
-        serializer = UserSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
-        data = dict(results=serializer.data, last_user=last_user, has_next=page_obj.has_next())
-        return data
+    # ====================== Helpers ======================
+    def _is_current_user(self, user_id: int) -> bool:
+        """Check if the requested user is the currently authenticated user"""
+        return self.scope['user'].id == user_id
+
+    def _signal_user_update(self, user: User):
+        """Signal both current user and target user for real-time updates"""
+        post_save.send(sender=User, instance=self.scope['user'], created=False)
+        post_save.send(sender=User, instance=user, created=False)
