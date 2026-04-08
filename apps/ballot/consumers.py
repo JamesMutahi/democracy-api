@@ -66,9 +66,8 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         await self.option_activity.unsubscribe()
         await super().disconnect(code)
 
-    # ====================== Optimized Filter ======================
+    # ====================== Filter ======================
     def filter_queryset(self, queryset: QuerySet, **kwargs):
-        """Optimized and cleaner filter_queryset for ballots"""
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
         action = kwargs.get('action')
 
@@ -227,7 +226,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
                 option.votes.add(user)
 
                 # Refresh and return updated ballot
-                # ballot.refresh_from_db()
+                ballot.refresh_from_db()
                 return BallotSerializer(ballot, context={'scope': self.scope}).data
 
         except Option.DoesNotExist:
@@ -236,7 +235,6 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
             return {'error': 'Failed to cast vote', 'status': 400}
 
     def _user_can_vote_in_ballot(self, user, ballot: Ballot) -> bool:
-        """Fast region check"""
         if not ballot.county:
             return True  # National
 
@@ -255,7 +253,6 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     @database_sync_to_async
     def perform_add_reason(self, ballot_pk: int, text: str):
-        """Efficient reason handling"""
         user = self.scope['user']
 
         try:
@@ -268,10 +265,10 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         if not has_voted:
             return {'error': 'Please cast your vote first', 'status': 400}
 
-        # Update or create reason in one query
         if len(text) == 0:
             Reason.objects.filter(ballot=ballot, user=user).delete()
         else:
+            # Update or create reason in one query
             Reason.objects.update_or_create(
                 ballot=ballot,
                 user=user,
