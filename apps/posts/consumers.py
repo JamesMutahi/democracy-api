@@ -75,6 +75,11 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
         user = self.scope['user']
         action = kwargs.get('action')
+        previous_posts = kwargs.get('previous_posts')
+
+        # Pagination exclusion
+        if previous_posts:
+            queryset = queryset.exclude(id__in=previous_posts)
 
         # === Early common filters (applied to almost all actions) ===
         if action not in ['delete', 'patch', 'drafts']:
