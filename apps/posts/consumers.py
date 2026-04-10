@@ -416,18 +416,21 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     @action()
     def add_view(self, pk: int, **kwargs):
-        try:
-            self.scope['user'].viewed_posts.add(pk)
-        except Exception:
-            pass
+        self.scope['user'].viewed_posts.add(pk)
         return {'pk': pk}, 200
 
     @action()
     def add_click(self, pk: int, **kwargs):
-        try:
-            self.scope['user'].clicked_posts.add(pk)
-        except Exception:
-            pass
+        self.scope['user'].clicked_posts.add(pk)
+        return {'pk': pk}, 200
+
+    @action()
+    def mute(self, pk: int, **kwargs):
+        user = self.scope['user']
+        if user.preferences.muted_posts.filter(pk=pk).exists():
+            user.preferences.muted_posts.remove(pk)
+        else:
+            user.preferences.muted_posts.add(pk)
         return {'pk': pk}, 200
 
     @action()
