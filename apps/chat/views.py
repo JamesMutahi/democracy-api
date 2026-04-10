@@ -1,11 +1,9 @@
 from django.contrib.auth import get_user_model
-from django.db.models import Count
 from rest_framework import generics, permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from apps.chat.models import Chat
-from apps.chat.serializers import MessageSerializer, ChatSerializer
+from apps.chat.serializers import MessageSerializer, ChatSerializer, get_or_create_direct_chat
 
 User = get_user_model()
 
@@ -32,7 +30,7 @@ def direct_message(request):
 
     user = request.user
     context = {'scope': {'user': user}}
-    created_chats = []  # Store actual Chat model instances
+    created_chats = []  # Store Chat model instances
 
     for user_id in user_ids:
         try:
@@ -59,31 +57,3 @@ def direct_message(request):
     chat_serializer = ChatSerializer(created_chats, many=True, context=context)
     return Response(chat_serializer.data, status=status.HTTP_201_CREATED)
 
-
-def get_or_create_direct_chat(user1, user2):
-    """
-    Returns (or creates) a Chat for 1:1 or self-chat.
-    For self-chat: chat contains only 1 user.
-    For normal DM: chat contains exactly 2 users.
-    """
-    # Efficient query: find chat containing both users with correct count
-    num_users = 1 if user1.id == user2.id else 2
-
-    chat = Chat.objects.annotate(
-        num_users=Count('users', distinct=True)
-    ).filter(
-        users=user1
-    ).filter(
-        users=user2
-    ).filter(
-        num_users=num_users
-    ).first()
-
-    if not chat:
-        chat = Chat.objects.create()
-        if user1.id == user2.id:
-            chat.users.add(user1)  # Self-chat: only one user
-        else:
-            chat.users.add(user1, user2)  # Normal 1:1 chat
-
-    return chat

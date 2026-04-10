@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
+from django.db.models import Count
 from django.db.models.signals import post_save
 from rest_framework import serializers
 
@@ -23,7 +24,7 @@ User = get_user_model()
 
 
 class MessageSerializer(serializers.ModelSerializer):
-    user = UserSerializer(read_only=True)
+    author = UserSerializer(read_only=True)
     post = PostSerializer(read_only=True)
     ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
@@ -84,7 +85,7 @@ class MessageSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'chat',
-            'user',
+            'author',
             'text',
             'post',
             'ballot',
@@ -177,7 +178,7 @@ class MessageSerializer(serializers.ModelSerializer):
         return super().validate(attrs)
 
     def create(self, validated_data):
-        validated_data['user'] = self.context['scope']['user']
+        validated_data['author'] = self.context['scope']['user']
         if validated_data.get('post_id'):
             validated_data['post'] = validated_data.pop('post_id')
         if validated_data.get('ballot_id'):
@@ -240,7 +241,7 @@ class ChatSerializer(serializers.ModelSerializer):
             return None
 
     def get_unread_messages(self, instance: Chat):
-        return instance.messages.filter(is_read=False).exclude(user=self.context['scope']['user']).count()
+        return instance.messages.filter(is_read=False).exclude(author=self.context['scope']['user']).count()
 
     @staticmethod
     def get_is_self_chat(obj: Chat):
@@ -249,4 +250,34 @@ class ChatSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         user = User.objects.get(id=validated_data.pop('user'))
         validated_data['users'] = [self.context['scope']['user'], user]
-        return super().create(validated_data)
+        chat = get_or_create_direct_chat(self.context['scope']['user'], user)
+        return chat
+
+
+def get_or_create_direct_chat(user1, user2):
+    """
+    Returns (or creates) a Chat for 1:1 or self-chat.
+    For self-chat: chat contains only 1 user.
+    For normal DM: chat contains exactly 2 users.
+    """
+    # Efficient query: find chat containing both users with correct count
+    num_users = 1 if user1.id == user2.id else 2
+
+    chat = Chat.objects.annotate(
+        num_users=Count('users', distinct=True)
+    ).filter(
+        users=user1
+    ).filter(
+        users=user2
+    ).filter(
+        num_users=num_users
+    ).first()
+
+    if not chat:
+        chat = Chat.objects.create()
+        if user1.id == user2.id:
+            chat.users.add(user1)  # Self-chat: only one user
+        else:
+            chat.users.add(user1, user2)  # Normal 1:1 chat
+
+    return chat

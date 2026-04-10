@@ -96,7 +96,7 @@ class UploadFileTo:
 
 class Message(BaseModel):
     chat = models.ForeignKey(Chat, on_delete=models.CASCADE, related_name="messages")
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="messages")
+    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name="messages")
     text = models.TextField(max_length=500, blank=True)
     post = models.ForeignKey(Post, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
     ballot = models.ForeignKey(Ballot, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')

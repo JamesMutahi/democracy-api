@@ -250,7 +250,7 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
     def get_message(self, pk: int):
         return Message.objects.filter(
             pk=pk,
-            user=self.scope["user"],
+            author=self.scope["user"],
             is_deleted=False
         ).first()
 
@@ -262,7 +262,7 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
     @database_sync_to_async
     def mark_as_read_(self, pk: int):
         chat = Chat.objects.get(pk=pk)
-        messages = chat.messages.filter(is_read=False).exclude(user=self.scope["user"])
+        messages = chat.messages.filter(is_read=False).exclude(author=self.scope["user"])
 
         for msg in messages:
             msg.is_read = True
