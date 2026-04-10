@@ -302,7 +302,10 @@ def delete_notification_on_unlike(user_id, post_id):
 @shared_task
 def notify_on_petition_status_change(petition_id: int, is_open: bool):
     petition = Petition.objects.get(id=petition_id)
-    users = petition.author.followers_notified.all()
+    users = User.objects.filter(
+        preferences__in=petition.author.followers_notified.all(),
+        preferences__allow_notifications=True
+    ).exclude(muted=petition.author)
     if petition.county:
         users = users.filter(county=petition.county)
         if petition.constituency:
@@ -311,11 +314,10 @@ def notify_on_petition_status_change(petition_id: int, is_open: bool):
                 users = users.filter(ward=petition.ward)
 
     for user in users:
-        if user.preferences.allow_notifications:
-            text = f'{petition.author} opened a petition' if is_open else f'{petition.author} closed a petition'
-            notification = Notification.objects.create(
-                recipient=user,
-                text=text,
-                petition=petition,
-            )
-            send_notification_create(notification)
+        text = f'{petition.author} opened a petition' if is_open else f'{petition.author} closed a petition'
+        notification = Notification.objects.create(
+            recipient=user,
+            text=text,
+            petition=petition,
+        )
+        send_notification_create(notification)
