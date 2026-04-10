@@ -8,6 +8,7 @@ from djangochannelsrestframework.mixins import RetrieveModelMixin, PatchModelMix
 from djangochannelsrestframework.observer import model_observer
 from rest_framework.exceptions import PermissionDenied
 
+from apps.notification.tasks import notify_on_follow, delete_notification_on_unfollow
 from apps.petition.models import Petition
 from apps.users.serializers import UserSerializer
 from apps.utils.list_paginator import list_paginator
@@ -126,7 +127,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     @action()
     async def mute(self, pk: int, **kwargs):
         if pk == self.scope['user'].id:
-            return await self.reply(errors=["You cannot mute yourself"], status=400)
+            return await self.reply(errors=["You cannot mute yourself"], status=400, action='mute')
 
         result = await self.toggle_mute(pk=pk)
         return result, 200
@@ -140,13 +141,14 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
             current.muted.remove(target)
         else:
             current.muted.add(target)
+            current.preferences.allowed_authors.remove(target)
 
         return UserSerializer(target, context={'scope': self.scope}).data
 
     @action()
     async def block(self, pk: int, **kwargs):
         if pk == self.scope['user'].id:
-            return await self.reply(errors=["You cannot block yourself"], status=400)
+            return await self.reply(errors=["You cannot block yourself"], status=400, action='block')
 
         result = await self.toggle_block(pk=pk)
         return result, 200
@@ -162,6 +164,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
             current.blocked.add(target)
             current.muted.remove(target)
             current.following.remove(target)
+            current.preferences.allowed_authors.remove(target)
 
         self._signal_user_update(target)
         return UserSerializer(target, context={'scope': self.scope}).data
@@ -169,7 +172,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
     @action()
     async def follow(self, pk: int, **kwargs):
         if pk == self.scope['user'].id:
-            return await self.reply(errors=["You cannot follow yourself"], status=400)
+            return await self.reply(errors=["You cannot follow yourself"], status=400, action='follow')
 
         result = await self.toggle_follow(pk=pk)
         return result, 200
@@ -181,34 +184,33 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
 
         if target in current.following.all():
             current.following.remove(target)
-            if hasattr(current, 'preferences'):
-                current.preferences.allowed_users.remove(target)
+            current.preferences.allowed_authors.remove(target)
+            delete_notification_on_unfollow.delay_on_commit(current.pk, target.pk)
         else:
             current.following.add(target)
-            if hasattr(current, 'preferences'):
-                current.preferences.allowed_users.add(target)
+            current.preferences.allowed_authors.add(target)
+            notify_on_follow.delay_on_commit(current.pk, target.pk)
 
         self._signal_user_update(target)
         return UserSerializer(target, context={'scope': self.scope}).data
 
     @action()
-    async def notify(self, pk: int, **kwargs):
+    async def toggle_notifications(self, pk: int, **kwargs):
         if pk == self.scope['user'].id:
-            return await self.reply(errors=["Cannot change notification for yourself"], status=400)
+            return await self.reply(errors=["Cannot change notification for yourself"], status=400, action='notify')
 
-        result = await self.toggle_notify(pk=pk)
-        return await self.reply(data=result, action='update', status=200)
+        data = await self.toggle_notify(pk=pk)
+        return data, 200
 
     @database_sync_to_async
     def toggle_notify(self, pk: int):
         target = User.objects.get(pk=pk)
         current = self.scope['user']
 
-        if hasattr(current, 'preferences'):
-            if target in current.preferences.allowed_users.all():
-                current.preferences.allowed_users.remove(target)
-            else:
-                current.preferences.allowed_users.add(target)
+        if target in current.preferences.allowed_authors.all():
+            current.preferences.allowed_authors.remove(target)
+        else:
+            current.preferences.allowed_authors.add(target)
 
         return UserSerializer(target, context={'scope': self.scope}).data
 

@@ -7,9 +7,11 @@ from apps.notification.models import Notification, Preferences
 from apps.petition.serializers import PetitionSerializer
 from apps.posts.serializers import PostSerializer
 from apps.survey.serializers import SurveySerializer
+from apps.users.serializers import UserSerializer
 
 
 class NotificationSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
     post = PostSerializer(read_only=True)
     ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
@@ -24,6 +26,7 @@ class NotificationSerializer(serializers.ModelSerializer):
             'id',
             'text',
             'is_read',
+            'user',
             'post',
             'ballot',
             'survey',

@@ -1,12 +1,14 @@
-from channels.db import database_sync_to_async
+import logging
+
 from django.db.models import QuerySet
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import ListModelMixin
-from djangochannelsrestframework.observer import model_observer
 
 from apps.notification.models import Notification, Preferences
 from apps.notification.serializers import NotificationSerializer, PreferencesSerializer
+
+logger = logging.getLogger(__name__)
 
 
 class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
@@ -17,49 +19,48 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     async def connect(self):
         if self.scope['user'].is_authenticated:
             await self.accept()
+
+            # Join personal notification group — Celery will send here
+            self.notification_group = f"notifications_{self.scope['user'].id}"
+            await self.channel_layer.group_add(
+                self.notification_group,
+                self.channel_name
+            )
+
+            logger.info(f"User {self.scope['user'].id} joined notification group")
         else:
             await self.close()
 
-    async def accept(self, **kwargs):
-        await super().accept(**kwargs)
-        await self.notification_activity.subscribe()
-
-    @model_observer(Notification)
-    async def notification_activity(self, message, observer=None, action=None, **kwargs):
-        pk = message['data']
-        notification = await database_sync_to_async(self.get_object)(pk=pk)
-        if await self.check_notification_is_for_user(notification=notification):
-            if message['action'] != 'delete':
-                message['data'] = await self.get_notification_serializer_data(notification=notification)
-            await self.send_json(message)
-
-    @database_sync_to_async
-    def check_notification_is_for_user(self, notification: Notification):
-        return self.scope['user'].id == notification.user.id
-
-    @database_sync_to_async
-    def get_notification_serializer_data(self, notification: Notification):
-        serializer = NotificationSerializer(instance=notification, context={'scope': self.scope})
-        return serializer.data
-
-    @notification_activity.serializer
-    def notification_activity(self, instance: Notification, action, **kwargs):
-        return dict(
-            # data is overridden in model_observer
-            # TODO: Too many database hits. Pass more fields to data in dict
-            data=instance.pk,
-            action=action.value,
-            pk=instance.pk,
-            response_status=201 if action.value == 'create' else 204 if action.value == 'delete' else 200
-        )
-
     async def disconnect(self, code):
-        await self.notification_activity.unsubscribe()
+        if hasattr(self, 'notification_group'):
+            await self.channel_layer.group_discard(
+                self.notification_group,
+                self.channel_name
+            )
         await super().disconnect(code)
 
+    # ====================== UNIFIED NOTIFICATION HANDLER ======================
+    async def notification_activity(self, event):
+        """
+        Handles both create and delete events from Celery.
+        """
+        action = event.get("action")
+
+        if action == "delete":
+            # Delete payload
+            await self.send_json({
+                "action": "delete",
+                "pk": event.get("pk"),
+                "response_status": 204,
+            })
+        else:
+            # create (and future update actions)
+            await self.send_json(event)
+
+    # ====================== FILTER & ACTIONS ======================
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
-        return queryset.filter(user=self.scope['user'])
+        return queryset.filter(recipient=self.scope['user'])
 
     @action()
     async def mark_as_read(self, pk: int, request_id, **kwargs):
@@ -87,7 +88,3 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return serializer.data, 200
-
-    def mute_post(self, pk: int, **kwargs):
-        #TODO: Disable notifications for the post
-        pass

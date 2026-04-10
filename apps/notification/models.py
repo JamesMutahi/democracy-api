@@ -12,9 +12,10 @@ User = get_user_model()
 
 
 class Notification(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
     text = models.TextField()
     is_read = models.BooleanField(default=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
     post = models.ForeignKey(Post, on_delete=models.CASCADE, null=True, blank=True)
     ballot = models.ForeignKey(Ballot, on_delete=models.CASCADE, null=True, blank=True)
     survey = models.ForeignKey(Survey, on_delete=models.CASCADE, null=True, blank=True)
@@ -34,7 +35,7 @@ class Notification(models.Model):
 
 class Preferences(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='preferences')
-    allowed_users = models.ManyToManyField(User, blank=True, related_name='followers_notified')  # Notification bell
+    allowed_authors = models.ManyToManyField(User, blank=True, related_name='followers_notified')  # Notification bell
     allow_notifications = models.BooleanField(default=True)
     allow_follow_notifications = models.BooleanField(default=True)
     allow_tag_notifications = models.BooleanField(default=True)
@@ -46,6 +47,8 @@ class Preferences(models.Model):
 
     class Meta:
         db_table = 'Preferences'
+        verbose_name = 'Preferences'
+        verbose_name_plural = 'Preferences'
 
     def __str__(self):
         return self.user.username

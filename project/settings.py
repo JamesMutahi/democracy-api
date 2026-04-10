@@ -75,6 +75,8 @@ INSTALLED_APPS = [
     'django_filters',
     'nested_admin',
     'leaflet',
+    'django_celery_results',
+    'django_celery_beat',
 ]
 
 if DEBUG and MODE == "dev":
@@ -218,3 +220,13 @@ else:
             },
         },
     }
+
+# Celery Configuration Options
+CELERY_TIMEZONE = 'Africa/Nairobi'
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60
+
+# django-celery-results - Using the Django ORM/Cache as a result backend
+CELERY_BROKER_URL = 'redis://redis:6379'
+CELERY_RESULT_BACKEND = 'redis://redis:6379'
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'

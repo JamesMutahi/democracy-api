@@ -45,5 +45,80 @@ services:
     env_file:
       - .env
 
+  celery:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile
+    command: celery -A project worker --loglevel=info
+    volumes:
+      - .:/app
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      DEBUG: ${DEBUG}
+      MODE: ${MODE}
+      #     LOGLEVEL: ${DJANGO_LOGLEVEL}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: "db" # Name of the database container above.
+      DB_PORT: "5432" # Port set in the database container above.
+    depends_on:
+      - db
+      - redis
+      - web
+
+  celery_beat:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile
+    command: celery -A project beat --loglevel=info
+    volumes:
+      - .:/app
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      DEBUG: ${DEBUG}
+      MODE: ${MODE}
+      #     LOGLEVEL: ${DJANGO_LOGLEVEL}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: "db" # Name of the database container above.
+      DB_PORT: "5432" # Port set in the database container above.
+    depends_on:
+      - db
+      - redis
+      - web
+      - celery
+
+  flower:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile
+    command: celery -A project flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      DEBUG: ${DEBUG}
+      MODE: ${MODE}
+      #     LOGLEVEL: ${DJANGO_LOGLEVEL}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: "db" # Name of the database container above.
+      DB_PORT: "5432" # Port set in the database container above.
+    depends_on:
+      - db
+      - redis
+      - web
+      - celery
+      - celery_beat
+
 volumes:
   postgres_data:

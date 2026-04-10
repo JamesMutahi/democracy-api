@@ -92,7 +92,7 @@ class UserSerializer(serializers.ModelSerializer):
         return self.context['scope']['user'].following.contains(user)
 
     def get_is_notifying(self, user):
-        return self.context['scope']['user'].preferences.allowed_users.contains(user)
+        return self.context['scope']['user'].preferences.allowed_authors.contains(user)
 
 
     @staticmethod

@@ -68,7 +68,7 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
 
     @database_sync_to_async
     def get_message_serializer_data(self, pk: int):
-        message = Message.objects.select_related('chat', 'user').get(pk=pk)
+        message = Message.objects.select_related('chat', 'author').get(pk=pk)
         serializer = MessageSerializer(instance=message, context={'scope': self.scope})
         return serializer.data
 
@@ -218,7 +218,7 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
 
     @database_sync_to_async
     def delete_message_(self, message: Message):
-        if self.scope['user'] == message.user:
+        if self.scope['user'] == message.author:
             if message.is_read:
                 message.text = ''
                 message.post = message.ballot = message.survey = message.petition = None

@@ -8,7 +8,7 @@ class MessageInline(LeafletGeoAdminMixin, admin.TabularInline):
     model = Message
     fieldsets = [
         (None, {
-            'fields': ['id', 'user', 'text', 'post', 'ballot', 'survey', 'petition', 'meeting', 'is_read', 'is_edited',
+            'fields': ['id', 'author', 'text', 'post', 'ballot', 'survey', 'petition', 'meeting', 'is_read', 'is_edited',
                        'is_deleted', 'created_at']}),
     ]
     extra = 0

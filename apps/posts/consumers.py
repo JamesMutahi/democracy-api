@@ -9,6 +9,7 @@ from djangochannelsrestframework.mixins import RetrieveModelMixin, DeleteModelMi
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.pagination import WebsocketLimitOffsetPagination
 
+from apps.notification.tasks import notify_on_like, delete_notification_on_unlike
 from apps.posts.models import Post
 from apps.posts.serializers import PostSerializer, ReportSerializer, ThreadSerializer
 from apps.utils.list_paginator import list_paginator
@@ -325,9 +326,11 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         if post.likes.filter(pk=user.pk).exists():
             post.likes.remove(user)
             is_liked = False
+            delete_notification_on_unlike.delay_on_commit(user.id, post.id)
         else:
             post.likes.add(user)
             is_liked = True
+            notify_on_like.delay_on_commit(user.id, post.id)
         return {'pk': pk, 'is_liked': is_liked, 'likes': post.likes.count()}
 
     @action()

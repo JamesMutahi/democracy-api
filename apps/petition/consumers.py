@@ -6,6 +6,7 @@ from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import ListModelMixin, CreateModelMixin, RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
 
+from apps.notification.tasks import notify_on_petition_status_change
 from apps.petition.models import Petition
 from apps.petition.serializers import PetitionSerializer
 from apps.utils.list_paginator import list_paginator
@@ -252,6 +253,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
         petition = Petition.objects.get(pk=pk, author=self.scope['user'])
         petition.is_open = not petition.is_open
         petition.save()
+        notify_on_petition_status_change.delay_on_commit(petition.pk, petition.is_open)
         return {'pk': petition.pk, 'is_open': petition.is_open}
 
     @action()
