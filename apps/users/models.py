@@ -36,6 +36,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     constituency = models.ForeignKey(Constituency, on_delete=models.PROTECT, null=True, blank=True,
                                      related_name='voters')
     ward = models.ForeignKey(Ward, on_delete=models.PROTECT, null=True, blank=True, related_name='voters')
+    visits = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='profiles_visited')
     is_staff = models.BooleanField(_('staff status'), default=False)
     is_active = models.BooleanField(_('active'), default=True)
     date_joined = models.DateTimeField(_('date joined'), auto_now_add=True)

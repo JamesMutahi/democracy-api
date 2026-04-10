@@ -65,6 +65,11 @@ class UserView(viewsets.ModelViewSet):
     }
     default_serializer_class = UserSerializer
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['scope'] = {'user': self.request.user}
+        return context
+
     def get_serializer_class(self):
         return self.serializer_classes.get(self.action, self.default_serializer_class)
 

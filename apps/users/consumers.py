@@ -212,6 +212,14 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
 
         return UserSerializer(target, context={'scope': self.scope}).data
 
+    @action()
+    def add_visit(self, pk: int, **kwargs):
+        try:
+            self.scope['user'].profiles_visited.add(pk)
+        except Exception:
+            pass
+        return {'pk': pk}, 200
+
     # ====================== Private Lists (with Permission) ======================
     @action()
     async def muted(self, request_id: str, page: int = 1, page_size=None, last_user: int = None, **kwargs):

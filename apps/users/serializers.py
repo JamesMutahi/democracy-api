@@ -24,6 +24,8 @@ class UserSerializer(serializers.ModelSerializer):
     county = CountySerializer(read_only=True)
     constituency = ConstituencySerializer(read_only=True)
     ward = WardSerializer(read_only=True)
+    visits = serializers.SerializerMethodField(read_only=True)
+    is_visited = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = User
@@ -42,6 +44,8 @@ class UserSerializer(serializers.ModelSerializer):
             'county',
             'constituency',
             'ward',
+            'visits',
+            'is_visited',
             'is_active',
             'date_joined',
             'is_muted',
@@ -76,29 +80,29 @@ class UserSerializer(serializers.ModelSerializer):
         return user.followers.count()
 
     def get_is_muted(self, user):
-        if 'scope' in self.context:
-            return self.context['scope']['user'].muted.contains(user)
-        return False
+        return self.context['scope']['user'].muted.contains(user)
 
     def get_is_blocked(self, user):
-        if 'scope' in self.context:
-            return self.context['scope']['user'].blocked.contains(user)
-        return False
+        return self.context['scope']['user'].blocked.contains(user)
 
     def get_has_blocked(self, user):
-        if 'scope' in self.context:
-            return user.blocked.contains(self.context['scope']['user'])
-        return False
+        return user.blocked.contains(self.context['scope']['user'])
 
     def get_is_followed(self, user):
-        if 'scope' in self.context:
-            return self.context['scope']['user'].following.contains(user)
-        return False
+        return self.context['scope']['user'].following.contains(user)
 
     def get_is_notifying(self, user):
-        if 'scope' in self.context:
-            return self.context['scope']['user'].preferences.allowed_users.contains(user)
-        return False
+        return self.context['scope']['user'].preferences.allowed_users.contains(user)
+
+
+    @staticmethod
+    def get_visits(obj):
+        count = obj.visits.count()
+        return count
+
+    def get_is_visited(self, obj):
+        is_visited = obj.visits.contains(self.context['scope']['user'])
+        return is_visited
 
     def update(self, instance, validated_data):
         if 'image_base64' in validated_data:

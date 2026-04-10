@@ -20,6 +20,7 @@ from apps.utils.link_extractor import extract_linked_object
 
 User = get_user_model()
 
+
 class TagSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     text = serializers.CharField()
@@ -38,6 +39,8 @@ class PostSerializer(serializers.ModelSerializer):
     is_quoted = serializers.SerializerMethodField(read_only=True)
     views = serializers.SerializerMethodField(read_only=True)
     is_viewed = serializers.SerializerMethodField(read_only=True)
+    clicks = serializers.SerializerMethodField(read_only=True)
+    is_clicked = serializers.SerializerMethodField(read_only=True)
     ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
     petition = PetitionSerializer(read_only=True)
@@ -87,7 +90,7 @@ class PostSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True
     )
-    tags = TagSerializer(many=True, required=True, allow_null=True)
+    tags = TagSerializer(many=True, required=False, allow_null=True)
     image1 = serializers.SerializerMethodField()
     image2 = serializers.SerializerMethodField()
     image3 = serializers.SerializerMethodField()
@@ -133,6 +136,8 @@ class PostSerializer(serializers.ModelSerializer):
             'tags',
             'views',
             'is_viewed',
+            'clicks',
+            'is_clicked',
             'replies',
             'reposts',
             'is_reposted',
@@ -271,6 +276,15 @@ class PostSerializer(serializers.ModelSerializer):
         return is_viewed
 
     @staticmethod
+    def get_clicks(obj):
+        count = obj.clicks.count()
+        return count
+
+    def get_is_clicked(self, obj):
+        is_viewed = obj.clicks.contains(self.context['scope']['user'])
+        return is_viewed
+
+    @staticmethod
     def get_community_note(obj: Post):
         return obj.get_top_note()
 
@@ -357,9 +371,10 @@ class PostSerializer(serializers.ModelSerializer):
         return post
 
     def update(self, instance, validated_data):
-        tagged_users = get_tagged(validated_data.pop('tags'))
         instance.published_at = timezone.now()
-        instance.tagged_users.set(tagged_users)
+        if validated_data.get('tags'):
+            tagged_users = get_tagged(validated_data.pop('tags'))
+            instance.tagged_users.set(tagged_users)
         super().update(instance, validated_data)
         return instance
 

@@ -423,6 +423,14 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return {'pk': pk}, 200
 
     @action()
+    def add_click(self, pk: int, **kwargs):
+        try:
+            self.scope['user'].clicked_posts.add(pk)
+        except Exception:
+            pass
+        return {'pk': pk}, 200
+
+    @action()
     def report(self, **kwargs):
         serializer = ReportSerializer(data=kwargs['data'], context={'scope': self.scope})
         serializer.is_valid(raise_exception=True)
