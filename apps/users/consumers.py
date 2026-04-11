@@ -1,7 +1,9 @@
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import QuerySet, Q
 from django.db.models.signals import post_save
+from django.utils import timezone
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin, PatchModelMixin
@@ -10,6 +12,7 @@ from rest_framework.exceptions import PermissionDenied
 
 from apps.notification.tasks import notify_on_follow, delete_notification_on_unfollow
 from apps.petition.models import Petition
+from apps.users.models import ProfileVisit
 from apps.users.serializers import UserSerializer
 from apps.utils.list_paginator import list_paginator
 
@@ -215,12 +218,24 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         return UserSerializer(target, context={'scope': self.scope}).data
 
     @action()
-    def add_visit(self, pk: int, **kwargs):
-        try:
-            self.scope['user'].profiles_visited.add(pk)
-        except Exception:
-            pass
+    async def add_visit(self, pk: int, **kwargs):
+        await database_sync_to_async(self.record_profile_visit)(pk=pk)
         return {'pk': pk}, 200
+
+    @transaction.atomic
+    def record_profile_visit(self, pk):
+        """Record or update a profile visit with fresh timestamp"""
+        user = self.scope['user']
+        visited = self.get_object(pk=pk)
+        if pk == user.id:
+            raise PermissionDenied("You can not visit yourself")
+
+        visit, created = ProfileVisit.objects.update_or_create(
+            visitor=user,
+            visited=visited,
+            defaults={'visited_at': timezone.now()}
+        )
+        return visit
 
     # ====================== Private Lists (with Permission) ======================
     @action()

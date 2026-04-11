@@ -4,6 +4,7 @@ from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin
 from django.core.mail import send_mail
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from apps.geo.models import County, Constituency, Ward
@@ -36,7 +37,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     constituency = models.ForeignKey(Constituency, on_delete=models.PROTECT, null=True, blank=True,
                                      related_name='voters')
     ward = models.ForeignKey(Ward, on_delete=models.PROTECT, null=True, blank=True, related_name='voters')
-    visits = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='profiles_visited')
+    visits = models.ManyToManyField('self', symmetrical=False, blank=True, through='ProfileVisit',
+                                    through_fields=('visitor', 'visited'), related_name='profiles_visited')
     notifiers = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='notification_recipients')
     is_staff = models.BooleanField(_('staff status'), default=False)
     is_active = models.BooleanField(_('active'), default=True)
@@ -60,3 +62,19 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         Sends an email to this User.
         """
         send_mail(subject, message, from_email, [self.email], **kwargs)
+
+class ProfileVisit(models.Model):
+    """Through model for User.visits with timestamp"""
+    visitor = models.ForeignKey('CustomUser', on_delete=models.CASCADE, related_name='visits_made')
+    visited = models.ForeignKey('CustomUser', on_delete=models.CASCADE, related_name='visitors')
+    visited_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        unique_together = ('visitor', 'visited')
+        ordering = ['-visited_at']
+        db_table = 'ProfileVisit'
+        verbose_name = 'Profile Visit'
+        verbose_name_plural = 'Profile Visits'
+
+    def __str__(self):
+        return f"{self.visitor} visited {self.visited} at {self.visited_at}"

@@ -5,6 +5,7 @@ from drf_extra_fields.fields import Base64ImageField
 from rest_framework import serializers
 
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
+from apps.users.models import ProfileVisit
 
 User = get_user_model()
 
@@ -24,7 +25,6 @@ class UserSerializer(serializers.ModelSerializer):
     county = CountySerializer(read_only=True)
     constituency = ConstituencySerializer(read_only=True)
     ward = WardSerializer(read_only=True)
-    visits = serializers.SerializerMethodField(read_only=True)
     is_visited = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
@@ -44,7 +44,6 @@ class UserSerializer(serializers.ModelSerializer):
             'county',
             'constituency',
             'ward',
-            'visits',
             'is_visited',
             'is_active',
             'date_joined',
@@ -94,13 +93,8 @@ class UserSerializer(serializers.ModelSerializer):
     def get_is_notifying(self, user):
         return self.context['scope']['user'].notifiers.contains(user)
 
-    @staticmethod
-    def get_visits(obj):
-        count = obj.visits.count()
-        return count
-
-    def get_is_visited(self, obj):
-        is_visited = obj.visits.contains(self.context['scope']['user'])
+    def get_is_visited(self, visited):
+        is_visited = ProfileVisit.objects.filter(visitor=self.context['scope']['user'], visited=visited).exists()
         return is_visited
 
     def update(self, instance, validated_data):

@@ -1,8 +1,10 @@
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from django.contrib.postgres.search import TrigramSimilarity
+from django.db import transaction
 from django.db.models import QuerySet, Case, When, Count, Q
 from django.db.models.signals import post_save
+from django.utils import timezone
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin, DeleteModelMixin
@@ -10,7 +12,7 @@ from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.pagination import WebsocketLimitOffsetPagination
 
 from apps.notification.tasks import notify_on_like, delete_notification_on_unlike
-from apps.posts.models import Post
+from apps.posts.models import Post, PostLike, PostClick
 from apps.posts.serializers import PostSerializer, ReportSerializer, ThreadSerializer
 from apps.utils.list_paginator import list_paginator
 
@@ -318,23 +320,26 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     # ====================== Interaction Actions ======================
     @action()
-    async def like(self, pk: int, **kwargs):
-        data = await self.like_post(pk)
+    def like(self, pk: int, **kwargs):
+        post = self.get_object(pk=pk)
+        data = self.record_like(post=post)
         return data, 200
 
-    @database_sync_to_async
-    def like_post(self, pk: int):
+    @transaction.atomic
+    def record_like(self, post: Post):
+        """Record a like with timestamp"""
         user = self.scope['user']
-        post = Post.objects.get(pk=pk)
-        if post.likes.filter(pk=user.pk).exists():
-            post.likes.remove(user)
-            is_liked = False
-            delete_notification_on_unlike.delay_on_commit(user.id, post.id)
-        else:
-            post.likes.add(user)
-            is_liked = True
-            notify_on_like.delay_on_commit(user.id, post.id)
-        return {'pk': pk, 'is_liked': is_liked, 'likes': post.likes.count()}
+        like, created = PostLike.objects.get_or_create(
+            user=user,
+            post=post,
+            defaults={'liked_at': timezone.now()}
+        )
+        if not created:
+            PostLike.objects.filter(user=user, post=post).delete()
+            delete_notification_on_unlike.delay(user.id, post.pk)
+
+        notify_on_like.delay(user.id, post.pk)
+        return {'pk': post.pk, 'is_liked': created, 'likes': post.likes.count()}
 
     @action()
     async def bookmark(self, pk: int, **kwargs):
@@ -427,8 +432,19 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     @action()
     def add_click(self, pk: int, **kwargs):
-        self.scope['user'].clicked_posts.add(pk)
+        post = self.get_object(pk=pk)
+        self.record_click(post=post)
         return {'pk': pk}, 200
+
+    @transaction.atomic
+    def record_click(self, post: Post):
+        """Record a click (view with intent) with timestamp"""
+        click, created = PostClick.objects.update_or_create(
+            user=self.scope['user'],
+            post=post,
+            defaults={'clicked_at': timezone.now()}
+        )
+        return click
 
     @action()
     def mute(self, pk: int, **kwargs):
@@ -439,7 +455,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         else:
             post.is_muted = True
             post.save()
-        return {'pk': pk, 'is_muted': post.is_muted}
+        return {'pk': pk, 'is_muted': post.is_muted}, 200
 
     @action()
     def report(self, **kwargs):

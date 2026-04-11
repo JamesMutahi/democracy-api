@@ -12,7 +12,7 @@ from apps.meeting.models import Meeting
 from apps.meeting.serializers import MeetingSerializer
 from apps.petition.models import Petition
 from apps.petition.serializers import PetitionSerializer
-from apps.posts.models import Post, Report
+from apps.posts.models import Post, Report, PostLike, PostClick
 from apps.survey.models import Survey
 from apps.survey.serializers import SurveySerializer
 from apps.users.serializers import UserSerializer
@@ -237,8 +237,8 @@ class PostSerializer(serializers.ModelSerializer):
         count = obj.likes.count()
         return count
 
-    def get_is_liked(self, obj):
-        is_liked = obj.likes.contains(self.context['scope']['user'])
+    def get_is_liked(self, post):
+        is_liked = PostLike.objects.filter(user=self.context['scope']['user'], post=post).exists()
         return is_liked
 
     @staticmethod
@@ -281,8 +281,8 @@ class PostSerializer(serializers.ModelSerializer):
         count = obj.clicks.count()
         return count
 
-    def get_is_clicked(self, obj):
-        is_viewed = obj.clicks.contains(self.context['scope']['user'])
+    def get_is_clicked(self, post):
+        is_viewed = PostClick.objects.filter(user=self.context['scope']['user'], post=post).exists()
         return is_viewed
 
     @staticmethod
