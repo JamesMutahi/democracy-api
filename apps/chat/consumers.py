@@ -10,7 +10,7 @@ from djangochannelsrestframework.observer.generics import action
 from apps.chat.models import Message, Chat
 from apps.chat.serializers import MessageSerializer, ChatSerializer
 from apps.chat.views import get_or_create_direct_chat
-from apps.notification.models import Notification
+from apps.notification.tasks import delete_notification_on_marked_as_read
 
 User = get_user_model()
 
@@ -92,17 +92,14 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
         }
 
     async def disconnect(self, code):
-        await self.unsubscribe()
+        await self.chat_activity.unsubscribe()
+        await self.message_activity.unsubscribe()
         await super().disconnect(code)
 
     # ==================== Subscription Helpers ====================
     async def subscribe(self, pk: int, request_id: str):
         await self.chat_activity.subscribe(pk=pk, request_id=request_id)
         await self.message_activity.subscribe(chat=pk, request_id=request_id)
-
-    async def unsubscribe(self):
-        await self.chat_activity.unsubscribe()
-        await self.message_activity.unsubscribe()
 
     # ==================== Custom Chat Creation (with self-chat support) ====================
     @action()
@@ -142,15 +139,7 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
     # ==================== List & Messages ====================
     @action()
     async def list(self, request_id: str, last_chat: int = None, page_size=None, **kwargs):
-        if not last_chat:
-            await self.unsubscribe()
-
         data = await self.list_chats(page_size=page_size or self.page_size, last_chat=last_chat, **kwargs)
-
-        # Subscribe to all returned chats
-        for chat in data.get('results', []):
-            await self.subscribe(pk=chat["id"], request_id=request_id)
-
         await self.reply(action='list', data=data, request_id=request_id)
 
     @database_sync_to_async
@@ -202,10 +191,12 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
 
     # ==================== Other Actions ====================
     @action()
-    async def join_chat(self, pk: int, request_id: str, **kwargs):
-        await database_sync_to_async(self.get_object)(pk=pk)
-        await self.subscribe(pk=pk, request_id=request_id)
-        return {}, 200
+    async def retrieve(self, request_id: str, **kwargs):
+        response, status = await super().retrieve(**kwargs)
+        pk = response.get("id")
+        if pk:
+            await self.subscribe(pk=pk, request_id=request_id)
+        return response, status
 
     @action()
     async def delete_message(self, request_id: str, pk: int, **kwargs):
@@ -262,15 +253,8 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
     @database_sync_to_async
     def mark_as_read_(self, pk: int):
         chat = Chat.objects.get(pk=pk)
-        messages = chat.messages.filter(is_read=False).exclude(author=self.scope["user"])
-
-        for msg in messages:
-            msg.is_read = True
-            msg.save()
-
-            # Mark related notifications
-            Notification.objects.filter(message=msg).update(is_read=True)
-
+        chat.messages.filter(is_read=False).exclude(author=self.scope["user"]).update(is_read=True)
+        delete_notification_on_marked_as_read.delay_on_commit(pk, self.scope["user"].id)
         self.signal_chat(chat)
 
     @staticmethod
@@ -278,10 +262,10 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
         post_save.send(sender=Chat, instance=chat, created=False)
 
     @action()
-    async def resubscribe(self, pks: list, request_id: str, **kwargs):
-        for pk in pks:
-            await self.subscribe(pk=pk, request_id=request_id)
-        return {}, 200
+    async def unsubscribe(self, pk: int, request_id: str, **kwargs):
+        await self.chat_activity.unsubscribe(pk=pk, request_id=request_id)
+        await self.message_activity.unsubscribe(chat=pk, request_id=request_id)
+        return {"pk": pk}, 200
 
     # ==================== Filter ====================
     def filter_queryset(self, queryset, **kwargs):

@@ -35,7 +35,7 @@ def send_notification_create(notification: Notification):
 
     async_to_sync(channel_layer.group_send)(group_name, message)
 
-
+@shared_task
 def send_notification_delete(notification_id: int, recipient_id: int):
     """ Sends delete event """
     if not notification_id or not recipient_id:
@@ -267,6 +267,11 @@ def delete_notification_on_unlike(user_id, post_id):
             post=post,
             user=user,
         ).delete()
+
+
+@shared_task
+def delete_notification_on_marked_as_read(chat_id, user_id):
+    Notification.objects.filter(chat=chat_id).exclude(message__author=user_id).delete()
 
 
 @shared_task

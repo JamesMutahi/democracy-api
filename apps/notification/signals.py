@@ -38,6 +38,7 @@ def create_notification(sender, instance, created, **kwargs):
         if sender == Post:
             tasks.create_post_notifications_on_create.delay_on_commit(instance.id)
 
+
 @receiver(post_delete, sender=Notification)
 def notify_on_notification_deletion(sender, instance, **kwargs):
-    tasks.send_notification_delete(notification_id=instance.id, recipient_id=instance.recipient.id)
+    tasks.send_notification_delete.delay(notification_id=instance.id, recipient_id=instance.recipient.id)
