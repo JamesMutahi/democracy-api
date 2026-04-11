@@ -41,7 +41,6 @@ class PostSerializer(serializers.ModelSerializer):
     is_viewed = serializers.SerializerMethodField(read_only=True)
     clicks = serializers.SerializerMethodField(read_only=True)
     is_clicked = serializers.SerializerMethodField(read_only=True)
-    is_muted = serializers.SerializerMethodField(read_only=True)
     ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
     petition = PetitionSerializer(read_only=True)
@@ -285,10 +284,6 @@ class PostSerializer(serializers.ModelSerializer):
     def get_is_clicked(self, obj):
         is_viewed = obj.clicks.contains(self.context['scope']['user'])
         return is_viewed
-
-    def get_is_muted(self, obj):
-        is_muted = self.context['scope']['user'].preferences.muted_posts.contains(obj)
-        return is_muted
 
     @staticmethod
     def get_community_note(obj: Post):

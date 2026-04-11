@@ -35,7 +35,6 @@ class Notification(models.Model):
 
 class Preferences(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='preferences')
-    allowed_authors = models.ManyToManyField(User, blank=True, related_name='followers_notified')  # Notification bell
     allow_notifications = models.BooleanField(default=True)
     allow_follow_notifications = models.BooleanField(default=True)
     allow_tag_notifications = models.BooleanField(default=True)
@@ -43,7 +42,6 @@ class Preferences(models.Model):
     allow_reply_notifications = models.BooleanField(default=True)
     allow_repost_notifications = models.BooleanField(default=True)
     allow_message_notifications = models.BooleanField(default=True)
-    muted_posts = models.ManyToManyField(Post, blank=True)  # For muting conversations/threads
 
     class Meta:
         db_table = 'Preferences'

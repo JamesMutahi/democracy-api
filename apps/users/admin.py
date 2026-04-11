@@ -14,7 +14,6 @@ class TokenInline(admin.TabularInline):
 class PreferencesInline(admin.TabularInline):
     model = Preferences
     classes = ('grp-collapse grp-closed',)
-    filter_horizontal = ['muted_posts']
 
 class CustomUserAdmin(UserAdmin):
     inlines = [TokenInline, PreferencesInline]

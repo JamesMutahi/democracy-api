@@ -141,7 +141,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
             current.muted.remove(target)
         else:
             current.muted.add(target)
-            current.preferences.allowed_authors.remove(target)
+            current.notifiers.remove(target)
 
         return UserSerializer(target, context={'scope': self.scope}).data
 
@@ -164,7 +164,7 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
             current.blocked.add(target)
             current.muted.remove(target)
             current.following.remove(target)
-            current.preferences.allowed_authors.remove(target)
+            current.notifiers.remove(target)
 
         self._signal_user_update(target)
         return UserSerializer(target, context={'scope': self.scope}).data
@@ -184,11 +184,11 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
 
         if target in current.following.all():
             current.following.remove(target)
-            current.preferences.allowed_authors.remove(target)
+            current.notifiers.remove(target)
             delete_notification_on_unfollow.delay_on_commit(current.pk, target.pk)
         else:
             current.following.add(target)
-            current.preferences.allowed_authors.add(target)
+            current.notifiers.add(target)
             notify_on_follow.delay_on_commit(current.pk, target.pk)
 
         self._signal_user_update(target)
@@ -207,10 +207,10 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         target = User.objects.get(pk=pk)
         current = self.scope['user']
 
-        if target in current.preferences.allowed_authors.all():
-            current.preferences.allowed_authors.remove(target)
+        if target in current.notifiers.all():
+            current.notifiers.remove(target)
         else:
-            current.preferences.allowed_authors.add(target)
+            current.notifiers.add(target)
 
         return UserSerializer(target, context={'scope': self.scope}).data
 

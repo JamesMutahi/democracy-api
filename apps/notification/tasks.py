@@ -98,7 +98,7 @@ def create_survey_notifications_on_create(survey_id):
 def create_petition_notifications_on_create(petition_id):
     petition = Petition.objects.get(id=petition_id)
     users = User.objects.filter(
-        preferences__in=petition.author.followers_notified.all(),
+        notifiers=petition.author,
         preferences__allow_notifications=True
     ).exclude(muted=petition.author)
     if petition.county:
@@ -160,9 +160,9 @@ def create_post_notifications_on_create(post_id):
     post = Post.objects.get(id=post_id)
 
     # Notifications to followers excluding replies
-    if not post.reply_to:
+    if not post.reply_to and not post.is_muted:
         users_to_notify = User.objects.filter(
-            preferences__in=post.author.followers_notified.all(),
+            notifiers=post.author,
             preferences__allow_notifications=True
         ).exclude(muted=post.author)
         for user in users_to_notify:
@@ -175,10 +175,9 @@ def create_post_notifications_on_create(post_id):
 
     # Repost notification
     if post.repost_of:
-        if post.repost_of.author != post.author:
+        if post.repost_of.author != post.author and not post.repost_of.is_muted:
             allowed = post.repost_of.author.preferences.allow_repost_notifications and \
-                      not post.repost_of.author.muted.contains(post.author) and \
-                      not post.repost_of.author.preferences.muted_posts.contains(post.repost_of)
+                      not post.repost_of.author.muted.contains(post.author)
             if allowed:
                 notification = Notification.objects.create(
                     recipient=post.repost_of.author,
@@ -189,10 +188,9 @@ def create_post_notifications_on_create(post_id):
 
     # Reply notification
     if post.reply_to:
-        if post.reply_to.author != post.author:
+        if post.reply_to.author != post.author and not post.reply_to.is_muted:
             allowed = post.reply_to.author.preferences.allow_reply_notifications and \
-                      not post.reply_to.author.muted.contains(post.author) and \
-                      not post.reply_to.author.preferences.muted_posts.contains(post.reply_to)
+                      not post.reply_to.author.muted.contains(post.author)
             if allowed:
                 notification = Notification.objects.create(
                     recipient=post.reply_to.author,
@@ -233,19 +231,6 @@ def delete_notification_on_unfollow(user_id, recipient_id):
     user = User.objects.get(id=user_id)
     recipient = User.objects.get(id=recipient_id)
 
-    # Get IDs before deleting
-    pks_to_delete = list(
-        Notification.objects.filter(
-            recipient=recipient,
-            user_id=user_id,
-            post__isnull=True,
-            petition__isnull=True,
-            meeting__isnull=True,
-            message__isnull=True,
-            chat__isnull=True,
-        ).values_list('pk', flat=True)
-    )
-
     Notification.objects.filter(
         recipient=recipient,
         user=user,
@@ -256,16 +241,12 @@ def delete_notification_on_unfollow(user_id, recipient_id):
         chat__isnull=True,
     ).delete()
 
-    # Notify frontend
-    for pk in pks_to_delete:
-        send_notification_delete(notification_id=pk, recipient_id=recipient_id)
-
 
 @shared_task
 def notify_on_like(user_id, post_id):
     user = User.objects.get(id=user_id)
     post = Post.objects.get(id=post_id)
-    if user != post.author:
+    if user != post.author and not post.is_muted:
         notification = Notification.objects.create(
             recipient=post.author,
             text=f'{user} liked your post',
@@ -280,14 +261,6 @@ def delete_notification_on_unlike(user_id, post_id):
     user = User.objects.get(id=user_id)
     post = Post.objects.get(id=post_id)
 
-    pks_to_delete = list(
-        Notification.objects.filter(
-            recipient_id=post.author_id,
-            post=post,
-            user_id=user_id,
-        ).values_list('pk', flat=True)
-    )
-
     if user != post.author:
         Notification.objects.filter(
             recipient=post.author,
@@ -295,15 +268,12 @@ def delete_notification_on_unlike(user_id, post_id):
             user=user,
         ).delete()
 
-    for pk in pks_to_delete:
-        send_notification_delete(notification_id=pk, recipient_id=post.author_id)
-
 
 @shared_task
 def notify_on_petition_status_change(petition_id: int, is_open: bool):
     petition = Petition.objects.get(id=petition_id)
     users = User.objects.filter(
-        preferences__in=petition.author.followers_notified.all(),
+        notifiers=petition.author,
         preferences__allow_notifications=True
     ).exclude(muted=petition.author)
     if petition.county:

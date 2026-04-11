@@ -64,6 +64,7 @@ class Post(BaseModel):
     )
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='posts')
     body = models.TextField(blank=True)
+    # Media
     image1 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
     image2 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
     image3 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
@@ -73,6 +74,7 @@ class Post(BaseModel):
     location = models.PointField(srid=4326, null=True, blank=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='published')
     published_at = models.DateTimeField(default=timezone.now)
+    # Dependencies
     reply_to = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='replies')
     repost_of = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='reposts')
     community_note_of = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True,
@@ -87,10 +89,11 @@ class Post(BaseModel):
     views = models.ManyToManyField(User, blank=True, related_name='viewed_posts')
     clicks = models.ManyToManyField(User, blank=True, related_name='clicked_posts')
     tagged_users = models.ManyToManyField(User, blank=True, related_name='tagged_in_posts')
+    is_muted = models.BooleanField(_('muted'), default=False)  # For muting conversations/threads
     # For community notes
     upvotes = models.ManyToManyField(User, blank=True, related_name='upvotes')
     downvotes = models.ManyToManyField(User, blank=True, related_name='downvotes')
-
+    # Deletion and deactivation
     is_deleted = models.BooleanField(_('deleted'), default=False)
     is_active = models.BooleanField(_('active'), default=True)
 

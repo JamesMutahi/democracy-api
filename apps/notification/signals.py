@@ -1,12 +1,12 @@
 from django.contrib.auth import get_user_model
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 
 from apps.ballot.models import Ballot
 from apps.chat.models import Message
 from apps.meeting.models import Meeting
 from apps.notification import tasks
-from apps.notification.models import Preferences
+from apps.notification.models import Preferences, Notification
 from apps.petition.models import Petition
 from apps.posts.models import Post
 from apps.survey.models import Survey
@@ -37,3 +37,7 @@ def create_notification(sender, instance, created, **kwargs):
             tasks.create_message_notifications_on_create.delay_on_commit(instance.id)
         if sender == Post:
             tasks.create_post_notifications_on_create.delay_on_commit(instance.id)
+
+@receiver(post_delete, sender=Notification)
+def notify_on_notification_deletion(sender, instance, **kwargs):
+    tasks.send_notification_delete(notification_id=instance.id, recipient_id=instance.recipient.id)

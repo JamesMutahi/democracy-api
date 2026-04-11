@@ -170,6 +170,9 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
                 total_votes=Count('upvotes', distinct=True) - Count('downvotes', distinct=True)
             ).order_by('-total_votes', '-upvotes_count', 'downvotes_count', 'created_at')
 
+        elif action == 'mute':
+            return queryset.filter(author=user)
+
         elif action == 'delete':
             return queryset.filter(author=user)
 
@@ -429,12 +432,14 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     @action()
     def mute(self, pk: int, **kwargs):
-        user = self.scope['user']
-        if user.preferences.muted_posts.filter(pk=pk).exists():
-            user.preferences.muted_posts.remove(pk)
+        post = self.get_object(pk=pk)
+        if post.is_muted:
+            post.is_muted = False
+            post.save()
         else:
-            user.preferences.muted_posts.add(pk)
-        return {'pk': pk}, 200
+            post.is_muted = True
+            post.save()
+        return {'pk': pk, 'is_muted': post.is_muted}
 
     @action()
     def report(self, **kwargs):
