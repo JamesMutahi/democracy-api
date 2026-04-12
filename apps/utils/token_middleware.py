@@ -1,8 +1,10 @@
 from channels.db import database_sync_to_async
 from channels.middleware import BaseMiddleware
-from django.contrib.auth.models import AnonymousUser
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser, update_last_login
 from rest_framework.authtoken.models import Token
 
+User = get_user_model()
 
 class TokenAuthMiddleware(BaseMiddleware):
     async def __call__(self, scope, receive, send):
@@ -23,6 +25,7 @@ class TokenAuthMiddleware(BaseMiddleware):
 def get_user(token):
     try:
         user = Token.objects.get(key=token).user
+        update_last_login(User, user)
     except:
         user = AnonymousUser()
     return user

@@ -118,7 +118,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         if start_date and end_date:
             queryset = queryset.filter(start_time__range=(start_date, end_date))
 
-        # 5. Sorting (apply last)
+        # 5. Sorting (applied last)
         if sort_by == 'recent':
             queryset = queryset.order_by('-start_time')
         elif sort_by == 'oldest':
@@ -166,11 +166,10 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     @action()
     async def retrieve(self, request_id: str, **kwargs):
         response, status = await super().retrieve(**kwargs)
-        if isinstance(response, dict):
-            pk = response.get("id")
-            if pk:
-                await self.ballot_activity.subscribe(pk=pk, request_id=request_id)
-                await self.option_activity.subscribe(pk=pk, request_id=request_id)
+        pk = response.get("id")
+        if pk:
+            await self.ballot_activity.subscribe(pk=pk, request_id=request_id)
+            await self.option_activity.subscribe(pk=pk, request_id=request_id)
         return response, status
 
     @action()
@@ -211,7 +210,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
                 if not self._user_can_vote_in_ballot(user, ballot):
                     return {'error': 'You are not a registered voter in the region', 'status': 403}
 
-                # === Critical Fix: Remove user from ALL other options in this ballot ===
+                # === Remove user from ALL other options in this ballot ===
                 # This is the efficient way (avoids .update() on m2m)
                 ballot.options.filter(votes=user).exclude(pk=option.pk).update()  # No, use remove via manager
 

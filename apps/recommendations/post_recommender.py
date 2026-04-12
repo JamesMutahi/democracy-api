@@ -2,6 +2,7 @@ import datetime
 import random
 from datetime import timedelta
 
+from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db.models import (
     Count, F, Value, FloatField, Case, When, ExpressionWrapper, Q, OuterRef, Subquery
@@ -10,15 +11,16 @@ from django.db.models.functions import Coalesce, Now, NullIf
 from django.utils import timezone
 
 from apps.posts.models import Post
-from apps.users.models import CustomUser
 from .models import UserInteraction, PostRecommendationCache
+
+User = get_user_model()
 
 CACHE_TIMEOUT = 60 * 30
 CACHE_KEY_PREFIX = 'user_recs_'
 
 
 class PostRecommender:
-    def __init__(self, user: CustomUser):
+    def __init__(self, user: User):
         self.user = user
         self.random_seed = None
 

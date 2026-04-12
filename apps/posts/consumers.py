@@ -11,7 +11,6 @@ from djangochannelsrestframework.mixins import RetrieveModelMixin, DeleteModelMi
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.pagination import WebsocketLimitOffsetPagination
 
-from apps.notification.tasks import notify_on_like, delete_notification_on_unlike
 from apps.posts.models import Post, PostLike, PostClick
 from apps.posts.serializers import PostSerializer, ReportSerializer, ThreadSerializer
 from apps.recommendations.post_recommender import PostRecommender
@@ -353,9 +352,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         )
         if not created:
             PostLike.objects.filter(user=user, post=post).delete()
-            delete_notification_on_unlike.delay(user.id, post.pk)
 
-        notify_on_like.delay(user.id, post.pk)
         return {'pk': post.pk, 'is_liked': created, 'likes': post.likes.count()}
 
     @action()

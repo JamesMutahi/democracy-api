@@ -1,19 +1,21 @@
 import random
+from datetime import timedelta
 
+from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.db.models import Count, F, Value, FloatField, Case, When, Q, OuterRef, ExpressionWrapper
+from django.db.models import Count, F, Value, FloatField, Case, When, Q, ExpressionWrapper
 from django.utils import timezone
 
-from apps.posts.models import PostLike, PostClick
-from apps.users.models import CustomUser, ProfileVisit
 from .models import FollowRecommendationCache
+
+User = get_user_model()
 
 CACHE_TIMEOUT = 60 * 60  # 1 hour
 CACHE_KEY_PREFIX = 'user_follow_recs_'
 
 
 class FollowRecommender:
-    def __init__(self, user: CustomUser):
+    def __init__(self, user: User):
         self.user = user
         self.random_seed = None
 
@@ -33,7 +35,7 @@ class FollowRecommender:
         muted = self.user.muted.values_list('id', flat=True)
         blocked = self.user.blocked.values_list('id', flat=True)
 
-        base_qs = CustomUser.objects.filter(is_active=True).exclude(
+        base_qs = User.objects.filter(is_active=True).exclude(
             id=self.user.id
         ).exclude(id__in=excluded).exclude(id__in=muted).exclude(id__in=blocked)
 
@@ -63,6 +65,13 @@ class FollowRecommender:
                 output_field=FloatField()
             ),
 
+            recently_active_score=Case(
+                When(last_login__gte=timezone.now() - timedelta(days=7), then=Value(0.8)),
+                When(last_login__gte=timezone.now() - timedelta(days=30), then=Value(0.5)),
+                default=Value(0.2),
+                output_field=FloatField()
+            ),
+
             # Simple engagement score (likes + clicks on this user's posts)
             engagement_score=Case(
                 When(
@@ -80,6 +89,7 @@ class FollowRecommender:
                 F('mutual_score') * Value(0.35) +
                 F('profile_visit_score') * Value(0.15) +
                 F('engagement_score') * Value(0.15) +
+                F('recently_active_score') * Value(0.15) +
                 F('activity_score') * Value(0.05),
                 output_field=FloatField()
             )

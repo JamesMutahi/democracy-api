@@ -10,7 +10,6 @@ from djangochannelsrestframework.mixins import RetrieveModelMixin, PatchModelMix
 from djangochannelsrestframework.observer import model_observer
 from rest_framework.exceptions import PermissionDenied
 
-from apps.notification.tasks import notify_on_follow, delete_notification_on_unfollow
 from apps.petition.models import Petition
 from apps.recommendations.follow_recommender import FollowRecommender
 from apps.users.models import ProfileVisit
@@ -195,11 +194,9 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
         if target in current.following.all():
             current.following.remove(target)
             current.notifiers.remove(target)
-            delete_notification_on_unfollow.delay_on_commit(current.pk, target.pk)
         else:
             current.following.add(target)
             current.notifiers.add(target)
-            notify_on_follow.delay_on_commit(current.pk, target.pk)
 
         self._signal_user_update(target)
         return UserSerializer(target, context={'scope': self.scope}).data

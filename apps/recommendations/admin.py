@@ -1,14 +1,16 @@
 from django.contrib import admin
 from django.contrib.admin import AdminSite
+from django.contrib.auth import get_user_model
 from django.db.models import Count
 from django.template.response import TemplateResponse
 from django.urls import path
 from django.utils.html import format_html
 
 from apps.posts.models import Post
-from apps.users.models import CustomUser
+
 from .models import PostRecommendationCache, UserInteraction, FollowRecommendationCache
 
+User = get_user_model()
 
 class PostRecommendationAdminSite(AdminSite):
     site_header = "Democracy - Recommendation System"
@@ -26,7 +28,7 @@ class PostRecommendationAdminSite(AdminSite):
         """Main Recommendation System Dashboard"""
 
         # Overall Stats
-        total_users = CustomUser.objects.count()
+        total_users = User.objects.count()
         total_posts = Post.objects.count()
         total_caches = PostRecommendationCache.objects.count()
         active_caches = PostRecommendationCache.objects.filter(recommended_post_ids__len__gt=0).count()
