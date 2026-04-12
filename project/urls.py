@@ -14,10 +14,12 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include
-from django.conf import settings
+
+from apps.recommendations.admin import recommendation_admin
 
 urlpatterns = [
     path('grappelli/', include('grappelli.urls')),
@@ -25,6 +27,7 @@ urlpatterns = [
     path('post/', include('apps.posts.urls')),
     path('chat/', include('apps.chat.urls')),
     path('petition/', include('apps.petition.urls')),
+    path('recommendation-admin/', recommendation_admin.urls),
     path('admin/', admin.site.urls),
     path('nested_admin/', include('nested_admin.urls')),
 ]

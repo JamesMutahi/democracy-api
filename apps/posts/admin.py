@@ -16,7 +16,7 @@ class PostAdmin(LeafletGeoAdmin, admin.ModelAdmin):
     list_display = ['id', 'author', 'body', 'is_active', 'repost_of', 'reply_to', 'community_note_of', 'ballot',
                     'survey', 'created_at']
     list_filter = ['status']
-    filter_horizontal = ['bookmarks', 'views', 'tagged_users', 'upvotes', 'downvotes']
+    filter_horizontal = ['bookmarks', 'tagged_users', 'upvotes', 'downvotes']
     inlines = [ReportInline]
 
 

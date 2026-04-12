@@ -12,6 +12,7 @@ from rest_framework.exceptions import PermissionDenied
 
 from apps.notification.tasks import notify_on_follow, delete_notification_on_unfollow
 from apps.petition.models import Petition
+from apps.recommendations.follow_recommender import FollowRecommender
 from apps.users.models import ProfileVisit
 from apps.users.serializers import UserSerializer
 from apps.utils.list_paginator import list_paginator
@@ -111,14 +112,20 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
             'has_next': page_obj.has_next()
         }
 
+    @action()
+    def recommendations(self, page: int = 1, page_size=page_size, **kwargs):
+        recommender = FollowRecommender(self.scope['user'])
+        users = recommender.get_follow_recommendations(limit=50)
+        data = self.users_paginator(users, page, page_size)
+        return data, 200
+
     # ====================== Retrieve & Subscription ======================
     @action()
     async def retrieve(self, request_id: str, **kwargs):
         response, status = await super().retrieve(**kwargs)
-        if isinstance(response, dict):
-            pk = response.get("id")
-            if pk:
-                await self.user_activity.subscribe(pk=pk, request_id=request_id)
+        pk = response.get("id")
+        if pk:
+            await self.user_activity.subscribe(pk=pk, request_id=request_id)
         return response, status
 
     @action()

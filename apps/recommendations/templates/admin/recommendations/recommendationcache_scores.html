@@ -1,0 +1,44 @@
+{% extends "admin/base_site.html" %}
+{% load humanize %}
+
+{% block content %}
+<div class="module">
+    <h2>Recommendation Scores for {{ cache.user }} ({{ post_data|length }} posts)</h2>
+    <p><strong>Generated:</strong> {{ cache.generated_at|date:"SHORT_DATETIME_FORMAT" }}</p>
+
+    <table style="width:100%; border-collapse: collapse;">
+        <thead>
+            <tr style="background:#f0f0f0;">
+                <th style="text-align:left; padding:8px;">Score</th>
+                <th style="text-align:left; padding:8px;">Post ID</th>
+                <th style="text-align:left; padding:8px;">Author</th>
+                <th style="text-align:left; padding:8px;">Preview</th>
+                <th style="text-align:left; padding:8px;">Published</th>
+                <th>Has Media</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in post_data %}
+            <tr style="border-bottom: 1px solid #ddd;">
+                <td style="padding:8px; font-weight:bold; color:{% if item.score > 0.7 %}green{% elif item.score > 0.4 %}orange{% else %}red{% endif %};">
+                    {{ item.score|floatformat:3 }}
+                </td>
+                <td style="padding:8px;">#{{ item.post_id }}</td>
+                <td style="padding:8px;">{{ item.author }}</td>
+                <td style="padding:8px; max-width:400px;">
+                    {{ item.body|default:"(empty)" }}
+                </td>
+                <td style="padding:8px;">{{ item.published_at|date:"SHORT_DATETIME_FORMAT" }}</td>
+                <td style="padding:8px; text-align:center;">
+                    {% if item.has_image %}🖼️{% else %}—{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if post_data|length == 50 %}
+    <p><em>Showing top 50 posts by score. Total cached: {{ cache.recommended_post_ids|length }}</em></p>
+    {% endif %}
+</div>
+{% endblock %}

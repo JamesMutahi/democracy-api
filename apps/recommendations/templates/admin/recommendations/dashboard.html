@@ -1,0 +1,62 @@
+{% extends "admin/base_site.html" %}
+{% load humanize %}
+
+{% block content %}
+<div class="module">
+    <h1>Recommendation System Dashboard</h1>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
+        <div style="background: #f0f0f0; padding: 15px; border-radius: 8px;">
+            <h3>Total Users</h3>
+            <h2>{{ total_users|default:0 }}</h2>
+        </div>
+        <div style="background: #f0f0f0; padding: 15px; border-radius: 8px;">
+            <h3>Total Posts</h3>
+            <h2>{{ total_posts|default:0 }}</h2>
+        </div>
+        <div style="background: #f0f0f0; padding: 15px; border-radius: 8px;">
+            <h3>Active Recommendation Caches</h3>
+            <h2>{{ active_caches|default:0 }} / {{ total_caches|default:0 }}</h2>
+        </div>
+    </div>
+
+    <h2>Most Recommended Posts (by frequency)</h2>
+    <table style="width:100%; border-collapse: collapse;">
+        <thead>
+            <tr style="background:#f8f8f8;">
+                <th style="padding:10px; text-align:left;">Rank</th>
+                <th style="padding:10px; text-align:left;">Post Preview</th>
+                <th style="padding:10px;">Author</th>
+                <th style="padding:10px;">Recommended For</th>
+                <th style="padding:10px;">Avg Score</th>
+                <th>Media</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in top_recommended_posts %}
+            <tr style="border-bottom:1px solid #ddd;">
+                <td style="padding:10px;">#{{ forloop.counter }}</td>
+                <td style="padding:10px; max-width:500px;">
+                    <a href="{% url 'admin:posts_post_change' item.post.id %}" target="_blank">
+                        {{ item.body_preview }}
+                    </a>
+                </td>
+                <td style="padding:10px;">{{ item.author }}</td>
+                <td style="padding:10px; text-align:center; font-weight:bold;">{{ item.recommendation_count }}</td>
+                <td style="padding:10px; color:{% if item.avg_score > 0.7 %}green{% elif item.avg_score > 0.4 %}orange{% else %}red{% endif %};">
+                    {{ item.avg_score }}
+                </td>
+                <td style="padding:10px; text-align:center;">{% if item.has_media %}Yes{% else %}No{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <h2 style="margin-top:40px;">Activity by County</h2>
+    <ul>
+        {% for stat in county_stats %}
+        <li><strong>{{ stat.user__county__name|default:"No County" }}:</strong> {{ stat.user_count }} users with caches</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endblock %}

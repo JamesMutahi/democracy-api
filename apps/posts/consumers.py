@@ -14,6 +14,7 @@ from djangochannelsrestframework.pagination import WebsocketLimitOffsetPaginatio
 from apps.notification.tasks import notify_on_like, delete_notification_on_unlike
 from apps.posts.models import Post, PostLike, PostClick
 from apps.posts.serializers import PostSerializer, ReportSerializer, ThreadSerializer
+from apps.recommendations.post_recommender import PostRecommender
 from apps.utils.list_paginator import list_paginator
 
 User = get_user_model()
@@ -204,7 +205,6 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         elif action == 'user_community_notes':
             return queryset.filter(author=kwargs.get('user')).exclude(community_note_of=None)
 
-        # Default fallback (should rarely reach here)
         return queryset.order_by('-published_at')
 
     # ====================== Pagination Helper ======================
@@ -227,25 +227,43 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     # ====================== Main Actions ======================
     @action()
-    async def list(self, request_id: str, page_size=None, **kwargs):
+    async def list(self, page_size=None, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
         return data, 200
 
     @action()
-    async def for_you(self, request_id: str, page_size=None, **kwargs):
+    async def for_you(self, page_size=None, **kwargs):
+        posts = await self.get_recommendations(**kwargs)
+        data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
+        return data, 200
+
+    @database_sync_to_async
+    def get_recommendations(self, **kwargs):
+        recommender = PostRecommender(self.scope['user'])
+        posts = recommender.get_recommendations(limit=50, diversity_factor=0.08, exclude_post_ids=kwargs.get('previous_posts'))
+        return posts
+
+    @action()
+    async def following(self, page_size=None, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
         return data, 200
 
     @action()
-    async def following(self, request_id: str, page_size=None, **kwargs):
-        posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+    async def trending(self, page_size=None, **kwargs):
+        posts = await self.get_trending(**kwargs)
         data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
         return data, 200
 
+    @database_sync_to_async
+    def get_trending(self, **kwargs):
+        recommender = PostRecommender(self.scope['user'])
+        posts = recommender.get_trending_posts(limit=50, exclude_post_ids=kwargs.get('previous_posts'))
+        return posts
+
     @action()
-    async def replies(self, request_id: str, page_size=None, **kwargs):
+    async def replies(self, page_size=None, **kwargs):
         kwargs['author_pk'] = await self.get_author_pk(kwargs['pk'])
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.paginate_posts(posts, page_size=page_size, serializer_class=ThreadSerializer, **kwargs)
@@ -297,10 +315,9 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     @action()
     async def retrieve(self, request_id: str, **kwargs):
         response, status = await super().retrieve(**kwargs)
-        if response and isinstance(response, dict):
-            pk = response.get("id")
-            if pk:
-                await self.post_activity.subscribe(pk=pk, request_id=request_id)
+        pk = response.get("id")
+        if pk:
+            await self.post_activity.subscribe(pk=pk, request_id=request_id)
         return response, status
 
     @action()
@@ -427,7 +444,9 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     @action()
     def add_view(self, pk: int, **kwargs):
-        self.scope['user'].viewed_posts.add(pk)
+        post = self.get_object(pk=pk)
+        post.views += 1
+        post.save()
         return {'pk': pk}, 200
 
     @action()

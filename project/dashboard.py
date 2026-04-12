@@ -32,6 +32,31 @@ class CustomIndexDashboard(Dashboard):
             collapsible=True,
             models=('apps.constitution.models.Section',),
         ))
+        self.children.append(modules.ModelList(
+            title=_('Recommendations'),
+            column=1,
+            collapsible=True,
+            models=('apps.recommendations.models.UserInteraction',
+                    'apps.recommendations.models.PostRecommendationCache',
+                    'apps.recommendations.models.FollowRecommendationCache'),
+        ))
+        self.children.append(modules.ModelList(
+            _('Task Scheduling & Results'),
+            column=1,
+            css_classes=('collapse closed',),
+            models=(
+                'django_celery_beat.models.PeriodicTask',
+                'django_celery_beat.models.IntervalSchedule',
+                'django_celery_beat.models.CrontabSchedule',
+                'django_celery_results.models.TaskResult',
+            ),
+        ))
+        self.children.append(modules.ModelList(
+            title=_('Notifications'),
+            column=1,
+            collapsible=True,
+            models=('apps.notification.models.Notification', 'apps.notification.models.Preferences',),
+        ))
         # append a recent actions module
         self.children.append(modules.RecentActions(
             title=_('Recent actions'),

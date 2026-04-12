@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.contrib.gis.db import models
+from django.db import transaction
 from django.db.models import ExpressionWrapper, Count, F, FloatField
 from django.db.models.functions import NullIf
 from django.db.models.signals import post_save
@@ -84,10 +85,10 @@ class Post(BaseModel):
     petition = models.ForeignKey(Petition, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
     meeting = models.ForeignKey(Meeting, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
     section = models.ForeignKey(Section, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
-    likes = models.ManyToManyField(User, blank=True, related_name='liked_posts')
+    likes = models.ManyToManyField(User, blank=True, through='PostLike', related_name='liked_posts')
     bookmarks = models.ManyToManyField(User, blank=True, related_name='bookmarked_posts')
-    views = models.ManyToManyField(User, blank=True, related_name='viewed_posts')
-    clicks = models.ManyToManyField(User, blank=True, related_name='clicked_posts')
+    views = models.PositiveIntegerField(default=0)
+    clicks = models.ManyToManyField(User, blank=True, through='PostClick', related_name='clicked_posts')
     tagged_users = models.ManyToManyField(User, blank=True, related_name='tagged_in_posts')
     is_muted = models.BooleanField(_('muted'), default=False)  # For muting conversations/threads
     # For community notes
@@ -139,6 +140,40 @@ class Post(BaseModel):
         return super(Post, self).delete(*args, **kwargs)
 
 
+class PostLike(models.Model):
+    """Through model for Post likes with timestamp"""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='liked_posts_through')
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='likes_through')
+    liked_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        unique_together = ('user', 'post')
+        ordering = ['-liked_at']
+        db_table = 'PostLike'
+        verbose_name = 'Post Like'
+        verbose_name_plural = 'Post Likes'
+
+    def __str__(self):
+        return f"{self.user} liked post {self.post.id} at {self.liked_at}"
+
+
+class PostClick(models.Model):
+    """Through model for Post.clicks with timestamp"""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='clicked_posts_through')
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='clicks_through')
+    clicked_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        unique_together = ('user', 'post')
+        ordering = ['-clicked_at']
+        db_table = 'PostClick'
+        verbose_name = 'Post Click'
+        verbose_name_plural = 'Post Clicks'
+
+    def __str__(self):
+        return f"{self.user} clicked post {self.post.id} at {self.clicked_at}"
+
+
 class Report(BaseModel):
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='reports')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reports')
@@ -151,6 +186,7 @@ class Report(BaseModel):
         return self.issue
 
 
+@transaction.atomic
 def mark_deleted(post: Post):
     post.body = ''
     post.ballot = None
@@ -168,7 +204,7 @@ def mark_deleted(post: Post):
     post.save()
     post.bookmarks.clear()
     post.likes.clear()
-    post.views.clear()
+    post.views = 0
     post.tagged_users.clear()
     post_save.send(sender=Post, instance=post, created=False)
     return post

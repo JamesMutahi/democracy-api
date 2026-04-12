@@ -37,8 +37,6 @@ class PostSerializer(serializers.ModelSerializer):
     reposts = serializers.SerializerMethodField(read_only=True)
     is_reposted = serializers.SerializerMethodField(read_only=True)
     is_quoted = serializers.SerializerMethodField(read_only=True)
-    views = serializers.SerializerMethodField(read_only=True)
-    is_viewed = serializers.SerializerMethodField(read_only=True)
     clicks = serializers.SerializerMethodField(read_only=True)
     is_clicked = serializers.SerializerMethodField(read_only=True)
     ballot = BallotSerializer(read_only=True)
@@ -135,7 +133,6 @@ class PostSerializer(serializers.ModelSerializer):
             'tagged_users',
             'tags',
             'views',
-            'is_viewed',
             'clicks',
             'is_clicked',
             'is_muted',
@@ -266,15 +263,6 @@ class PostSerializer(serializers.ModelSerializer):
     def get_is_quoted(self, obj):
         is_quoted = obj.reposts.filter(author=self.context['scope']['user'], reply_to=None).exclude(body='').exists()
         return is_quoted
-
-    @staticmethod
-    def get_views(obj):
-        count = obj.views.count()
-        return count
-
-    def get_is_viewed(self, obj):
-        is_viewed = obj.views.contains(self.context['scope']['user'])
-        return is_viewed
 
     @staticmethod
     def get_clicks(obj):

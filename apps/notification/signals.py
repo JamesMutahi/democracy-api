@@ -26,17 +26,17 @@ def create_notification(sender, instance, created, **kwargs):
         if sender == User:
             Preferences.objects.create(user=instance)
         if sender == Ballot:
-            tasks.create_ballot_notifications_on_create.delay_on_commit(instance.id)
+            tasks.create_ballot_notifications_on_create.delay(instance.id)
         if sender == Survey:
-            tasks.create_survey_notifications_on_create.delay_on_commit(instance.id)
+            tasks.create_survey_notifications_on_create.delay(instance.id)
         if sender == Petition:
-            tasks.create_petition_notifications_on_create.delay_on_commit(instance.id)
+            tasks.create_petition_notifications_on_create.delay(instance.id)
         if sender == Meeting:
-            tasks.create_meeting_notifications_on_create.delay_on_commit(instance.id)
+            tasks.create_meeting_notifications_on_create.delay(instance.id)
         if sender == Message:
-            tasks.create_message_notifications_on_create.delay_on_commit(instance.id)
+            tasks.create_message_notifications_on_create.delay(instance.id)
         if sender == Post:
-            tasks.create_post_notifications_on_create.delay_on_commit(instance.id)
+            tasks.create_post_notifications_on_create.delay(instance.id)
 
 
 @receiver(post_delete, sender=Notification)
