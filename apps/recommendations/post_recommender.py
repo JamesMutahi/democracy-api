@@ -9,8 +9,8 @@ from django.db.models import (
 from django.db.models.functions import Coalesce, Now, NullIf
 from django.utils import timezone
 
-from apps.posts.models import Post
-from apps.users.models import CustomUser
+from apps.posts.models import Post, PostClick, PostLike
+from apps.users.models import CustomUser, ProfileVisit
 from .models import UserInteraction, PostRecommendationCache
 
 CACHE_TIMEOUT = 60 * 30
@@ -109,6 +109,22 @@ class PostRecommender:
         if blocked_authors:
             base_qs = base_qs.exclude(author_id__in=blocked_authors)
 
+        # Subqueries for most recent action timestamps
+        recent_visit_subquery = ProfileVisit.objects.filter(
+            visitor=self.user,
+            visited=OuterRef('author_id')
+        ).order_by('-visited_at').values('visited_at')[:1]
+
+        recent_like_subquery = PostLike.objects.filter(
+            user=self.user,
+            post=OuterRef('pk')
+        ).order_by('-liked_at').values('liked_at')[:1]
+
+        recent_click_subquery = PostClick.objects.filter(
+            user=self.user,
+            post=OuterRef('pk')
+        ).order_by('-clicked_at').values('clicked_at')[:1]
+
         scored_posts = base_qs.annotate(
             reposts_count=Count(
                 'reposts',
@@ -120,18 +136,10 @@ class PostRecommender:
             media_score=self._get_media_score(),
             following_score=self._get_following_score(),
 
-            # TODO: This is a simple profile visit boost -> add time decay
-            profile_visit_score=Case(
-                When(author_id__in=self.user.visits.values_list('id', flat=True), then=Value(0.85)),
-                default=Value(0.0),
-                output_field=FloatField()
-            ),
-
-            click_score=Coalesce(
-                Count('clicks', filter=Q(clicks=self.user)),
-                Value(0),
-                output_field=FloatField()
-            ),
+            # === TIME DECAY USING SUBQUERIES ===
+            profile_visit_score=self._build_time_decay(recent_visit_subquery, max_days=30),
+            like_score=self._build_time_decay(recent_like_subquery, max_days=14),
+            click_score=self._build_time_decay(recent_click_subquery, max_days=7),
 
             engagement_score=Coalesce(
                 ExpressionWrapper(
@@ -165,6 +173,31 @@ class PostRecommender:
         ).order_by('-final_score')[:50]
 
         return list(scored_posts)
+
+    def _build_time_decay(self, timestamp_subquery, max_days=30):
+        """Time decay based on how recent the action was"""
+
+        _days_ago = ExpressionWrapper(
+            (Now() - Subquery(timestamp_subquery, output_field=timezone.datetime))
+            / timedelta(days=1),
+            output_field=FloatField()
+        )
+
+        return Case(
+            When(
+                _days_ago__isnull=False,
+                then=Case(
+                    When(_days_ago__lte=1, then=Value(1.0)),
+                    When(_days_ago__lte=3, then=Value(0.85)),
+                    When(_days_ago__lte=7, then=Value(0.65)),
+                    When(_days_ago__lte=max_days, then=Value(0.40)),
+                    default=Value(0.15),
+                    output_field=FloatField()
+                )
+            ),
+            default=Value(0.0),
+            output_field=FloatField()
+        )
 
     def _apply_diversity(self, scored_list, diversity_factor=0.08, limit=20):
         if diversity_factor <= 0 or not scored_list:
