@@ -14,8 +14,9 @@ User = get_user_model()
 class Notification(models.Model):
     recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
     text = models.TextField()
-    is_read = models.BooleanField(default=False)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    users = models.ManyToManyField(User, blank=True)
+    is_like = models.BooleanField(default=False)
+    is_follow = models.BooleanField(default=False)
     post = models.ForeignKey(Post, on_delete=models.CASCADE, null=True, blank=True)
     ballot = models.ForeignKey(Ballot, on_delete=models.CASCADE, null=True, blank=True)
     survey = models.ForeignKey(Survey, on_delete=models.CASCADE, null=True, blank=True)
@@ -23,6 +24,7 @@ class Notification(models.Model):
     meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, null=True, blank=True)
     chat = models.ForeignKey(Chat, on_delete=models.CASCADE, null=True, blank=True)
     message = models.ForeignKey(Message, on_delete=models.CASCADE, null=True, blank=True)
+    is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

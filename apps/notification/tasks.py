@@ -2,6 +2,7 @@ from asgiref.sync import async_to_sync
 from celery import shared_task
 from channels.layers import get_channel_layer
 from django.contrib.auth import get_user_model
+from django.db import transaction
 
 from apps.ballot.models import Ballot
 from apps.chat.models import Message
@@ -31,6 +32,25 @@ def send_notification_create(notification: Notification):
         "pk": notification.pk,
         "data": serializer.data,
         "response_status": 201,
+    }
+
+    async_to_sync(channel_layer.group_send)(group_name, message)
+
+def send_notification_update(notification: Notification):
+    """ Sends update event """
+    if not notification or not notification.recipient_id:
+        return
+
+    group_name = f"notifications_{notification.recipient_id}"
+
+    serializer = NotificationSerializer(instance=notification, context={'scope': {'user': notification.recipient}})
+
+    message = {
+        "type": "notification_activity",
+        "action": "update",
+        "pk": notification.pk,
+        "data": serializer.data,
+        "response_status": 200,
     }
 
     async_to_sync(channel_layer.group_send)(group_name, message)
@@ -216,44 +236,73 @@ def create_post_notifications_on_create(post_id):
 
 @shared_task
 def notify_on_follow(user_id, recipient_id):
-    user = User.objects.get(id=user_id)
-    recipient = User.objects.get(id=recipient_id)
-    notification = Notification.objects.create(
-        recipient=recipient,
-        text=f'{user} followed you',
-        user=user,
-    )
-    send_notification_create(notification)
+    recipient = User.objects.select_related('preferences').get(id=recipient_id)
+
+    if not recipient.preferences.allow_follow_notifications:
+        return
+
+    with transaction.atomic():
+        # Lock the row to prevent duplicate notifications from simultaneous follows
+        notification = Notification.objects.select_for_update().filter(
+            is_read=False,
+            recipient_id=recipient_id,
+            is_follow=True
+        ).first()
+
+        if notification:
+            notification.users.add(user_id)
+            send_notification_update(notification)
+        else:
+            notification = Notification.objects.create(
+                recipient=recipient,
+                text='followed you',
+                is_follow=True,
+            )
+            notification.users.add(user_id)
+            send_notification_create(notification)
 
 
 @shared_task
 def delete_notification_on_unfollow(user_id, recipient_id):
     user = User.objects.get(id=user_id)
-    recipient = User.objects.get(id=recipient_id)
-
-    Notification.objects.filter(
-        recipient=recipient,
-        user=user,
-        post__isnull=True,
-        petition__isnull=True,
-        meeting__isnull=True,
-        message__isnull=True,
-        chat__isnull=True,
-    ).delete()
+    n_qs = Notification.objects.filter(is_read=False, recipient_id=recipient_id, is_follow=True, users=user)
+    if n_qs.exists():
+        notification = n_qs.first()
+        if notification.users.count() == 1:
+            notification.delete()
+        else:
+            notification.users.remove(user)
 
 
 @shared_task
 def notify_on_like(user_id, post_id):
-    user = User.objects.get(id=user_id)
-    post = Post.objects.get(id=post_id)
-    if user != post.author and not post.is_muted:
-        notification = Notification.objects.create(
-            recipient=post.author,
-            text=f'{user} liked your post',
-            post=post,
-            user=user,
+    post = Post.objects.select_related('author__preferences').get(id=post_id)
+
+    if user_id == post.author_id or post.is_muted or not post.author.preferences.allow_like_notifications:
+        return
+
+    with transaction.atomic():
+        # Prevent race conditions: lock the notification row if it exists
+        n_qs = Notification.objects.select_for_update().filter(
+            is_read=False,
+            post_id=post_id,
+            is_like=True
         )
-        send_notification_create(notification)
+
+        if n_qs.exists():
+            notification = n_qs.first()
+            notification.users.add(user_id)
+            send_notification_update(notification)
+        else:
+            # Create new notification
+            notification = Notification.objects.create(
+                recipient=post.author,
+                text='liked your post',
+                post=post,
+                is_like=True,
+            )
+            notification.users.add(user_id)
+            send_notification_create(notification)
 
 
 @shared_task
@@ -262,11 +311,13 @@ def delete_notification_on_unlike(user_id, post_id):
     post = Post.objects.get(id=post_id)
 
     if user != post.author:
-        Notification.objects.filter(
-            recipient=post.author,
-            post=post,
-            user=user,
-        ).delete()
+        n_qs = Notification.objects.filter(is_read=False, post_id=post_id, is_like=True, users=user)
+        if n_qs.exists():
+            notification = n_qs.first()
+            if notification.users.count() == 1:
+                notification.delete()
+            else:
+                notification.users.remove(user)
 
 
 @shared_task

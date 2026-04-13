@@ -11,7 +11,7 @@ from apps.users.serializers import UserSerializer
 
 
 class NotificationSerializer(serializers.ModelSerializer):
-    user = UserSerializer(read_only=True)
+    users = UserSerializer(many=True, read_only=True)
     post = PostSerializer(read_only=True)
     ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
@@ -26,7 +26,9 @@ class NotificationSerializer(serializers.ModelSerializer):
             'id',
             'text',
             'is_read',
-            'user',
+            'users',
+            'is_like',
+            'is_follow',
             'post',
             'ballot',
             'survey',
