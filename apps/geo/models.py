@@ -1,8 +1,11 @@
-from django.db import models
+from django.contrib.gis.db import models
+
 
 
 class County(models.Model):
     name = models.CharField(max_length=255)
+    center = models.PointField(srid=4326, null=True)
+    boundaries = models.MultiPolygonField(null=True)
 
     class Meta:
         ordering = ['name']
@@ -17,6 +20,8 @@ class County(models.Model):
 class Constituency(models.Model):
     name = models.CharField(max_length=255)
     county = models.ForeignKey(County, on_delete=models.PROTECT, related_name='constituencies')
+    center = models.PointField(srid=4326, null=True)
+    boundaries = models.MultiPolygonField(null=True)
 
     class Meta:
         ordering = ['name']

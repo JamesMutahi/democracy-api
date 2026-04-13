@@ -1,4 +1,5 @@
 from django.contrib import admin
+from leaflet.admin import LeafletGeoAdmin, LeafletGeoAdminMixin
 from nested_admin.nested import NestedTabularInline, NestedModelAdmin
 
 from apps.geo.models import County, Constituency, Ward
@@ -10,7 +11,7 @@ class WardInline(NestedTabularInline):
     classes = ('grp-collapse grp-closed',)
 
 
-class ConstituencyInline(NestedTabularInline):
+class ConstituencyInline(LeafletGeoAdminMixin, NestedTabularInline):
     model = Constituency
     extra = 0
     classes = ('grp-collapse grp-closed',)
@@ -18,6 +19,6 @@ class ConstituencyInline(NestedTabularInline):
 
 
 @admin.register(County)
-class CountyAdmin(NestedModelAdmin):
+class CountyAdmin(LeafletGeoAdmin, NestedModelAdmin):
     list_display = ['name']
     inlines = [ConstituencyInline]
