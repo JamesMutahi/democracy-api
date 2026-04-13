@@ -69,8 +69,27 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
             'response_status': 201 if action.value == 'create' else 204 if action.value == 'delete' else 200
         }
 
+    @model_observer(PostLike)
+    async def like_activity(self, message, **kwargs):
+        # When a post like object changes, we send update for the parent post
+        post_pk = message['data'].get('post') if isinstance(message['data'], dict) else message['data']
+        if post_pk:
+            message['data'] = await self.get_post_serializer_data(pk=post_pk)
+            message['action'] = 'update'
+        await self.send_json(message)
+
+    @like_activity.serializer
+    def like_activity_serializer(self, instance: PostLike, action, **kwargs):
+        return {
+            'data': instance.post.pk,
+            'action': 'update',
+            'pk': instance.pk,
+            'response_status': 200,
+        }
+
     async def disconnect(self, code):
         await self.post_activity.unsubscribe()
+        await self.like_activity.unsubscribe()
         await super().disconnect(code)
 
     # ====================== Filter ======================
@@ -317,6 +336,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         pk = response.get("id")
         if pk:
             await self.post_activity.subscribe(pk=pk, request_id=request_id)
+            await self.like_activity.subscribe(pk=pk, request_id=request_id)
         return response, status
 
     @action()
