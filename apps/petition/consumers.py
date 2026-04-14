@@ -1,12 +1,13 @@
 from channels.db import database_sync_to_async
 from django.db import transaction
 from django.db.models import QuerySet, Q, Count
+from django.utils import timezone
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import ListModelMixin, CreateModelMixin, RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
 
-from apps.petition.models import Petition
+from apps.petition.models import Petition, PetitionSupport, PetitionClick
 from apps.petition.serializers import PetitionSerializer
 from apps.utils.list_paginator import list_paginator
 
@@ -52,6 +53,24 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
             'request_id': 'petitions',
             'pk': instance.pk,
             'response_status': 201 if action.value == 'create' else 204 if action.value == 'delete' else 200
+        }
+
+    @model_observer(PetitionSupport, many_to_many=True)
+    async def support_activity(self, message, **kwargs):
+        # When a support changes, send update for the parent petition
+        petition_pk = message['data']
+        if petition_pk:
+            message['data'] = await self.get_petition_serializer_data(pk=petition_pk)
+            message['action'] = 'update'
+        await self.send_json(message)
+
+    @support_activity.serializer
+    def support_activity_serializer(self, instance: PetitionSupport, action, **kwargs):
+        return {
+            'data': instance.petition.pk,
+            'action': 'update',
+            'pk': instance.pk,
+            'response_status': 200,
         }
 
     async def disconnect(self, code):
@@ -184,7 +203,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
     # ====================== Support Action (Optimized) ======================
     @action()
     async def support(self, pk: int, request_id: str, **kwargs):
-        result = await self.perform_support(pk=pk)
+        result = await self.record_support(pk=pk)
         if isinstance(result, dict) and result.get('error'):
             return await self.reply(
                 action='support',
@@ -194,7 +213,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
         return result, 200
 
     @database_sync_to_async
-    def perform_support(self, pk: int):
+    def record_support(self, pk: int):
         """Atomic support toggle"""
         try:
             with transaction.atomic():
@@ -253,6 +272,29 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
         petition.is_open = not petition.is_open
         petition.save()
         return {'pk': petition.pk, 'is_open': petition.is_open}
+
+    @action()
+    def add_view(self, pk: int, **kwargs):
+        petition = self.get_object(pk=pk)
+        petition.views += 1
+        petition.save()
+        return {'pk': pk}, 200
+
+    @action()
+    def add_click(self, pk: int, **kwargs):
+        petition = self.get_object(pk=pk)
+        self.record_click(petition=petition)
+        return {'pk': pk}, 200
+
+    @transaction.atomic
+    def record_click(self, petition: Petition):
+        """Record a click (view with intent) with timestamp"""
+        click, created = PetitionClick.objects.update_or_create(
+            user=self.scope['user'],
+            petition=petition,
+            defaults={'clicked_at': timezone.now()}
+        )
+        return click
 
     @action()
     async def user_petitions(self, request_id: str, page_size=None, **kwargs):

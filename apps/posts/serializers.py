@@ -37,7 +37,6 @@ class PostSerializer(serializers.ModelSerializer):
     reposts = serializers.SerializerMethodField(read_only=True)
     is_reposted = serializers.SerializerMethodField(read_only=True)
     is_quoted = serializers.SerializerMethodField(read_only=True)
-    clicks = serializers.SerializerMethodField(read_only=True)
     is_clicked = serializers.SerializerMethodField(read_only=True)
     ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
@@ -133,7 +132,6 @@ class PostSerializer(serializers.ModelSerializer):
             'tagged_users',
             'tags',
             'views',
-            'clicks',
             'is_clicked',
             'is_muted',
             'replies',
@@ -264,14 +262,9 @@ class PostSerializer(serializers.ModelSerializer):
         is_quoted = obj.reposts.filter(author=self.context['scope']['user'], reply_to=None).exclude(body='').exists()
         return is_quoted
 
-    @staticmethod
-    def get_clicks(obj):
-        count = obj.clicks.count()
-        return count
-
     def get_is_clicked(self, post):
-        is_viewed = PostClick.objects.filter(user=self.context['scope']['user'], post=post).exists()
-        return is_viewed
+        is_clicked = PostClick.objects.filter(user=self.context['scope']['user'], post=post).exists()
+        return is_clicked
 
     @staticmethod
     def get_community_note(obj: Post):

@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from apps.geo.models import County, Constituency, Ward
@@ -45,7 +46,7 @@ class Option(models.Model):
     ballot = models.ForeignKey(Ballot, on_delete=models.CASCADE, related_name='options')
     number = models.IntegerField()
     text = models.CharField(max_length=255)
-    votes = models.ManyToManyField(User, blank=True, related_name='voted_options')
+    votes = models.ManyToManyField(User, blank=True, through='OptionVote', related_name='voted_options')
 
     class Meta:
         ordering = ['id']
@@ -57,6 +58,23 @@ class Option(models.Model):
 
     def __str__(self):
         return self.text
+
+
+class OptionVote(models.Model):
+    """Through model for Option votes with timestamp"""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='voted_options_through')
+    option = models.ForeignKey(Option, on_delete=models.CASCADE, related_name='votes_through')
+    voted_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        unique_together = ('user', 'option')
+        ordering = ['-voted_at']
+        db_table = 'OptionVote'
+        verbose_name = 'Option Vote'
+        verbose_name_plural = 'Option Votes'
+
+    def __str__(self):
+        return f"{self.user} voted option {self.option.id} at {self.voted_at}"
 
 
 class Reason(BaseModel):

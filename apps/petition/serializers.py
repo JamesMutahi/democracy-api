@@ -1,10 +1,9 @@
 from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
-from drf_extra_fields.fields import Base64ImageField
 from rest_framework import serializers
 
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
-from apps.petition.models import Petition
+from apps.petition.models import Petition, PetitionClick
 from apps.users.serializers import UserSerializer
 
 User = get_user_model()
@@ -16,6 +15,7 @@ class PetitionSerializer(serializers.ModelSerializer):
     supporters = serializers.SerializerMethodField(read_only=True)
     recent_supporters = serializers.SerializerMethodField(read_only=True)
     is_supported = serializers.SerializerMethodField(read_only=True)
+    is_clicked = serializers.SerializerMethodField(read_only=True)
     county = CountySerializer(read_only=True)
     county_id = serializers.IntegerField(write_only=True, allow_null=True)
     constituency = ConstituencySerializer(read_only=True)
@@ -38,9 +38,11 @@ class PetitionSerializer(serializers.ModelSerializer):
             'ward_id',
             'image',
             'video',
+            'views',
             'supporters',
             'recent_supporters',
             'is_supported',
+            'is_clicked',
             'is_open',
             'created_at',
             'is_active',
@@ -64,6 +66,10 @@ class PetitionSerializer(serializers.ModelSerializer):
     def get_supporters(instance: Petition):
         return instance.supporters.count()
 
+    def get_is_clicked(self, petition):
+        is_clicked = PetitionClick.objects.filter(user=self.context['scope']['user'], petition=petition).exists()
+        return is_clicked
+
     def get_recent_supporters(self, instance: Petition):
         recent_supporters = []
         if instance.supporters.exists():
@@ -71,7 +77,7 @@ class PetitionSerializer(serializers.ModelSerializer):
             related = instance.supporters.through.objects.filter(petition_id=instance.pk).order_by('-id')[:5]
             user_list = []
             for obj in related:
-                user = User.objects.get(id=obj.customuser_id)
+                user = User.objects.get(id=obj.user.id)
                 user_list.append(user)
             serializer = UserSerializer(user_list, many=True, context=self.context)
             recent_supporters = serializer.data

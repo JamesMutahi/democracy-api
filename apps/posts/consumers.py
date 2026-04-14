@@ -365,15 +365,14 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     def record_like(self, post: Post):
         """Record a like with timestamp"""
         user = self.scope['user']
-        like, created = PostLike.objects.get_or_create(
-            user=user,
-            post=post,
-            defaults={'liked_at': timezone.now()}
-        )
-        if not created:
-            PostLike.objects.filter(user=user, post=post).delete()
+        if post.likes.filter(pk=user.pk).exists():
+            post.likes.remove(user)
+            is_liked = False
+        else:
+            post.likes.add(user)
+            is_liked = True
 
-        return {'pk': post.pk, 'is_liked': created, 'likes': post.likes.count()}
+        return {'pk': post.pk, 'is_liked': is_liked, 'likes': post.likes.count()}
 
     @action()
     async def bookmark(self, pk: int, **kwargs):

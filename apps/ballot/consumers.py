@@ -5,7 +5,7 @@ from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
 
-from apps.ballot.models import Ballot, Option, Reason
+from apps.ballot.models import Ballot, Option, Reason, OptionVote
 from apps.ballot.serializers import BallotSerializer
 from apps.utils.list_paginator import list_paginator
 
@@ -45,8 +45,8 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     @model_observer(Option, many_to_many=True)
     async def option_activity(self, message, **kwargs):
-        # When an option changes, we send update for the parent ballot
-        ballot_pk = message['data'].get('ballot') if isinstance(message['data'], dict) else message['data']
+        # When an option changes, send update for the parent ballot
+        ballot_pk = message['data']
         if ballot_pk:
             message['data'] = await self.get_ballot_serializer_data(pk=ballot_pk)
             message['action'] = 'update'
@@ -56,6 +56,24 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     def option_activity_serializer(self, instance: Option, action, **kwargs):
         return {
             'data': instance.ballot.pk,
+            'action': 'update',
+            'pk': instance.pk,
+            'response_status': 200,
+        }
+
+    @model_observer(OptionVote, many_to_many=True)
+    async def vote_activity(self, message, **kwargs):
+        # When a vote changes, send update for the parent ballot
+        ballot_pk = message['data']
+        if ballot_pk:
+            message['data'] = await self.get_ballot_serializer_data(pk=ballot_pk)
+            message['action'] = 'update'
+        await self.send_json(message)
+
+    @vote_activity.serializer
+    def vote_activity_serializer(self, instance: OptionVote, action, **kwargs):
+        return {
+            'data': instance.option.ballot.pk,
             'action': 'update',
             'pk': instance.pk,
             'response_status': 200,
@@ -212,7 +230,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
                 # === Remove user from ALL other options in this ballot ===
                 # This is the efficient way (avoids .update() on m2m)
-                ballot.options.filter(votes=user).exclude(pk=option.pk).update()  # No, use remove via manager
+                ballot.options.filter(votes=user).exclude(pk=option.pk).update()
 
                 # Clear previous votes
                 for other_option in ballot.options.filter(votes=user).exclude(pk=option.pk):

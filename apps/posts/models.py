@@ -73,8 +73,6 @@ class Post(BaseModel):
     video = models.FileField(upload_to=UploadVideoTo('videos/'), null=True, blank=True)
     file = models.FileField(upload_to=UploadFileTo('files/'), null=True, blank=True)
     location = models.PointField(srid=4326, null=True, blank=True)
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='published')
-    published_at = models.DateTimeField(default=timezone.now)
     # Dependencies
     reply_to = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='replies')
     repost_of = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='reposts')
@@ -85,15 +83,19 @@ class Post(BaseModel):
     petition = models.ForeignKey(Petition, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
     meeting = models.ForeignKey(Meeting, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
     section = models.ForeignKey(Section, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
+    tagged_users = models.ManyToManyField(User, blank=True, related_name='tagged_in_posts')
+    # User interaction
     likes = models.ManyToManyField(User, blank=True, through='PostLike', related_name='liked_posts')
     bookmarks = models.ManyToManyField(User, blank=True, related_name='bookmarked_posts')
     views = models.PositiveIntegerField(default=0)
     clicks = models.ManyToManyField(User, blank=True, through='PostClick', related_name='clicked_posts')
-    tagged_users = models.ManyToManyField(User, blank=True, related_name='tagged_in_posts')
     is_muted = models.BooleanField(_('muted'), default=False)  # For muting conversations/threads
     # For community notes
     upvotes = models.ManyToManyField(User, blank=True, related_name='upvotes')
     downvotes = models.ManyToManyField(User, blank=True, related_name='downvotes')
+    # Status
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='published')
+    published_at = models.DateTimeField(default=timezone.now)
     # Deletion and deactivation
     is_deleted = models.BooleanField(_('deleted'), default=False)
     is_active = models.BooleanField(_('active'), default=True)
@@ -158,7 +160,7 @@ class PostLike(models.Model):
 
 
 class PostClick(models.Model):
-    """Through model for Post.clicks with timestamp"""
+    """Through model for Post clicks with timestamp"""
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='clicked_posts_through')
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='clicks_through')
     clicked_at = models.DateTimeField(default=timezone.now, db_index=True)
