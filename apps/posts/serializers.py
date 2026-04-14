@@ -390,13 +390,24 @@ class ReportSerializer(serializers.ModelSerializer):
 class ThreadSerializer(PostSerializer):
     thread = serializers.SerializerMethodField(read_only=True)
 
-    def get_thread(self, obj):
-        if obj.reply_to:
-            author_replies = obj.replies.filter(author=obj.reply_to.author)
+    def get_thread(self, post):
+        if post.reply_to:
+            posts = get_reply_thread(post=post, author=post.reply_to.author)
         else:
-            author_replies = obj.replies.filter(author=obj.author)
-        serializer = ThreadSerializer(author_replies, many=True, context=self.context)
+            posts = get_reply_thread(post=post, author=post.author)
+        serializer = PostSerializer(posts, many=True, context=self.context)
         return serializer.data
 
     class Meta(PostSerializer.Meta):
         fields = PostSerializer.Meta.fields + ('thread',)
+
+
+def get_reply_thread(post: Post, author: User):
+    """Recursive helper to get thread chain"""
+    posts = []
+    qs = post.replies.filter(author=author)
+    if qs.exists():
+        post = qs.first()
+        posts.append(post)
+        posts.extend(get_reply_thread(post, post.author))
+    return posts
