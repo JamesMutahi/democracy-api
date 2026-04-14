@@ -403,11 +403,14 @@ class ThreadSerializer(PostSerializer):
 
 
 def get_reply_thread(post: Post, author: User):
-    """Recursive helper to get thread chain"""
+    """Recursive helper to get thread chain in list"""
     posts = []
     qs = post.replies.filter(author=author)
     if qs.exists():
         post = qs.first()
         posts.append(post)
         posts.extend(get_reply_thread(post, post.author))
+    if len(posts) > 0:
+        post = posts[-1]
+        posts.extend(get_reply_thread(post, post.reply_to.author))
     return posts
