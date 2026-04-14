@@ -53,14 +53,21 @@ def create_notification(sender, instance, created, **kwargs):
                 tasks.notify_on_petition_status_change.delay(instance.id, instance.is_open)
 
 
+@receiver(m2m_changed, sender=Post.likes.through)
 @receiver(m2m_changed, sender=User.following.through)
 def on_follow_change(sender, instance, action, pk_set, **kwargs):
     if action == 'post_add':
         for pk in pk_set:
-            tasks.notify_on_follow.delay(instance.id, pk)
+            if sender == Post.likes.through:
+                tasks.notify_on_like.delay(pk, instance.id)
+            if sender == User.following.through:
+                tasks.notify_on_follow.delay(instance.id, pk)
     if action == 'post_remove':
         for pk in pk_set:
-            tasks.delete_notification_on_unfollow.delay(instance.id, pk)
+            if sender == Post.likes.through:
+                tasks.delete_notification_on_unlike.delay(pk, instance.id)
+            if sender == User.following.through:
+                tasks.delete_notification_on_unfollow.delay(instance.id, pk)
 
 
 @receiver(post_delete, sender=Notification)
