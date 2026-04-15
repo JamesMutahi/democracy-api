@@ -29,6 +29,7 @@ class NotificationSerializer(serializers.ModelSerializer):
             'users',
             'is_like',
             'is_follow',
+            'is_support',
             'post',
             'ballot',
             'survey',
@@ -51,4 +52,6 @@ class PreferencesSerializer(serializers.ModelSerializer):
             'allow_reply_notifications',
             'allow_repost_notifications',
             'allow_message_notifications',
+            'allow_petition_notifications',
+            'allow_petition_supporter_notifications',
         ]

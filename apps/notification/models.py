@@ -17,6 +17,7 @@ class Notification(models.Model):
     users = models.ManyToManyField(User, blank=True)
     is_like = models.BooleanField(default=False)
     is_follow = models.BooleanField(default=False)
+    is_support = models.BooleanField(default=False) # For petitions supporters
     post = models.ForeignKey(Post, on_delete=models.CASCADE, null=True, blank=True)
     ballot = models.ForeignKey(Ballot, on_delete=models.CASCADE, null=True, blank=True)
     survey = models.ForeignKey(Survey, on_delete=models.CASCADE, null=True, blank=True)
@@ -44,6 +45,8 @@ class Preferences(models.Model):
     allow_reply_notifications = models.BooleanField(default=True)
     allow_repost_notifications = models.BooleanField(default=True)
     allow_message_notifications = models.BooleanField(default=True)
+    allow_petition_notifications = models.BooleanField(default=True)
+    allow_petition_supporter_notifications = models.BooleanField(default=True)
 
     class Meta:
         db_table = 'Preferences'

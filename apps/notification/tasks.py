@@ -119,7 +119,7 @@ def create_petition_notifications_on_create(petition_id):
     petition = Petition.objects.get(id=petition_id)
     users = User.objects.filter(
         notifiers=petition.author,
-        preferences__allow_notifications=True
+        preferences__allow_petition_notifications=True
     ).exclude(muted=petition.author)
     if petition.county:
         users = users.filter(county=petition.county)
@@ -319,6 +319,51 @@ def delete_notification_on_unlike(user_id, post_id):
             else:
                 notification.users.remove(user)
 
+
+@shared_task
+def notify_on_support(user_id, petition_id):
+    petition = Petition.objects.select_related('author__preferences').get(id=petition_id)
+
+    if user_id == petition.author_id or not petition.author.preferences.allow_petition_supporter_notifications:
+        return
+
+    with transaction.atomic():
+        # Prevent race conditions: lock the notification row if it exists
+        n_qs = Notification.objects.select_for_update().filter(
+            is_read=False,
+            petition_id=petition_id,
+            is_support=True
+        )
+
+        if n_qs.exists():
+            notification = n_qs.first()
+            notification.users.add(user_id)
+            send_notification_update(notification)
+        else:
+            # Create new notification
+            notification = Notification.objects.create(
+                recipient=petition.author,
+                text='supported your petition',
+                petition=petition,
+                is_support=True,
+            )
+            notification.users.add(user_id)
+            send_notification_create(notification)
+
+
+@shared_task
+def delete_notification_on_support_removal(user_id, petition_id):
+    user = User.objects.get(id=user_id)
+    petition = Petition.objects.get(id=petition_id)
+
+    if user != petition.author:
+        n_qs = Notification.objects.filter(is_read=False, petition_id=petition_id, is_support=True, users=user)
+        if n_qs.exists():
+            notification = n_qs.first()
+            if notification.users.count() == 1:
+                notification.delete()
+            else:
+                notification.users.remove(user)
 
 @shared_task
 def delete_notification_on_marked_as_read(chat_id, user_id):
