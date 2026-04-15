@@ -1,8 +1,9 @@
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from django.contrib.postgres.search import TrigramSimilarity
+from django.core.cache import cache
 from django.db import transaction
-from django.db.models import QuerySet, Case, When, Count, Q
+from django.db.models import QuerySet, Case, When, Count, Q, F
 from django.db.models.signals import post_save
 from django.utils import timezone
 from djangochannelsrestframework.decorators import action
@@ -13,6 +14,7 @@ from djangochannelsrestframework.pagination import WebsocketLimitOffsetPaginatio
 
 from apps.posts.models import Post, PostLike, PostClick
 from apps.posts.serializers import PostSerializer, ReportSerializer, ThreadSerializer
+from apps.recommendations.tasks import record_interaction
 from apps.recommendations.post_recommender import PostRecommender
 from apps.utils.list_paginator import list_paginator
 
@@ -460,9 +462,25 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     @action()
     def add_view(self, pk: int, **kwargs):
-        post = self.get_object(pk=pk)
-        post.views += 1
-        post.save()
+        user = self.scope['user']
+
+        # Quick rate limit check to reduce unnecessary task calls
+        cache_key = f"interaction_rate:{user.id}:{pk}:view"
+        if cache.get(cache_key):
+            # Still increment the view count, but skip recording duplicate interaction
+            Post.objects.filter(pk=pk).update(views=F('views') + 1)
+            return {'pk': pk, 'status': 'view counted'}, 200
+
+        # Atomic increment -> no race conditions
+        Post.objects.filter(pk=pk).update(views=F('views') + 1)
+
+        # Record interaction
+        record_interaction.delay(
+            user_id=user.id,
+            post_id=pk,
+            interaction_type='view'
+        )
+
         return {'pk': pk}, 200
 
     @action()

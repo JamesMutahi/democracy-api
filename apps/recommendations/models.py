@@ -13,6 +13,7 @@ class UserInteraction(models.Model):
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='interactions')
 
     INTERACTION_TYPES = (
+        ('view', 'Viewed'),
         ('click', 'Clicked'),
         ('like', 'Liked'),
         ('bookmark', 'Bookmarked'),
