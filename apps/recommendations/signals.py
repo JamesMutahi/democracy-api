@@ -16,6 +16,11 @@ def record_post_interaction(sender, instance: Post, created, **kwargs):
     if not created or not instance.author:
         return
 
+    if instance.reply_to and instance.author_id == instance.reply_to.author_id:
+        return
+    if instance.repost_of and instance.author_id == instance.repost_of.author_id:
+        return
+
     if instance.reply_to is not None:
         tasks.record_interaction.delay(
             user_id=instance.author.id,
@@ -36,12 +41,13 @@ def record_post_interaction(sender, instance: Post, created, **kwargs):
 @receiver(post_save, sender=PostClick)
 def on_save_post_interaction(sender, instance, created, **kwargs):
     """Record user interation when the through model (PostLike/PostClick) is used"""
-    tasks.record_interaction.delay(
-        user_id=instance.user.id,
-        post_id=instance.id,
-        interaction_type='like' if sender == PostLike else 'click'
-    )
-    tasks.refresh_post_recommendations.delay(instance.user.id, force=True)
+    if instance.user_id != instance.post.author_id:
+        tasks.record_interaction.delay(
+            user_id=instance.user.id,
+            post_id=instance.post.id,
+            interaction_type='like' if sender == PostLike else 'click'
+        )
+        tasks.refresh_post_recommendations.delay(instance.user.id, force=True)
 
 
 @receiver(m2m_changed, sender=Post.clicks.through)
@@ -57,6 +63,8 @@ def record_like_interaction(sender, instance: Post, action, reverse, pk_set, **k
         interaction_type = 'like'
     if action == 'post_add' and not reverse:
         for user_id in pk_set:
+            if user_id == instance.author_id:
+                continue
             tasks.record_interaction.delay(
                 user_id=user_id,
                 post_id=instance.id,
@@ -86,5 +94,6 @@ def on_mute_block_change(sender, instance, action, **kwargs):
 
 @receiver(post_save, sender=ProfileVisit)
 def on_profile_visit(sender, instance, created, **kwargs):
-    tasks.refresh_follow_recommendations.delay(instance.visitor.id, force=True)
-    tasks.refresh_post_recommendations.delay(instance.visitor.id, force=True)
+    if instance.visitor_id != instance.visited_id:
+        tasks.refresh_follow_recommendations.delay(instance.visitor.id, force=True)
+        tasks.refresh_post_recommendations.delay(instance.visitor.id, force=True)
