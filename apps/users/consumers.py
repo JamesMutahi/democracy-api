@@ -6,7 +6,7 @@ from django.db.models.signals import post_save
 from django.utils import timezone
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
-from djangochannelsrestframework.mixins import RetrieveModelMixin, PatchModelMixin
+from djangochannelsrestframework.mixins import RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
 from rest_framework.exceptions import PermissionDenied
 
@@ -19,7 +19,7 @@ from apps.utils.list_paginator import list_paginator
 User = get_user_model()
 
 
-class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer):
+class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     serializer_class = UserSerializer
     queryset = User.objects.all()
     lookup_field = "pk"
@@ -79,12 +79,6 @@ class UserConsumer(RetrieveModelMixin, PatchModelMixin, GenericAsyncAPIConsumer)
                     Q(username__icontains=search_term) |
                     Q(name__icontains=search_term)
                 ).distinct()
-
-        # Restrict patch to self only
-        if action == 'patch':
-            if self.scope['user'].id != kwargs.get('pk'):
-                return queryset.none()
-
         return queryset
 
     # ====================== List ======================

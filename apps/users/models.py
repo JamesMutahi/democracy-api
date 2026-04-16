@@ -16,7 +16,7 @@ class UploadImageTo:
         self.name = name
 
     def __call__(self, instance, filename):
-        return '{}/profile/{}'.format(instance.author.id, filename)
+        return '{}/profile/{}'.format(instance.id, filename)
 
     def deconstruct(self):
         return 'apps.users.models.UploadImageTo', [self.name], {}

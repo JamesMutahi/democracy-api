@@ -1,7 +1,6 @@
 from django.contrib.auth import get_user_model, authenticate
 from django.contrib.sites.models import Site
 from django.utils.translation import gettext_lazy as _
-from drf_extra_fields.fields import Base64ImageField
 from rest_framework import serializers
 
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
@@ -20,8 +19,6 @@ class UserSerializer(serializers.ModelSerializer):
     has_blocked = serializers.SerializerMethodField(read_only=True)
     is_followed = serializers.SerializerMethodField(read_only=True)
     is_notifying = serializers.SerializerMethodField(read_only=True)
-    image_base64 = Base64ImageField(write_only=True, max_length=None, use_url=True, allow_null=True)
-    cover_photo_base64 = Base64ImageField(write_only=True, max_length=None, use_url=True, allow_null=True)
     county = CountySerializer(read_only=True)
     constituency = ConstituencySerializer(read_only=True)
     ward = WardSerializer(read_only=True)
@@ -52,8 +49,6 @@ class UserSerializer(serializers.ModelSerializer):
             'has_blocked',
             'is_followed',
             'is_notifying',
-            'image_base64',
-            'cover_photo_base64',
         )
 
     @staticmethod
@@ -97,13 +92,6 @@ class UserSerializer(serializers.ModelSerializer):
         is_visited = ProfileVisit.objects.filter(visitor=self.context['scope']['user'], visited=visited).exists()
         return is_visited
 
-    def update(self, instance, validated_data):
-        if 'image_base64' in validated_data:
-            validated_data['image'] = validated_data['image_base64']
-        if 'cover_photo_base64' in validated_data:
-            validated_data['cover_photo'] = validated_data['cover_photo_base64']
-        return super().update(instance, validated_data)
-
 
 class LoginSerializer(serializers.Serializer):
     email = serializers.CharField(label=_("Email"), write_only=True)
@@ -143,5 +131,8 @@ class UserUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = (
+            'name',
+            'image',
+            'cover_photo',
             'bio',
         )
