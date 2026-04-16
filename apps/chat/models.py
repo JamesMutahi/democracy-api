@@ -66,7 +66,7 @@ class UploadImageTo:
         self.name = name
 
     def __call__(self, instance, filename):
-        return '{}/messages/{}'.format(instance.user.id, filename)
+        return '{}/messages/{}'.format(instance.author.id, filename)
 
     def deconstruct(self):
         return 'apps.chat.models.UploadImageTo', [self.name], {}
@@ -77,7 +77,7 @@ class UploadVideoTo:
         self.name = name
 
     def __call__(self, instance, filename):
-        return '{}/messages/{}'.format(instance.user.id, filename)
+        return '{}/messages/{}'.format(instance.author.id, filename)
 
     def deconstruct(self):
         return 'apps.chat.models.UploadVideoTo', [self.name], {}
@@ -88,7 +88,7 @@ class UploadFileTo:
         self.name = name
 
     def __call__(self, instance, filename):
-        return '{}/messages/{}'.format(instance.user.id, filename)
+        return '{}/messages/{}'.format(instance.author.id, filename)
 
     def deconstruct(self):
         return 'apps.chat.models.UploadFileTo', [self.name], {}
