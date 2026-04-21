@@ -1,12 +1,11 @@
 from django.contrib.auth import get_user_model
-from django.contrib.sites.models import Site
 from django.db.models import Count
 from django.db.models.signals import post_save
 from rest_framework import serializers
 
 from apps.ballot.models import Ballot
 from apps.ballot.serializers import BallotSerializer
-from apps.chat.models import Message, Chat
+from apps.chat.models import Message, Chat, Asset
 from apps.constitution.models import Section
 from apps.constitution.serializers import SectionSerializer
 from apps.meeting.models import Meeting
@@ -21,6 +20,25 @@ from apps.users.serializers import UserSerializer
 from apps.utils.link_extractor import extract_linked_object
 
 User = get_user_model()
+
+
+class AssetSerializer(serializers.ModelSerializer):
+    # model @property
+    url = serializers.ReadOnlyField()
+
+    class Meta:
+        model = Asset
+        fields = [
+            'id',
+            'name',
+            'file_size',
+            'content_type',
+            'url',  # External S3 URL for the frontend
+            'is_completed',  # Status of the upload
+            'uploaded_at'
+        ]
+        # Prevents the frontend from trying to overwrite the S3 path
+        read_only_fields = ['id', 'file_key', 'is_completed', 'uploaded_at']
 
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -67,18 +85,7 @@ class MessageSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True
     )
-    image1 = serializers.SerializerMethodField()
-    image2 = serializers.SerializerMethodField()
-    image3 = serializers.SerializerMethodField()
-    image4 = serializers.SerializerMethodField()
-    file = serializers.SerializerMethodField()
-    file_name = serializers.CharField(
-        write_only=True,
-        required=False,
-        allow_null=True,
-        allow_blank=True,
-        max_length=255
-    )
+    asset = AssetSerializer(many=True, read_only=True)
 
     class Meta:
         model = Message
@@ -99,78 +106,14 @@ class MessageSerializer(serializers.ModelSerializer):
             'petition_id',
             'meeting_id',
             'section_id',
-            'image1',
-            'image2',
-            'image3',
-            'image4',
-            'video',
-            'file',
-            'file_name',
             'location',
+            'asset',
             'is_read',
             'is_edited',
             'is_deleted',
             'created_at',
             'updated_at'
         ]
-
-    def to_internal_value(self, data):
-        internal_value = super().to_internal_value(data)
-        if 'image1' in data:
-            internal_value['image1'] = data['image1']
-        if 'image2' in data:
-            internal_value['image2'] = data['image2']
-        if 'image3' in data:
-            internal_value['image3'] = data['image3']
-        if 'image4' in data:
-            internal_value['image4'] = data['image4']
-        if 'video' in data:
-            internal_value['video'] = data['video']
-        if 'file' in data:
-            internal_value['file'] = data['file']
-        return internal_value
-
-    @staticmethod
-    def get_image1(obj):
-        if obj.image1:
-            current_site = Site.objects.get_current()
-            return current_site.domain + obj.image1.url
-        return None
-
-    @staticmethod
-    def get_image2(obj):
-        if obj.image2:
-            current_site = Site.objects.get_current()
-            return current_site.domain + obj.image2.url
-        return None
-
-    @staticmethod
-    def get_image3(obj):
-        if obj.image3:
-            current_site = Site.objects.get_current()
-            return current_site.domain + obj.image3.url
-        return None
-
-    @staticmethod
-    def get_image4(obj):
-        if obj.image4:
-            current_site = Site.objects.get_current()
-            return current_site.domain + obj.image4.url
-        return None
-
-    @staticmethod
-    def get_video(obj):
-        if obj.video:
-            current_site = Site.objects.get_current()
-            return current_site.domain + obj.video.url
-        return None
-
-    @staticmethod
-    def get_file(obj):
-        if obj.file:
-            current_site = Site.objects.get_current()
-            return current_site.domain + obj.file.url
-        return None
 
     def validate(self, attrs):
         if not attrs['chat'].users.contains(self.context['scope']['user']):
@@ -207,14 +150,6 @@ class MessageSerializer(serializers.ModelSerializer):
                 validated_data['meeting_id'] = linked_object.pk
             if isinstance(linked_object, Section) and not validated_data.get('section'):
                 validated_data['section_id'] = linked_object.pk
-
-        file = validated_data.pop('file', None)
-        file_name = validated_data.pop('file_name', None)
-
-        # Change file name
-        if file_name:
-            file.name = file_name
-            validated_data['file'] = file
 
         message = super().create(validated_data)
         post_save.send(sender=Chat, instance=message.chat, created=False)

@@ -1,3 +1,6 @@
+import uuid
+
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.gis.db import models
 from django.db import transaction
@@ -65,13 +68,6 @@ class Post(BaseModel):
     )
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='posts')
     body = models.TextField(blank=True)
-    # Media
-    image1 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
-    image2 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
-    image3 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
-    image4 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
-    video = models.FileField(upload_to=UploadVideoTo('videos/'), null=True, blank=True)
-    file = models.FileField(upload_to=UploadFileTo('files/'), null=True, blank=True)
     location = models.PointField(srid=4326, null=True, blank=True)
     # Dependencies
     reply_to = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='replies')
@@ -140,6 +136,31 @@ class Post(BaseModel):
         if self.messages.exists():
             return mark_deleted(self)
         return super(Post, self).delete(*args, **kwargs)
+
+
+class Asset(BaseModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='asset')
+
+    # The actual path/key in the S3 bucket (e.g., "uploads/user_1/photo.jpg")
+    file_key = models.CharField(max_length=512, unique=True)
+
+    # Helpful metadata
+    name = models.CharField(max_length=255)
+    file_size = models.PositiveIntegerField(help_text="Size in bytes")
+    content_type = models.CharField(max_length=100, help_text="e.g., image/jpeg")
+    is_completed = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = 'PostAsset'
+
+    @property
+    def url(self):
+        # Generate the full URL dynamically based on S3 bucket settings
+        return f"https://{settings.AWS_S3_CUSTOM_DOMAIN}/{self.file_key}"
+
+    def __str__(self):
+        return self.name
 
 
 class PostLike(models.Model):

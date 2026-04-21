@@ -1,3 +1,6 @@
+import uuid
+
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.gis.db import models
 from django.db.models import Manager, Max, Q, Exists, OuterRef
@@ -104,12 +107,6 @@ class Message(BaseModel):
     petition = models.ForeignKey(Petition, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
     meeting = models.ForeignKey(Meeting, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
     section = models.ForeignKey(Section, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
-    image1 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
-    image2 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
-    image3 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
-    image4 = models.ImageField(upload_to=UploadImageTo('images/'), null=True, blank=True)
-    video = models.FileField(upload_to=UploadVideoTo('videos/'), null=True, blank=True)
-    file = models.FileField(upload_to=UploadFileTo('files/'), null=True, blank=True)
     location = models.PointField(srid=4326, null=True)
     is_read = models.BooleanField(_('read'), default=False)
     is_edited = models.BooleanField(_('edited'), default=False)
@@ -121,3 +118,28 @@ class Message(BaseModel):
 
     def __str__(self):
         return f"Message({self.author.username} {self.chat})"
+
+
+class Asset(BaseModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name='asset')
+
+    # The actual path/key in the S3 bucket (e.g., "uploads/user_1/photo.jpg")
+    file_key = models.CharField(max_length=512, unique=True)
+
+    # Helpful metadata
+    name = models.CharField(max_length=255)
+    file_size = models.PositiveIntegerField(help_text="Size in bytes")
+    content_type = models.CharField(max_length=100, help_text="e.g., image/jpeg")
+    is_completed = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = 'MessageAsset'
+
+    @property
+    def url(self):
+        # Generate the full URL dynamically based on S3 bucket settings
+        return f"https://{settings.AWS_S3_CUSTOM_DOMAIN}/{self.file_key}"
+
+    def __str__(self):
+        return self.name

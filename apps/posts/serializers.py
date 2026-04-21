@@ -1,5 +1,4 @@
 from django.contrib.auth import get_user_model
-from django.contrib.sites.models import Site
 from django.db.models.signals import post_save
 from django.utils import timezone
 from rest_framework import serializers
@@ -12,7 +11,7 @@ from apps.meeting.models import Meeting
 from apps.meeting.serializers import MeetingSerializer
 from apps.petition.models import Petition
 from apps.petition.serializers import PetitionSerializer
-from apps.posts.models import Post, Report, PostLike, PostClick
+from apps.posts.models import Post, Report, PostLike, Asset
 from apps.survey.models import Survey
 from apps.survey.serializers import SurveySerializer
 from apps.users.serializers import UserSerializer
@@ -26,6 +25,25 @@ class TagSerializer(serializers.Serializer):
     text = serializers.CharField()
 
 
+class AssetSerializer(serializers.ModelSerializer):
+    # model @property
+    url = serializers.ReadOnlyField()
+
+    class Meta:
+        model = Asset
+        fields = [
+            'id',
+            'name',
+            'file_size',
+            'content_type',
+            'url',  # External S3 URL for the frontend
+            'is_completed',  # Status of the upload
+            'uploaded_at'
+        ]
+        # Prevents the frontend from trying to overwrite the S3 path
+        read_only_fields = ['id', 'file_key', 'is_completed', 'uploaded_at']
+
+
 class PostSerializer(serializers.ModelSerializer):
     author = UserSerializer(read_only=True)
     published_at = serializers.DateTimeField(default=timezone.now, read_only=True)
@@ -37,7 +55,6 @@ class PostSerializer(serializers.ModelSerializer):
     reposts = serializers.SerializerMethodField(read_only=True)
     is_reposted = serializers.SerializerMethodField(read_only=True)
     is_quoted = serializers.SerializerMethodField(read_only=True)
-    is_clicked = serializers.SerializerMethodField(read_only=True)
     ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
     petition = PetitionSerializer(read_only=True)
@@ -88,24 +105,12 @@ class PostSerializer(serializers.ModelSerializer):
         allow_null=True
     )
     tags = TagSerializer(many=True, required=False, allow_null=True)
-    image1 = serializers.SerializerMethodField()
-    image2 = serializers.SerializerMethodField()
-    image3 = serializers.SerializerMethodField()
-    image4 = serializers.SerializerMethodField()
-    video = serializers.SerializerMethodField()
-    file = serializers.SerializerMethodField()
-    file_name = serializers.CharField(
-        write_only=True,
-        required=False,
-        allow_null=True,
-        allow_blank=True,
-        max_length=255
-    )
     community_note = serializers.SerializerMethodField(read_only=True)
     is_upvoted = serializers.SerializerMethodField(read_only=True)
     is_downvoted = serializers.SerializerMethodField(read_only=True)
     upvotes = serializers.SerializerMethodField(read_only=True)
     downvotes = serializers.SerializerMethodField(read_only=True)
+    asset = AssetSerializer(many=True, read_only=True)
 
     class Meta:
         model = Post
@@ -115,13 +120,6 @@ class PostSerializer(serializers.ModelSerializer):
             'status',
             'published_at',
             'body',
-            'image1',
-            'image2',
-            'image3',
-            'image4',
-            'video',
-            'file',
-            'file_name',
             'location',
             'is_deleted',
             'is_active',
@@ -132,7 +130,6 @@ class PostSerializer(serializers.ModelSerializer):
             'tagged_users',
             'tags',
             'views',
-            'is_clicked',
             'is_muted',
             'replies',
             'reposts',
@@ -159,66 +156,9 @@ class PostSerializer(serializers.ModelSerializer):
             'petition_id',
             'meeting_id',
             'section_id',
+            'asset',
         )
         extra_kwargs = {'is_active': {'read_only': True}}
-
-    def to_internal_value(self, data):
-        internal_value = super().to_internal_value(data)
-        if 'image1' in data:
-            internal_value['image1'] = data['image1']
-        if 'image2' in data:
-            internal_value['image2'] = data['image2']
-        if 'image3' in data:
-            internal_value['image3'] = data['image3']
-        if 'image4' in data:
-            internal_value['image4'] = data['image4']
-        if 'video' in data:
-            internal_value['video'] = data['video']
-        if 'file' in data:
-            internal_value['file'] = data['file']
-        return internal_value
-
-    @staticmethod
-    def get_image1(obj):
-        if obj.image1:
-            current_site = Site.objects.get_current()
-            return current_site.domain + obj.image1.url
-        return None
-
-    @staticmethod
-    def get_image2(obj):
-        if obj.image2:
-            current_site = Site.objects.get_current()
-            return current_site.domain + obj.image2.url
-        return None
-
-    @staticmethod
-    def get_image3(obj):
-        if obj.image3:
-            current_site = Site.objects.get_current()
-            return current_site.domain + obj.image3.url
-        return None
-
-    @staticmethod
-    def get_image4(obj):
-        if obj.image4:
-            current_site = Site.objects.get_current()
-            return current_site.domain + obj.image4.url
-        return None
-
-    @staticmethod
-    def get_video(obj):
-        if obj.video:
-            current_site = Site.objects.get_current()
-            return current_site.domain + obj.video.url
-        return None
-
-    @staticmethod
-    def get_file(obj):
-        if obj.file:
-            current_site = Site.objects.get_current()
-            return current_site.domain + obj.file.url
-        return None
 
     def get_fields(self):
         fields = super(PostSerializer, self).get_fields()
@@ -261,10 +201,6 @@ class PostSerializer(serializers.ModelSerializer):
     def get_is_quoted(self, obj):
         is_quoted = obj.reposts.filter(author=self.context['scope']['user'], reply_to=None).exclude(body='').exists()
         return is_quoted
-
-    def get_is_clicked(self, post):
-        is_clicked = PostClick.objects.filter(user=self.context['scope']['user'], post=post).exists()
-        return is_clicked
 
     @staticmethod
     def get_community_note(obj: Post):
@@ -335,14 +271,6 @@ class PostSerializer(serializers.ModelSerializer):
                 validated_data['meeting_id'] = linked_object.pk
             if isinstance(linked_object, Section) and not validated_data.get('section'):
                 validated_data['section_id'] = linked_object.pk
-
-        file = validated_data.get('file', None)
-        file_name = validated_data.pop('file_name', None)
-
-        # Change file name
-        if file_name:
-            file.name = file_name
-            validated_data['file'] = file
 
         # Calling create method with new validated data
         post = super().create(validated_data)

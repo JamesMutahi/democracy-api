@@ -15,7 +15,6 @@ class PetitionSerializer(serializers.ModelSerializer):
     supporters = serializers.SerializerMethodField(read_only=True)
     recent_supporters = serializers.SerializerMethodField(read_only=True)
     is_supported = serializers.SerializerMethodField(read_only=True)
-    is_clicked = serializers.SerializerMethodField(read_only=True)
     county = CountySerializer(read_only=True)
     county_id = serializers.IntegerField(write_only=True, allow_null=True)
     constituency = ConstituencySerializer(read_only=True)
@@ -42,7 +41,6 @@ class PetitionSerializer(serializers.ModelSerializer):
             'supporters',
             'recent_supporters',
             'is_supported',
-            'is_clicked',
             'is_open',
             'created_at',
             'is_active',
@@ -65,10 +63,6 @@ class PetitionSerializer(serializers.ModelSerializer):
     @staticmethod
     def get_supporters(instance: Petition):
         return instance.supporters.count()
-
-    def get_is_clicked(self, petition):
-        is_clicked = PetitionClick.objects.filter(user=self.context['scope']['user'], petition=petition).exists()
-        return is_clicked
 
     def get_recent_supporters(self, instance: Petition):
         recent_supporters = []
