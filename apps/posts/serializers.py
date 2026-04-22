@@ -1,3 +1,6 @@
+import uuid
+
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models.signals import post_save
 from django.utils import timezone
@@ -16,6 +19,7 @@ from apps.survey.models import Survey
 from apps.survey.serializers import SurveySerializer
 from apps.users.serializers import UserSerializer
 from apps.utils.link_extractor import extract_linked_object
+from apps.utils.presigned_url import s3_client
 
 User = get_user_model()
 
@@ -26,22 +30,37 @@ class TagSerializer(serializers.Serializer):
 
 
 class AssetSerializer(serializers.ModelSerializer):
-    # model @property
-    url = serializers.ReadOnlyField()
+    url = serializers.SerializerMethodField()
 
     class Meta:
         model = Asset
         fields = [
             'id',
             'name',
+            'file_key',
             'file_size',
             'content_type',
             'url',  # External S3 URL for the frontend
             'is_completed',  # Status of the upload
-            'uploaded_at'
+            'created_at',
         ]
         # Prevents the frontend from trying to overwrite the S3 path
-        read_only_fields = ['id', 'file_key', 'is_completed', 'uploaded_at']
+        read_only_fields = ['id', 'file_key', 'is_completed', 'created_at']
+
+    @staticmethod
+    def get_url(obj):
+        if not obj.file_key:
+            return None
+
+        # Generates a temporary GET link
+        return s3_client.generate_presigned_url(
+            'get_object',
+            Params={
+                'Bucket': settings.AWS_STORAGE_BUCKET_NAME,
+                'Key': obj.file_key
+            },
+            ExpiresIn=3600
+        )
 
 
 class PostSerializer(serializers.ModelSerializer):
@@ -110,7 +129,7 @@ class PostSerializer(serializers.ModelSerializer):
     is_downvoted = serializers.SerializerMethodField(read_only=True)
     upvotes = serializers.SerializerMethodField(read_only=True)
     downvotes = serializers.SerializerMethodField(read_only=True)
-    asset = AssetSerializer(many=True, read_only=True)
+    assets = AssetSerializer(many=True, required=False, allow_null=True)
 
     class Meta:
         model = Post
@@ -156,7 +175,7 @@ class PostSerializer(serializers.ModelSerializer):
             'petition_id',
             'meeting_id',
             'section_id',
-            'asset',
+            'assets',
         )
         extra_kwargs = {'is_active': {'read_only': True}}
 
@@ -273,7 +292,14 @@ class PostSerializer(serializers.ModelSerializer):
                 validated_data['section_id'] = linked_object.pk
 
         # Calling create method with new validated data
+        assets = validated_data.pop('assets')
         post = super().create(validated_data)
+        for asset in assets:
+            # Create a unique key for S3 to avoid collisions
+            file_extension = asset['name'].split('.')[-1]
+            unique_key = f"uploads/{post.author.id}/posts/{uuid.uuid4()}.{file_extension}"
+            Asset.objects.create(post=post, file_key=unique_key, **asset)
+
         if post.reply_to:
             post_save.send(sender=Post, instance=post.reply_to, created=False)
         if post.repost_of:

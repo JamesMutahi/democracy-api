@@ -22,3 +22,8 @@ class ConstituencyInline(LeafletGeoAdminMixin, NestedTabularInline):
 class CountyAdmin(LeafletGeoAdmin, NestedModelAdmin):
     list_display = ['name']
     inlines = [ConstituencyInline]
+
+@admin.register(Ward)
+class WardAdmin(LeafletGeoAdmin, NestedModelAdmin):
+    list_display = ['name', 'constituency']
+    list_editable = ['constituency']

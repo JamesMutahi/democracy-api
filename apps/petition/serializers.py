@@ -11,7 +11,6 @@ User = get_user_model()
 
 class PetitionSerializer(serializers.ModelSerializer):
     author = UserSerializer(read_only=True)
-    image = serializers.SerializerMethodField()
     supporters = serializers.SerializerMethodField(read_only=True)
     recent_supporters = serializers.SerializerMethodField(read_only=True)
     is_supported = serializers.SerializerMethodField(read_only=True)
@@ -46,19 +45,6 @@ class PetitionSerializer(serializers.ModelSerializer):
             'is_active',
         ]
         extra_kwargs = {'is_active': {'read_only': True}}
-
-    def to_internal_value(self, data):
-        internal_value = super().to_internal_value(data)
-        if 'image' in data:
-            internal_value['image'] = data['image']
-        return internal_value
-
-    @staticmethod
-    def get_image(obj):
-        if obj.image:
-            current_site = Site.objects.get_current()
-            return current_site.domain + obj.image.url
-        return None
 
     @staticmethod
     def get_supporters(instance: Petition):

@@ -15,6 +15,7 @@ from apps.constitution.models import Section
 from apps.meeting.models import Meeting
 from apps.petition.models import Petition
 from apps.survey.models import Survey
+from apps.utils.presigned_url import s3_client
 
 User = get_user_model()
 
@@ -140,7 +141,7 @@ class Post(BaseModel):
 
 class Asset(BaseModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='asset')
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='assets')
 
     # The actual path/key in the S3 bucket (e.g., "uploads/user_1/photo.jpg")
     file_key = models.CharField(max_length=512, unique=True)
@@ -153,11 +154,6 @@ class Asset(BaseModel):
 
     class Meta:
         db_table = 'PostAsset'
-
-    @property
-    def url(self):
-        # Generate the full URL dynamically based on S3 bucket settings
-        return f"https://{settings.AWS_S3_CUSTOM_DOMAIN}/{self.file_key}"
 
     def __str__(self):
         return self.name

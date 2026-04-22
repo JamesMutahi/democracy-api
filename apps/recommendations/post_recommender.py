@@ -5,12 +5,12 @@ from datetime import timedelta
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db.models import (
-    Count, F, Value, FloatField, Case, When, ExpressionWrapper, Q, OuterRef, Subquery
+    Count, F, Value, FloatField, Case, When, ExpressionWrapper, Q, OuterRef, Subquery, Exists
 )
 from django.db.models.functions import Coalesce, Now, NullIf
 from django.utils import timezone
 
-from apps.posts.models import Post
+from apps.posts.models import Post, Asset
 from .models import UserInteraction, PostRecommendationCache
 
 User = get_user_model()
@@ -206,11 +206,25 @@ class PostRecommender:
         )
 
     def _get_media_score(self):
+        # Check if any related asset is a video
+        has_video = Asset.objects.filter(
+            post=OuterRef('pk'),
+            content_type__icontains='video'
+        )
+
+        # Check if any related asset is an image
+        has_image = Asset.objects.filter(
+            post=OuterRef('pk'),
+            content_type__icontains='image'
+        )
+
+        # Check if any generic asset exists (the 'file' equivalent)
+        has_any_asset = Asset.objects.filter(post=OuterRef('pk'))
+
         return Case(
-            When(video__isnull=False, then=Value(0.95)),
-            When(Q(image1__isnull=False) | Q(image2__isnull=False) |
-                 Q(image3__isnull=False) | Q(image4__isnull=False), then=Value(0.85)),
-            When(file__isnull=False, then=Value(0.70)),
+            When(Exists(has_video), then=Value(0.95)),
+            When(Exists(has_image), then=Value(0.85)),
+            When(Exists(has_any_asset), then=Value(0.70)),
             default=Value(0.35),
             output_field=FloatField()
         )

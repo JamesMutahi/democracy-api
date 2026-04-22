@@ -1,5 +1,4 @@
 from django.contrib.auth import get_user_model, authenticate
-from django.contrib.sites.models import Site
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
@@ -10,8 +9,6 @@ User = get_user_model()
 
 
 class UserSerializer(serializers.ModelSerializer):
-    image = serializers.SerializerMethodField()
-    cover_photo = serializers.SerializerMethodField()
     following = serializers.SerializerMethodField(read_only=True)
     followers = serializers.SerializerMethodField(read_only=True)
     is_muted = serializers.SerializerMethodField(read_only=True)
@@ -50,20 +47,6 @@ class UserSerializer(serializers.ModelSerializer):
             'is_followed',
             'is_notifying',
         )
-
-    @staticmethod
-    def get_image(obj):
-        if obj.image:
-            current_site = Site.objects.get_current()
-            return current_site.domain + obj.image.url
-        return None
-
-    @staticmethod
-    def get_cover_photo(obj):
-        if obj.cover_photo:
-            current_site = Site.objects.get_current()
-            return current_site.domain + obj.cover_photo.url
-        return None
 
     @staticmethod
     def get_following(user):
