@@ -7,55 +7,50 @@ from apps.constitution.models import Section
 class Level5Inline(NestedTabularInline):
     model = Section
     extra = 0
-    sortable_field_name = 'position'
     verbose_name = 'subsection'
     classes = ('grp-collapse grp-closed',)
-    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title', 'position')}),)
+    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title')}),)
 
 
 class Level4Inline(NestedTabularInline):
     model = Section
     extra = 0
-    sortable_field_name = 'position'
     verbose_name = 'subsection'
     classes = ('grp-collapse grp-closed',)
-    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title', 'position')}),)
+    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title')}),)
     inlines = [Level5Inline]
 
 
 class Level3Inline(NestedTabularInline):
     model = Section
     extra = 0
-    sortable_field_name = 'position'
     verbose_name = 'subsection'
     classes = ('grp-collapse grp-closed',)
-    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title', 'position')}),)
+    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title')}),)
     inlines = [Level4Inline]
 
 
 class Level2Inline(NestedTabularInline):
     model = Section
     extra = 0
-    sortable_field_name = 'position'
     verbose_name = 'subsection'
     classes = ('grp-collapse grp-closed',)
-    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title', 'position')}),)
+    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title')}),)
     inlines = [Level3Inline]
 
 
 class Level1Inline(NestedTabularInline):
     model = Section
     extra = 0
-    sortable_field_name = 'position'
     verbose_name = 'subsection'
     classes = ('grp-collapse grp-open',)
-    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title', 'position')}),)
+    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title')}),)
     inlines = [Level2Inline]
 
 
 @admin.register(Section)
 class SectionAdmin(NestedModelAdmin):
-    list_display = ['position', 'text', 'is_title', 'parent']
+    list_display = ['text', 'is_title', 'parent']
     inlines = [Level1Inline]
 
     def get_queryset(self, request):

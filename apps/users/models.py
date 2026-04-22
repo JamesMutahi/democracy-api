@@ -5,6 +5,7 @@ from django.contrib.auth.models import PermissionsMixin
 from django.core.mail import send_mail
 from django.db import models
 from django.utils import timezone
+from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 
 from apps.geo.models import County, Constituency, Ward
@@ -16,7 +17,9 @@ class UploadImageTo:
         self.name = name
 
     def __call__(self, instance, filename):
-        return '{}/profile/{}'.format(instance.id, filename)
+        ext = filename.split('.')[-1]
+        filename = f"{now().strftime('%Y%m%d%H%M%S')}.{ext}"
+        return f'users/{instance.user.id}/{self.name}/{filename}'
 
     def deconstruct(self):
         return 'apps.users.models.UploadImageTo', [self.name], {}
@@ -28,8 +31,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     id_number = models.IntegerField(_('ID number'), unique=True, null=True, blank=True)
     email = models.EmailField(_('email'), unique=True, null=True, blank=True)
     bio = models.TextField(_('bio'), blank=True)
-    image = models.ImageField(upload_to=UploadImageTo('images/'), default='profile_pics/default.jpg')
-    cover_photo = models.ImageField(upload_to=UploadImageTo('cover_photos/'), default='cover_photos/default.jpg')
+    image = models.ImageField(upload_to=UploadImageTo('profiles'), default='defaults/user.jpg')
+    cover_photo = models.ImageField(upload_to=UploadImageTo('cover_photos'), default='defaults/cover.jpg')
     following = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='followers')
     muted = models.ManyToManyField('self', symmetrical=False, blank=True)
     blocked = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='blockers')

@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.db import models
 from django.utils import timezone
+from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 
 from apps.geo.models import County, Constituency, Ward
@@ -22,7 +23,9 @@ class UploadImageTo:
         self.name = name
 
     def __call__(self, instance, filename):
-        return '{}/petitions/{}'.format(instance.author.id, filename)
+        ext = filename.split('.')[-1]
+        filename = f"{now().strftime('%Y%m%d%H%M%S')}.{ext}"
+        return f'petitions/{instance.author.id}/{self.name}/{filename}'
 
     def deconstruct(self):
         return 'apps.petition.models.UploadImageTo', [self.name], {}
@@ -33,7 +36,9 @@ class UploadVideoTo:
         self.name = name
 
     def __call__(self, instance, filename):
-        return '{}/petitions/{}'.format(instance.author.id, filename)
+        ext = filename.split('.')[-1]
+        filename = f"{now().strftime('%Y%m%d%H%M%S')}.{ext}"
+        return f'petitions/{instance.author.id}/{self.name}/{filename}'
 
     def deconstruct(self):
         return 'apps.petition.models.UploadVideoTo', [self.name], {}
@@ -47,8 +52,8 @@ class Petition(BaseModel):
     constituency = models.ForeignKey(Constituency, on_delete=models.PROTECT, null=True, blank=True,
                                      related_name='petitions')
     ward = models.ForeignKey(Ward, on_delete=models.PROTECT, null=True, blank=True, related_name='petitions')
-    image = models.ImageField(upload_to=UploadImageTo('images/'))
-    video = models.FileField(upload_to=UploadVideoTo('videos/'), null=True, blank=True)
+    image = models.ImageField(upload_to=UploadImageTo('images'))
+    video = models.FileField(upload_to=UploadVideoTo('videos'), null=True, blank=True)
     views = models.PositiveIntegerField(default=0)
     clicks = models.ManyToManyField(User, blank=True, through='PetitionClick', related_name='clicked_petitions')
     supporters = models.ManyToManyField(User, blank=True, through='PetitionSupport', related_name='supported_petitions')

@@ -10,8 +10,6 @@ class SectionSerializer(serializers.ModelSerializer):
         model = Section
         fields = [
             'id',
-            'position',
-            'tag',
             'numeral',
             'text',
             'is_title',

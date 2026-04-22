@@ -1,6 +1,5 @@
 import uuid
 
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.gis.db import models
 from django.db import transaction
@@ -15,7 +14,6 @@ from apps.constitution.models import Section
 from apps.meeting.models import Meeting
 from apps.petition.models import Petition
 from apps.survey.models import Survey
-from apps.utils.presigned_url import s3_client
 
 User = get_user_model()
 
@@ -27,39 +25,6 @@ class BaseModel(models.Model):
 
     class Meta:
         abstract = True
-
-
-class UploadVideoTo:
-    def __init__(self, name):
-        self.name = name
-
-    def __call__(self, instance, filename):
-        return '{}/posts/{}'.format(instance.author.id, filename)
-
-    def deconstruct(self):
-        return 'apps.posts.models.UploadVideoTo', [self.name], {}
-
-
-class UploadImageTo:
-    def __init__(self, name):
-        self.name = name
-
-    def __call__(self, instance, filename):
-        return '{}/posts/{}'.format(instance.author.id, filename)
-
-    def deconstruct(self):
-        return 'apps.posts.models.UploadImageTo', [self.name], {}
-
-
-class UploadFileTo:
-    def __init__(self, name):
-        self.name = name
-
-    def __call__(self, instance, filename):
-        return '{}/posts/{}'.format(instance.author.id, filename)
-
-    def deconstruct(self):
-        return 'apps.posts.models.UploadFileTo', [self.name], {}
 
 
 class Post(BaseModel):
