@@ -44,24 +44,32 @@ class AssetUploadCompleteView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        asset_id = request.data.get('asset_id', None)
-        if not asset_id:
-            return Response({'asset_id': 'This field is required'}, status=status.HTTP_400_BAD_REQUEST)
+        asset_id_list = request.data.get('asset_id_list', None)
+        if not asset_id_list:
+            return Response({'asset_id_list': 'This field is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if len(asset_id_list) == 0:
+            return Response({'asset_id_list': 'No ids in list'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            asset = Asset.objects.get(id=asset_id, post__author=request.user)
+            for index, asset_id in enumerate(asset_id_list):
+                asset = Asset.objects.get(id=asset_id, post__author=request.user)
 
-            try:
-                s3_client.head_object(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Key=asset.file_key)
+                try:
+                    s3_client.head_object(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Key=asset.file_key)
 
-                # If no error, file exists
-                asset.is_completed = True
-                asset.save()
+                    # If no error, file exists
+                    asset.is_completed = True
+                    asset.save()
 
-                return Response({"status": "verified"}, status=200)
-            except botocore.exceptions.ClientError:
-                return Response({"error": "File not found in S3"}, status=404)
+                    if index == len(asset_id_list) - 1:
+                        post = asset.post
+                        post.is_active = True
+                        post.save()
 
+                except botocore.exceptions.ClientError:
+                    return Response({"error": "File not found in S3"}, status=404)
+            return Response({"status": "verified"}, status=200)
         except Asset.DoesNotExist:
             return Response({"error": "Asset not found"}, status=404)
 

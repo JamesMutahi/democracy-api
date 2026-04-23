@@ -1,9 +1,8 @@
 from django.contrib.auth import get_user_model
-from django.contrib.sites.models import Site
 from rest_framework import serializers
 
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
-from apps.petition.models import Petition, PetitionClick
+from apps.petition.models import Petition
 from apps.users.serializers import UserSerializer
 
 User = get_user_model()

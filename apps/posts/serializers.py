@@ -129,7 +129,7 @@ class PostSerializer(serializers.ModelSerializer):
     is_downvoted = serializers.SerializerMethodField(read_only=True)
     upvotes = serializers.SerializerMethodField(read_only=True)
     downvotes = serializers.SerializerMethodField(read_only=True)
-    assets = AssetSerializer(many=True, required=False, allow_null=True)
+    assets = AssetSerializer(many=True, default=[])
 
     class Meta:
         model = Post
@@ -206,7 +206,7 @@ class PostSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_replies(obj):
-        count = obj.replies.filter(status='published').count()
+        count = obj.replies.filter(is_active=True, status='published').count()
         return count
 
     @staticmethod
@@ -214,11 +214,13 @@ class PostSerializer(serializers.ModelSerializer):
         return obj.get_reposts_count()
 
     def get_is_reposted(self, obj):
-        is_reposted = obj.reposts.filter(author=self.context['scope']['user'], reply_to=None, body='').exists()
+        is_reposted = obj.reposts.filter(is_active=True, author=self.context['scope']['user'], reply_to=None,
+                                         body='').exists()
         return is_reposted
 
     def get_is_quoted(self, obj):
-        is_quoted = obj.reposts.filter(author=self.context['scope']['user'], reply_to=None).exclude(body='').exists()
+        is_quoted = obj.reposts.filter(is_active=True, author=self.context['scope']['user'], reply_to=None).exclude(
+            body='').exists()
         return is_quoted
 
     @staticmethod
@@ -272,6 +274,7 @@ class PostSerializer(serializers.ModelSerializer):
         if validated_data.get('section_id'):
             validated_data['section'] = validated_data.pop('section_id')
 
+        # Tagged users
         if validated_data.get('tags'):
             validated_data['tagged_users'] = get_tagged(validated_data.pop('tags'))
 
@@ -293,6 +296,8 @@ class PostSerializer(serializers.ModelSerializer):
 
         # Calling create method with new validated data
         assets = validated_data.pop('assets')
+        if len(assets) > 0:
+            validated_data['is_active'] = False
         post = super().create(validated_data)
         for asset in assets:
             # Create a unique key for S3 to avoid collisions
