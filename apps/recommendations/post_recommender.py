@@ -76,7 +76,7 @@ class PostRecommender:
             # Simple but effective trending score
             trending_score=Coalesce(
                 ExpressionWrapper(
-                    Count('likes') * Value(3.0) +  # Likes are strongest signal
+                    Count('likes') * Value(3.0) +  # Likes are the strongest signal
                     Count('bookmarks') * Value(3.0) +
                     Count('clicks') * Value(2.0) +
                     Count('views') * Value(1.0) +

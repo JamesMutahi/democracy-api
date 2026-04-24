@@ -1,17 +1,15 @@
-import uuid
-
-import boto3
+import botocore
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.utils import timezone
+from django.db.models.signals import post_save
 from rest_framework import generics, permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.chat.models import Asset
+from apps.chat.models import Asset, Message
 from apps.chat.serializers import MessageSerializer, ChatSerializer, get_or_create_direct_chat
-from apps.utils.presigned_url import generate_presigned_url
+from apps.utils.presigned_url import generate_presigned_url, s3_client
 
 User = get_user_model()
 
@@ -26,40 +24,23 @@ class MessageCreateView(generics.CreateAPIView):
         return context
 
     def create(self, request, *args, **kwargs):
-        # 1. Validate and save the Message first
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        post = serializer.save(author=self.request.user)
+        message = serializer.save()
 
-        # 2. Get the list of files the user wants to upload
-        # Expected format: [{"name": "cat.jpg", "type": "image/jpeg", "size": 1024}, ...]
-        files_data = request.data.get('assets', [])
         upload_data = []
 
-        for file_info in files_data:
-            # Create a unique key for S3 to avoid collisions
-            file_extension = file_info['name'].split('.')[-1]
-            unique_key = f"posts/{post.id}/{uuid.uuid4()}.{file_extension}"
-
-            # 3. Create the Asset record in the database
-            Asset.objects.create(
-                post=post,
-                file_key=unique_key,
-                name=file_info['name'],
-                file_size=file_info['size'],
-                content_type=file_info['type']
-            )
-
-            # 4. Generate the upload link for this specific file
-            presigned_post = generate_presigned_url(unique_key, file_info['type'])
+        for asset in message.assets.all():
+            # Generate the upload link for this specific file
+            link = generate_presigned_url(asset.file_key, asset.content_type)
             upload_data.append({
-                "name": file_info['name'],
-                "instructions": presigned_post
+                "asset_id": asset.id,
+                "name": asset.name,
+                "url": link
             })
 
-        # 5. Return the Post data + all upload instructions
         return Response({
-            "post": serializer.data,
+            "message": serializer.data,
             "uploads": upload_data
         }, status=status.HTTP_201_CREATED)
 
@@ -67,24 +48,32 @@ class MessageCreateView(generics.CreateAPIView):
 class AssetUploadCompleteView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    def post(self, request, asset_id):
+    def post(self, request):
+        asset_id_list = request.data.get('asset_id_list', None)
+        if not asset_id_list:
+            return Response({'asset_id_list': 'This field is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if len(asset_id_list) == 0:
+            return Response({'asset_id_list': 'No ids in list'}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            asset = Asset.objects.get(id=asset_id, post__author=request.user)
+            for index, asset_id in enumerate(asset_id_list):
+                asset = Asset.objects.get(id=asset_id, message__author=request.user)
 
-            # Verify file exists in S3 using boto3
-            s3 = boto3.client('s3')
-            try:
-                s3.head_object(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Key=asset.file_key)
+                try:
+                    s3_client.head_object(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Key=asset.file_key)
 
-                # If no error, file exists
-                asset.is_completed = True
-                asset.uploaded_at = timezone.now()
-                asset.save()
+                    # If no error, file exists
+                    asset.is_completed = True
+                    asset.save()
 
-                return Response({"status": "verified"}, status=200)
-            except:
-                return Response({"error": "File not found in S3"}, status=404)
+                    if index == len(asset_id_list) - 1:
+                        print(index)
+                        post_save.send(sender=Message, instance=asset.message, created=False)
 
+                except botocore.exceptions.ClientError:
+                    return Response({"error": "File not found in S3"}, status=404)
+            return Response({"status": "verified"}, status=200)
         except Asset.DoesNotExist:
             return Response({"error": "Asset not found"}, status=404)
 
@@ -102,6 +91,7 @@ def direct_message(request):
     user = request.user
     context = {'scope': {'user': user}}
     created_chats = []  # Store Chat model instances
+    upload_data = []
 
     for user_id in user_ids:
         try:
@@ -120,10 +110,22 @@ def direct_message(request):
         # Create the message
         serializer = MessageSerializer(data=message_data, context=context)
         serializer.is_valid(raise_exception=True)
-        serializer.save()  # user is automatically set in MessageSerializer.create()
+        message = serializer.save()  # user is automatically set in MessageSerializer.create()
 
         created_chats.append(chat)
 
+        for asset in message.assets.all():
+            # Generate the upload link
+            link = generate_presigned_url(asset.file_key, asset.content_type)
+            upload_data.append({
+                "asset_id": asset.id,
+                "name": asset.name,
+                "url": link
+            })
+
     # Return serialized chats
     chat_serializer = ChatSerializer(created_chats, many=True, context=context)
-    return Response(chat_serializer.data, status=status.HTTP_201_CREATED)
+    return Response({
+        "chats": chat_serializer.data,
+        "uploads": upload_data
+    }, status=status.HTTP_201_CREATED)
