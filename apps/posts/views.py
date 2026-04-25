@@ -15,7 +15,7 @@ class PostCreateView(generics.CreateAPIView):
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
-        context['scope'] = {'user': self.request.user}
+        context["scope"] = {"user": self.request.user}
         return context
 
     def create(self, request, *args, **kwargs):
@@ -28,35 +28,34 @@ class PostCreateView(generics.CreateAPIView):
         for asset in post.assets.all():
             # Generate the upload link for this specific file
             link = generate_presigned_url(asset.file_key, asset.content_type)
-            upload_data.append({
-                "asset_id": asset.id,
-                "name": asset.name,
-                "url": link
-            })
+            upload_data.append({"asset_id": asset.id, "name": asset.name, "url": link})
 
-        return Response({
-            "post": serializer.data,
-            "uploads": upload_data
-        }, status=status.HTTP_201_CREATED)
+        return Response(
+            {"post": serializer.data, "uploads": upload_data},
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class AssetUploadCompleteView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        asset_id_list = request.data.get('asset_id_list', None)
+        data = request.data.copy()
+        asset_id_list = data.pop("asset_id_list", [])
         if not asset_id_list:
-            return Response({'asset_id_list': 'This field is required'}, status=status.HTTP_400_BAD_REQUEST)
-
-        if len(asset_id_list) == 0:
-            return Response({'asset_id_list': 'No ids in list'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"asset_id_list": "This field is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
             for index, asset_id in enumerate(asset_id_list):
                 asset = Asset.objects.get(id=asset_id, post__author=request.user)
 
                 try:
-                    s3_client.head_object(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Key=asset.file_key)
+                    s3_client.head_object(
+                        Bucket=settings.AWS_STORAGE_BUCKET_NAME, Key=asset.file_key
+                    )
 
                     # If no error, file exists
                     asset.is_completed = True
@@ -88,9 +87,9 @@ class IsOwnerOrReadOnly(permissions.BasePermission):
 class PostUpdateView(generics.UpdateAPIView):
     permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
     serializer_class = PostSerializer
-    queryset = Post.objects.filter(status='draft')
+    queryset = Post.objects.filter(status="draft")
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
-        context['scope'] = {'user': self.request.user}
+        context["scope"] = {"user": self.request.user}
         return context
