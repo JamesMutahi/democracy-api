@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.chat.models import Asset, Message
-from apps.chat.serializers import MessageSerializer, ChatSerializer, get_or_create_direct_chat
+from apps.chat.serializers import MessageSerializer, ChatSerializer, get_or_create_direct_chat, AssetSerializer
 from apps.utils.presigned_url import generate_presigned_url, s3_client
 
 User = get_user_model()
@@ -56,6 +56,7 @@ class AssetUploadCompleteView(APIView):
         if len(asset_id_list) == 0:
             return Response({'asset_id_list': 'No ids in list'}, status=status.HTTP_400_BAD_REQUEST)
 
+        assets = []
         try:
             for index, asset_id in enumerate(asset_id_list):
                 asset = Asset.objects.get(id=asset_id, message__author=request.user)
@@ -66,14 +67,14 @@ class AssetUploadCompleteView(APIView):
                     # If no error, file exists
                     asset.is_completed = True
                     asset.save()
-
-                    if index == len(asset_id_list) - 1:
-                        print(index)
-                        post_save.send(sender=Message, instance=asset.message, created=False)
+                    assets.append(asset)
 
                 except botocore.exceptions.ClientError:
                     return Response({"error": "File not found in S3"}, status=404)
-            return Response({"status": "verified"}, status=200)
+            context = {'scope': {'user': request.user}}
+            post_save.send(sender=Message, instance=assets[0].message, created=False)
+            serializer = AssetSerializer(assets, many=True, context=context)
+            return Response(serializer.data, status=200)
         except Asset.DoesNotExist:
             return Response({"error": "Asset not found"}, status=404)
 
