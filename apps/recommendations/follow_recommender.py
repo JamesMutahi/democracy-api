@@ -72,13 +72,14 @@ class FollowRecommender:
                 output_field=FloatField()
             ),
 
-            # Simple engagement score (likes + clicks on this user's posts)
-            engagement_score=Case(
-                When(
-                    Q(liked_posts_through__user=self.user) | Q(clicked_posts_through__user=self.user),
-                    then=Value(0.70)
+            # Engagement score: self.user's interactions with the candidate's posts
+            engagement_score=Coalesce(
+                ExpressionWrapper(
+                    Count('posts', filter=Q(posts__likes=self.user)) * Value(0.6) +
+                    Count('posts', filter=Q(posts__clicks=self.user)) * Value(0.4),
+                    output_field=FloatField()
                 ),
-                default=Value(0.0),
+                Value(0.0),
                 output_field=FloatField()
             ),
 
