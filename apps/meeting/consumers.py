@@ -49,7 +49,6 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
         return {
             'data': instance.pk,
             'action': action.value,
-            'request_id': 'meetings',
             'pk': instance.pk,
             'response_status': 201 if action.value == 'create' else 204 if action.value == 'delete' else 200
         }
