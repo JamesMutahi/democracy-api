@@ -20,7 +20,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "project.settings")
 # is populated before importing code that may import ORM models.
 django_asgi_app = get_asgi_application()
 
-from apps.utils.token_middleware import TokenAuthMiddleware
+from django_channels_jwt.middleware import JwtAuthMiddlewareStack
 from apps.users.consumers import UserConsumer
 from apps.posts.consumers import PostConsumer
 from apps.chat.consumers import ChatConsumer
@@ -39,7 +39,7 @@ application = ProtocolTypeRouter({
     # WebSocket handler
     "websocket":
         AllowedHostsOriginValidator(
-            TokenAuthMiddleware(URLRouter([
+            JwtAuthMiddlewareStack(URLRouter([
                 path("ws/", AsyncJsonWebsocketDemultiplexer.as_asgi(
                     users=UserConsumer.as_asgi(),
                     posts=PostConsumer.as_asgi(),

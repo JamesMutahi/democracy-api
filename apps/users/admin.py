@@ -1,22 +1,18 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from rest_framework.authtoken.models import Token
 
 from apps.notification.models import Preferences
 from apps.users.forms import CustomUserChangeForm, CustomUserCreationForm
 from apps.users.models import CustomUser
 
 
-class TokenInline(admin.TabularInline):
-    model = Token
-    classes = ('grp-collapse grp-closed',)
-
 class PreferencesInline(admin.TabularInline):
     model = Preferences
     classes = ('grp-collapse grp-closed',)
 
+
 class CustomUserAdmin(UserAdmin):
-    inlines = [TokenInline, PreferencesInline]
+    inlines = [PreferencesInline]
     add_form = CustomUserCreationForm
     form = CustomUserChangeForm
     model = CustomUser

@@ -18,18 +18,24 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include
+from django_channels_jwt.views import AsgiValidateTokenView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView, TokenBlacklistView
 
 from apps.recommendations.admin import recommendation_admin
 
 urlpatterns = [
     path('grappelli/', include('grappelli.urls')),
-    path('auth/', include('apps.users.urls')),
+    path('user/', include('apps.users.urls')),
     path('post/', include('apps.posts.urls')),
     path('chat/', include('apps.chat.urls')),
     path('petition/', include('apps.petition.urls')),
     path('recommendation-admin/', recommendation_admin.urls),
     path('admin/', admin.site.urls),
     path('nested_admin/', include('nested_admin.urls')),
+    path('auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('auth/logout/', TokenBlacklistView.as_view(), name='token_blacklist'),
+    path('ticket/', AsgiValidateTokenView.as_view()),
 ]
 
 if settings.DEBUG:
