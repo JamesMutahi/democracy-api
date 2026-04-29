@@ -31,6 +31,8 @@ services:
       - db
       - redis
     environment:
+      SENTRY_DSN: ${SENTRY_DSN}
+      SENTRY_RELEASE: ${SENTRY_RELEASE}
       SECRET_KEY: ${SECRET_KEY}
       DEBUG: ${DEBUG}
       MODE: ${MODE}
@@ -53,6 +55,8 @@ services:
     volumes:
       - .:/app
     environment:
+      SENTRY_DSN: ${SENTRY_DSN}
+      SENTRY_RELEASE: ${SENTRY_RELEASE}
       SECRET_KEY: ${SECRET_KEY}
       DEBUG: ${DEBUG}
       MODE: ${MODE}
@@ -77,6 +81,8 @@ services:
     volumes:
       - .:/app
     environment:
+      SENTRY_DSN: ${SENTRY_DSN}
+      SENTRY_RELEASE: ${SENTRY_RELEASE}
       SECRET_KEY: ${SECRET_KEY}
       DEBUG: ${DEBUG}
       MODE: ${MODE}
@@ -102,6 +108,8 @@ services:
     ports:
       - "5555:5555"
     environment:
+      SENTRY_DSN: ${SENTRY_DSN}
+      SENTRY_RELEASE: ${SENTRY_RELEASE}
       SECRET_KEY: ${SECRET_KEY}
       DEBUG: ${DEBUG}
       MODE: ${MODE}

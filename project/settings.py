@@ -13,7 +13,9 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+import sentry_sdk
 from decouple import config, Csv
+from sentry_sdk.integrations.django import DjangoIntegration
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -30,6 +32,15 @@ DEBUG = config('DEBUG', cast=bool, default=True)
 MODE = config('MODE', default="dev")
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv())
+
+# Sentry
+sentry_sdk.init(
+    dsn=config('SENTRY_DSN'),
+    integrations=[DjangoIntegration()],
+    traces_sample_rate=0.2,
+    environment=MODE,
+    release=config("SENTRY_RELEASE"),
+)
 
 if os.name == 'nt':
     OSGEO4W = r"C:\OSGeo4W"
@@ -84,7 +95,7 @@ INSTALLED_APPS = [
     'storages',
 ]
 
-if DEBUG and MODE == "dev":
+if DEBUG and MODE == "development":
     DATA_UPLOAD_MAX_NUMBER_FIELDS = None
 
 AUTH_USER_MODEL = 'users.CustomUser'
