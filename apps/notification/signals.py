@@ -77,7 +77,10 @@ def on_interaction(sender, instance, action, pk_set, **kwargs):
 
 @receiver(post_delete, sender=Notification)
 @receiver(post_delete, sender=PostLike)
+@receiver(post_delete, sender=Message)
 def notify_on_notification_deletion(sender, instance, **kwargs):
+    if sender == Message:
+        tasks.delete_notification_on_message_deletion.delay(instance.id, instance.user.id)
     if sender == PostLike:
         tasks.delete_notification_on_unlike.delay(instance.user.id, instance.post.id)
     if sender == Notification:

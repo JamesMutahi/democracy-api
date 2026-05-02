@@ -161,8 +161,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
     @action()
     async def create(self, data: dict, request_id: str, **kwargs):
         response, status = await super().create(data, **kwargs)
-        if isinstance(response, dict) and "id" in response:
-            await self.meeting_activity.subscribe(pk=response["id"], request_id=request_id)
+        await self.meeting_activity.subscribe(pk=response["id"], request_id=request_id)
         return response, status
 
     @action()
@@ -173,25 +172,20 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
 
     # ====================== Join / Leave ======================
     @action()
-    async def join(self, pk: int, **kwargs):
-        result = await self.perform_join(pk=pk)
-        if isinstance(result, dict) and result.get('error'):
-            return await self.reply(
-                action='join',
-                errors=[result['error']],
-                status=result.get('status', 403)
-            )
+    async def subscribe(self, pk: int, request_id: str, **kwargs):
+        await self.meeting_activity.subscribe(pk=pk, request_id=request_id)
+        result = await self.add_listener(pk=pk)
         return result, 200
 
     @database_sync_to_async
-    def perform_join(self, pk: int):
+    def add_listener(self, pk: int):
         try:
             meeting = Meeting.objects.select_related('county', 'constituency', 'ward').get(pk=pk)
         except Meeting.DoesNotExist:
             return {'error': 'Meeting not found', 'status': 404}
 
-        if not self._user_can_access_meeting(meeting):
-            return {'error': 'You are not a registered voter in the region', 'status': 403}
+        # if not self._user_can_access_meeting(meeting):
+        #     return {'error': 'You are not a registered voter in the region', 'status': 403}
 
         meeting.listeners.add(self.scope['user'])
         return MeetingSerializer(meeting, context={'scope': self.scope}).data
@@ -221,16 +215,6 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
         if meeting.ward and meeting.ward != user.ward:
             return False
         return True
-
-    # ====================== Retrieve & Subscription ======================
-    @action()
-    async def retrieve(self, request_id: str, **kwargs):
-        response, status = await super().retrieve(**kwargs)
-        if isinstance(response, dict):
-            pk = response.get("id")
-            if pk:
-                await self.meeting_activity.subscribe(pk=pk, request_id=request_id)
-        return response, status
 
     # ====================== Permission-Protected Actions ======================
     @action()

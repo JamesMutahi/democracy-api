@@ -392,3 +392,8 @@ def notify_on_petition_status_change(petition_id: int, is_open: bool):
             petition=petition,
         )
         send_notification_create(notification)
+
+
+@shared_task
+def delete_notification_on_message_deletion(message_id):
+    Notification.objects.filter(is_read=False, message_id=message_id).delete()
