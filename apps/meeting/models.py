@@ -24,8 +24,8 @@ class Meeting(BaseModel):
     constituency = models.ForeignKey(Constituency, on_delete=models.PROTECT, null=True, blank=True,
                                      related_name='meetings')
     ward = models.ForeignKey(Ward, on_delete=models.PROTECT, null=True, blank=True, related_name='meetings')
-    speakers = models.ManyToManyField(User, blank=True, related_name='speaking_in')
-    listeners = models.ManyToManyField(User, blank=True, related_name='listening_to')
+    speakers = models.ManyToManyField(User, blank=True, related_name='speaker_in')
+    participants = models.ManyToManyField(User, blank=True, related_name='meetings_participating_in')
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
     is_active = models.BooleanField(_('active'), default=True)

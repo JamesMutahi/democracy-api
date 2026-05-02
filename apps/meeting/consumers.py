@@ -4,8 +4,8 @@ from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import CreateModelMixin, ListModelMixin, PatchModelMixin, RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
-from rest_framework.exceptions import PermissionDenied
 
+from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
 from apps.meeting.models import Meeting
 from apps.meeting.serializers import MeetingSerializer
 from apps.utils.list_paginator import list_paginator
@@ -26,14 +26,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
     # ====================== Real-time Observer ======================
     @model_observer(Meeting, many_to_many=True)
     async def meeting_activity(self, message, **kwargs):
-        if message['action'] != 'delete':
-            message['data'] = await self.get_meeting_serializer_data(pk=message['data'])
         await self.send_json(message)
-
-    @database_sync_to_async
-    def get_meeting_serializer_data(self, pk: int):
-        meeting = Meeting.objects.select_related('host', 'county', 'constituency', 'ward').get(pk=pk)
-        return MeetingSerializer(meeting, context={'scope': self.scope}).data
 
     @meeting_activity.groups_for_signal
     def meeting_activity_groups(self, instance: Meeting, **kwargs):
@@ -47,14 +40,22 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
     @meeting_activity.serializer
     def meeting_activity_serializer(self, instance: Meeting, action, **kwargs):
         return {
-            'data': instance.pk,
+            'data': {} if action == 'delete' else {
+                'title': instance.title,
+                'description': instance.description,
+                'county': CountySerializer(instance.county).data if instance.county else None,
+                'constituency': ConstituencySerializer(instance.constituency).data if instance.constituency else None,
+                'ward': WardSerializer(instance.ward).data if instance.ward else None,
+                'participants_count': instance.participants.count(),
+                'is_active': instance.is_active,
+            },
             'action': action.value,
             'pk': instance.pk,
             'response_status': 201 if action.value == 'create' else 204 if action.value == 'delete' else 200
         }
 
     async def disconnect(self, code):
-        await database_sync_to_async(self.scope['user'].listening_to.clear)()
+        await database_sync_to_async(self.scope['user'].meetings_participating_in.clear)()
         await self.meeting_activity.unsubscribe()
         await super().disconnect(code)
 
@@ -174,11 +175,11 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
     @action()
     async def subscribe(self, pk: int, request_id: str, **kwargs):
         await self.meeting_activity.subscribe(pk=pk, request_id=request_id)
-        result = await self.add_listener(pk=pk)
+        result = await self.add_participant(pk=pk)
         return result, 200
 
     @database_sync_to_async
-    def add_listener(self, pk: int):
+    def add_participant(self, pk: int):
         try:
             meeting = Meeting.objects.select_related('county', 'constituency', 'ward').get(pk=pk)
         except Meeting.DoesNotExist:
@@ -187,20 +188,20 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
         # if not self._user_can_access_meeting(meeting):
         #     return {'error': 'You are not a registered voter in the region', 'status': 403}
 
-        meeting.listeners.add(self.scope['user'])
+        meeting.participants.add(self.scope['user'])
         return MeetingSerializer(meeting, context={'scope': self.scope}).data
 
     @action()
     async def leave(self, pk: int, request_id: str, **kwargs):
-        await self.remove_listener(pk=pk)
+        await self.remove_participant(pk=pk)
         await self.meeting_activity.unsubscribe(pk=pk, request_id=request_id)
         return {'pk': pk}, 200
 
     @database_sync_to_async
-    def remove_listener(self, pk: int):
+    def remove_participant(self, pk: int):
         try:
             meeting = Meeting.objects.get(pk=pk)
-            meeting.listeners.remove(self.scope['user'])
+            meeting.participants.remove(self.scope['user'])
         except Meeting.DoesNotExist:
             pass
 
@@ -218,7 +219,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
 
     # ====================== Permission-Protected Actions ======================
     @action()
-    async def patch(self, pk: int, **kwargs):   # Override to add explicit check
+    async def patch(self, pk: int, **kwargs):  # Override to add explicit check
         meeting = await database_sync_to_async(self.get_object)(pk=pk)
         if meeting.host_id != self.scope['user'].id:
             return await self.reply(

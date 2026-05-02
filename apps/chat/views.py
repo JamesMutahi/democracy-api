@@ -113,7 +113,7 @@ def direct_message(request):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Get or create chat (now supports self-chat)
+        # Get or create chat
         chat = get_or_create_direct_chat(user, target_user)
 
         # Prepare message data
@@ -123,9 +123,7 @@ def direct_message(request):
         # Create the message
         serializer = MessageSerializer(data=message_data, context=context)
         serializer.is_valid(raise_exception=True)
-        message = (
-            serializer.save()
-        )  # user is automatically set in MessageSerializer.create()
+        message = serializer.save()
 
         created_chats.append(chat)
 

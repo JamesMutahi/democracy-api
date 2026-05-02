@@ -28,7 +28,8 @@ def generate_agora_token(request):
         try:
             meeting = Meeting.objects.get(pk=meeting_id)
             # Role: 1 = Broadcaster (can publish audio/video), 2 = Audience
-            role = 1 if meeting.host_id == user_id else 2
+            is_speaker = meeting.speakers.filter(id=user_id).exists()
+            role = 1 if (meeting.host_id == user_id or is_speaker) else 2
         except Meeting.DoesNotExist:
             return Response({'error': 'Meeting not found'}, status=404)
 

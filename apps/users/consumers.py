@@ -112,9 +112,9 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         data = self.users_paginator(users, page, page_size)
         return data, 200
 
-    # ====================== Retrieve & Subscription ======================
+    # ====================== Subscription ======================
     @action()
-    async def retrieve(self, request_id: str, **kwargs):
+    async def subscribe(self, request_id: str, **kwargs):
         response, status = await super().retrieve(**kwargs)
         pk = response.get("id")
         if pk:

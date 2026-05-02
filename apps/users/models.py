@@ -19,7 +19,7 @@ class UploadImageTo:
     def __call__(self, instance, filename):
         ext = filename.split('.')[-1]
         filename = f"{now().strftime('%Y%m%d%H%M%S')}.{ext}"
-        return f'users/{instance.user.id}/{self.name}/{filename}'
+        return f'users/{instance.id}/{self.name}/{filename}'
 
     def deconstruct(self):
         return 'apps.users.models.UploadImageTo', [self.name], {}
