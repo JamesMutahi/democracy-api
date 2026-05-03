@@ -8,6 +8,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from apps.meeting.models import Meeting
+from apps.notification.tasks import create_live_stream_notifications
 
 APP_ID = config('AGORA_ID')
 APP_CERTIFICATE = config('AGORA_CERTIFICATE')
@@ -46,6 +47,9 @@ def generate_agora_token(request):
             role=role,
             privilegeExpiredTs=privilege_expired_ts
         )
+
+        if meeting.is_live_stream and meeting.host_id == user_id:
+            create_live_stream_notifications.delay(meeting_id)
 
         return Response({
             'app_id': APP_ID,

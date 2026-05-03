@@ -38,6 +38,7 @@ class MeetingSerializer(serializers.ModelSerializer):
             'speaker_ids',
             'participants',
             'participants_count',
+            'is_live_stream',
             'start_time',
             'end_time',
             'is_active',
@@ -56,6 +57,7 @@ class MeetingSerializer(serializers.ModelSerializer):
         return instance.participants.count()
 
     def create(self, validated_data):
+        validated_data['host'] = self.context['scope']['user']
         speaker_ids = validated_data.pop('speaker_ids', [])
         meeting = Meeting.objects.create(**validated_data)
         if speaker_ids:

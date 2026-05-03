@@ -79,6 +79,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
             queryset = queryset.exclude(id__in=previous_meetings)
 
         if action == 'list':
+            queryset = queryset.filter(is_live_stream=False)
             # Search
             if search_term:
                 queryset = queryset.filter(
@@ -158,12 +159,6 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
             'previous_meetings': kwargs.get('previous_meetings'),
             'has_next': page_obj.has_next()
         }
-
-    @action()
-    async def create(self, data: dict, request_id: str, **kwargs):
-        response, status = await super().create(data, **kwargs)
-        await self.meeting_activity.subscribe(pk=response["id"], request_id=request_id)
-        return response, status
 
     @action()
     async def user_meetings(self, request_id: str, page_size=None, **kwargs):

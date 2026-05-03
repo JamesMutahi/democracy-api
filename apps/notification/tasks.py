@@ -139,8 +139,10 @@ def create_petition_notifications_on_create(petition_id):
 @shared_task
 def create_meeting_notifications_on_create(meeting_id):
     meeting = Meeting.objects.get(id=meeting_id)
+    if meeting.is_live_stream:
+        return
     users = User.objects.filter(
-        preferences__in=meeting.host.followers_notified.all(),
+        notifiers=meeting.host,
         preferences__allow_notifications=True
     ).exclude(muted=meeting.host)
     if meeting.county:
@@ -153,6 +155,30 @@ def create_meeting_notifications_on_create(meeting_id):
         notification = Notification.objects.create(
             recipient=user,
             text=f'New meeting from {meeting.host}',
+            meeting=meeting,
+        )
+        send_notification_create(notification)
+
+
+@shared_task
+def create_live_stream_notifications(meeting_id):
+    meeting = Meeting.objects.get(id=meeting_id)
+    if not meeting.is_live_stream:
+        return
+    users = User.objects.filter(
+        notifiers=meeting.host,
+        preferences__allow_notifications=True
+    ).exclude(muted=meeting.host)
+    if meeting.county:
+        users = users.filter(county=meeting.county)
+        if meeting.constituency:
+            users = users.filter(constituency=meeting.constituency)
+            if meeting.ward:
+                users = users.filter(ward=meeting.ward)
+    for user in users:
+        notification = Notification.objects.create(
+            recipient=user,
+            text=f'{meeting.host} started a live stream',
             meeting=meeting,
         )
         send_notification_create(notification)
