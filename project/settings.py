@@ -246,6 +246,9 @@ CACHES = {
     }
 }
 
+REDIS_URL = "redis://redis:6379"
+REDIS_POOL_MAX_CONNECTIONS = 100
+
 # Celery Configuration Options
 CELERY_TIMEZONE = 'Africa/Nairobi'
 CELERY_TASK_TRACK_STARTED = True
@@ -274,5 +277,38 @@ STORAGES = {
     # },
     "staticfiles": {
         "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'apps.meeting': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+        'django.channels': {
+            'handlers': ['console'],
+            'level': 'INFO',
+        },
+        '': {  # root logger
+            'handlers': ['console'],
+            'level': 'INFO',
+        },
     },
 }

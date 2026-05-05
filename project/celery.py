@@ -20,6 +20,15 @@ app.autodiscover_tasks()
 app.conf.beat_schedule = {
     'refresh-follow-recommendations-every-hour': {
         'task': 'apps.recommendations.tasks.refresh_all_active_users',
-        'schedule': crontab(hour=1),
+        'schedule': crontab(hour='*/1'),  # Every 1 hour
+    },
+    'cleanup-meeting-participants-every-5-min': {
+        'task': 'apps.meeting.tasks.cleanup_meeting_participants',
+        'schedule': crontab(minute='*/5'),  # Every 5 minutes
+        # 'schedule': timedelta(minutes=5),       # Alternative
+    },
+    'daily-meeting-cleanup': {
+        'task': 'apps.meeting.tasks.cleanup_meeting_participants',
+        'schedule': crontab(hour=3, minute=0),  # Every day at 3:00 AM
     },
 }

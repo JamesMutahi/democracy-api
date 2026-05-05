@@ -25,7 +25,6 @@ class Meeting(BaseModel):
                                      related_name='meetings')
     ward = models.ForeignKey(Ward, on_delete=models.PROTECT, null=True, blank=True, related_name='meetings')
     speakers = models.ManyToManyField(User, blank=True, related_name='speaker_in')
-    participants = models.ManyToManyField(User, blank=True, related_name='meetings_participating_in')
     is_live_stream = models.BooleanField(default=False)
     start_time = models.DateTimeField(blank=True, null=True)
     end_time = models.DateTimeField(blank=True, null=True)

@@ -1,3 +1,5 @@
+import logging
+
 from channels.db import database_sync_to_async
 from django.db.models import QuerySet, Q
 from djangochannelsrestframework.decorators import action
@@ -5,10 +7,12 @@ from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import CreateModelMixin, ListModelMixin, PatchModelMixin, RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
 
-from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
 from apps.meeting.models import Meeting
 from apps.meeting.serializers import MeetingSerializer
+from apps.meeting.services import MeetingParticipantService
 from apps.utils.list_paginator import list_paginator
+
+logger = logging.getLogger(__name__)
 
 
 class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer):
@@ -39,25 +43,32 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
 
     @meeting_activity.serializer
     def meeting_activity_serializer(self, instance: Meeting, action, **kwargs):
+        if action == 'delete':
+            return {}
         return {
-            'data': {} if action == 'delete' else {
-                'title': instance.title,
-                'description': instance.description,
-                'county': CountySerializer(instance.county).data if instance.county else None,
-                'constituency': ConstituencySerializer(instance.constituency).data if instance.constituency else None,
-                'ward': WardSerializer(instance.ward).data if instance.ward else None,
-                'participants_count': instance.participants.count(),
-                'is_active': instance.is_active,
-            },
+            'data': MeetingSerializer(instance, context={"scope": {"user": instance.host}}).data,
             'action': action.value,
             'pk': instance.pk,
             'response_status': 201 if action.value == 'create' else 204 if action.value == 'delete' else 200
         }
 
-    async def disconnect(self, code):
-        await database_sync_to_async(self.scope['user'].meetings_participating_in.clear)()
-        await self.meeting_activity.unsubscribe()
-        await super().disconnect(code)
+    async def websocket_disconnect(self, message):
+        # Overriding [disconnect] method does not catch all disconnection scenarios
+        logger.info(f"🔌 Disconnect called with message: {message} for user {self.scope.get('user')}")
+        try:
+            if self.scope['user'].is_authenticated:
+                user_id = self.scope['user'].id
+                await database_sync_to_async(
+                    MeetingParticipantService.cleanup_user_from_all_meetings
+                )(user_id)
+        except Exception as e:
+            logger.error(f"Error during disconnect cleanup: {e}", exc_info=True)
+
+        try:
+            await self.meeting_activity.unsubscribe()
+        except Exception as e:
+            logger.warning(f"Error unsubscribing observer: {e}")
+        await super().websocket_disconnect(message)
 
     # ====================== Filter with Permissions ======================
     def filter_queryset(self, queryset: QuerySet, **kwargs):
@@ -175,30 +186,18 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
 
     @database_sync_to_async
     def add_participant(self, pk: int):
-        try:
-            meeting = Meeting.objects.select_related('county', 'constituency', 'ward').get(pk=pk)
-        except Meeting.DoesNotExist:
-            return {'error': 'Meeting not found', 'status': 404}
-
-        # if not self._user_can_access_meeting(meeting):
-        #     return {'error': 'You are not a registered voter in the region', 'status': 403}
-
-        meeting.participants.add(self.scope['user'])
+        MeetingParticipantService.user_joined(pk, self.scope['user'].id)
+        meeting = Meeting.objects.select_related('county', 'constituency', 'ward').get(pk=pk)
+        MeetingParticipantService.signal_meeting(meeting)
         return MeetingSerializer(meeting, context={'scope': self.scope}).data
 
     @action()
-    async def leave(self, pk: int, request_id: str, **kwargs):
-        await self.remove_participant(pk=pk)
+    async def unsubscribe(self, pk: int, request_id: str, **kwargs):
+        await database_sync_to_async(MeetingParticipantService.user_left)(pk, self.scope['user'].id)
         await self.meeting_activity.unsubscribe(pk=pk, request_id=request_id)
+        meeting = await database_sync_to_async(self.get_object)(pk=pk)
+        await database_sync_to_async(MeetingParticipantService.signal_meeting)(meeting=meeting)
         return {'pk': pk}, 200
-
-    @database_sync_to_async
-    def remove_participant(self, pk: int):
-        try:
-            meeting = Meeting.objects.get(pk=pk)
-            meeting.participants.remove(self.scope['user'])
-        except Meeting.DoesNotExist:
-            pass
 
     def _user_can_access_meeting(self, meeting: Meeting) -> bool:
         user = self.scope['user']
@@ -233,5 +232,6 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
                 errors=['Only the host can delete this meeting'],
                 status=403
             )
+        await database_sync_to_async(MeetingParticipantService.cleanup_meeting)(pk)
         response, status = await super().delete(**kwargs)
         return response, status

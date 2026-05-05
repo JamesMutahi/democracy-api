@@ -88,23 +88,6 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         data = self.users_paginator(users, page, page_size or self.page_size, last_user)
         return data, 200
 
-    def users_paginator(self, users, page: int, page_size: int, last_user: int = None):
-        if last_user:
-            try:
-                last = User.objects.get(pk=last_user)
-                users = users.filter(name__gt=last.name)
-            except User.DoesNotExist:
-                pass
-
-        page_obj = list_paginator(queryset=users, page=page, page_size=page_size)
-        serializer = UserSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
-
-        return {
-            'results': serializer.data,
-            'last_user': last_user,
-            'has_next': page_obj.has_next()
-        }
-
     @action()
     def recommendations(self, page: int = 1, page_size=page_size, **kwargs):
         recommender = FollowRecommender(self.scope['user'])
@@ -271,6 +254,12 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         data = await self.get_petition_supporters(pk, page, page_size or self.page_size, last_user)
         return data, 200
 
+    @action()
+    async def meeting_participants(self, request_id: str, pk: int, page: int = 1, page_size=None, last_user: int = None,
+                                  **kwargs):
+        data = await self.get_meeting_participants(pk, page, page_size or self.page_size, last_user)
+        return data, 200
+
     # ====================== Private List Helpers ======================
     @database_sync_to_async
     def get_muted_list(self, page: int, page_size: int, last_user: int = None):
@@ -301,6 +290,12 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         users = petition.supporters.all()
         return self.users_paginator(users, page, page_size, last_user)
 
+    @database_sync_to_async
+    def get_meeting_participants(self, pk: int, page: int, page_size: int, last_user: int = None):
+        meeting = Meeting.objects.get(pk=pk)
+        users = meeting.participants.all()
+        return self.users_paginator(users, page, page_size, last_user)
+
     # ====================== Helpers ======================
     def _is_current_user(self, user_id: int) -> bool:
         """Check if the requested user is the currently authenticated user"""
@@ -310,3 +305,21 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         """Signal both current user and target user for real-time updates"""
         post_save.send(sender=User, instance=self.scope['user'], created=False)
         post_save.send(sender=User, instance=user, created=False)
+
+    def users_paginator(self, users, page: int, page_size: int, last_user: int = None):
+        """Paginates users list"""
+        if last_user:
+            try:
+                last = User.objects.get(pk=last_user)
+                users = users.filter(name__gt=last.name)
+            except User.DoesNotExist:
+                pass
+
+        page_obj = list_paginator(queryset=users, page=page, page_size=page_size)
+        serializer = UserSerializer(page_obj.object_list, many=True, context={'scope': self.scope})
+
+        return {
+            'results': serializer.data,
+            'last_user': last_user,
+            'has_next': page_obj.has_next()
+        }
