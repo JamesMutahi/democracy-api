@@ -10,6 +10,7 @@ from djangochannelsrestframework.mixins import RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
 from rest_framework.exceptions import PermissionDenied
 
+from apps.meeting.models import Meeting
 from apps.petition.models import Petition
 from apps.recommendations.follow_recommender import FollowRecommender
 from apps.users.models import ProfileVisit

@@ -1,6 +1,5 @@
 import uuid
 
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.gis.db import models
 from django.db.models import Manager, Max, Q, Exists, OuterRef
@@ -99,6 +98,7 @@ class UploadFileTo:
 
 class Message(BaseModel):
     chat = models.ForeignKey(Chat, on_delete=models.CASCADE, related_name="messages")
+    uuid = models.UUIDField() # ID from client to resolve local DB and server DB
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name="messages")
     text = models.TextField(max_length=500, blank=True)
     post = models.ForeignKey(Post, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')

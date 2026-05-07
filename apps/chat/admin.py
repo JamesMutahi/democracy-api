@@ -8,12 +8,12 @@ class MessageInline(LeafletGeoAdminMixin, admin.TabularInline):
     model = Message
     fieldsets = [
         (None, {
-            'fields': ['id', 'author', 'text', 'post', 'ballot', 'survey', 'petition', 'meeting', 'is_read', 'is_edited',
+            'fields': ['id', 'author', 'uuid', 'text', 'post', 'ballot', 'survey', 'petition', 'meeting', 'is_read', 'is_edited',
                        'is_deleted', 'created_at']}),
     ]
     extra = 0
     classes = ('grp-collapse grp-open',)
-    readonly_fields = ['text', 'created_at']
+    readonly_fields = ['created_at', 'updated_at']
 
 
 @admin.register(Chat)

@@ -111,6 +111,7 @@ class MessageSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'chat',
+            'uuid',
             'author',
             'text',
             'post',
