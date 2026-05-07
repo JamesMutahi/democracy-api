@@ -46,6 +46,28 @@ class MessageCreateView(generics.CreateAPIView):
         )
 
 
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def generate_upload_urls(request):
+    data = request.data.copy()
+    message_id = data.pop("message_id", None)
+    if not message_id:
+        return Response(
+            {"message_id": "This field is required"}, status=status.HTTP_400_BAD_REQUEST
+        )
+    try:
+        message = Message.objects.get(id=message_id)
+    except Message.DoesNotExist:
+        return Response('Message does not exist', status=status.HTTP_404_NOT_FOUND)
+
+    upload_data = []
+    for asset in message.assets.all():
+        # Generate the upload link for this specific file
+        link = generate_presigned_url(asset.file_key, asset.content_type)
+        upload_data.append({"asset_id": asset.id, "name": asset.name, "url": link})
+    return Response(upload_data, status=status.HTTP_200_OK)
+
+
 class AssetUploadCompleteView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
