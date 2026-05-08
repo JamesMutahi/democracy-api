@@ -316,8 +316,7 @@ class PostSerializer(serializers.ModelSerializer):
         if validated_data.get('tags'):
             tagged_users = get_tagged(validated_data.pop('tags'))
             instance.tagged_users.set(tagged_users)
-        super().update(instance, validated_data)
-        return instance
+        return super().update(instance, validated_data)
 
 
 def get_tagged(tags):

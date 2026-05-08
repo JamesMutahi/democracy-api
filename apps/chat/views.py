@@ -4,10 +4,11 @@ from django.contrib.auth import get_user_model
 from django.db.models.signals import post_save
 from rest_framework import generics, permissions, status
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.chat.models import Asset, Message
+from apps.chat.models import Asset, Message, Chat
 from apps.chat.serializers import (
     MessageSerializer,
     ChatSerializer,
@@ -103,6 +104,32 @@ class AssetUploadCompleteView(APIView):
             return Response(serializer.data, status=200)
         except Asset.DoesNotExist:
             return Response({"error": "Asset not found"}, status=404)
+
+class MessageDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [permissions.IsAuthenticated, ]
+    serializer_class = MessageSerializer
+    queryset = Message.objects.all()
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["scope"] = {"user": self.request.user}
+        return context
+
+    def update(self, request, *args, **kwargs):
+        message = Message.objects.get(pk=self.kwargs["pk"])
+        if not request.user == message.author:
+            raise PermissionDenied("You cannot update this message.")
+        response = super().update(request, *args, **kwargs)
+        post_save.send(sender=Chat, instance=message.chat, created=False)
+        return response
+
+    def destroy(self, request, *args, **kwargs):
+        message = Message.objects.get(pk=self.kwargs["pk"])
+        if not request.user == message.author:
+            raise PermissionDenied("You cannot delete this message.")
+        response =  super().destroy(request, *args, **kwargs)
+        post_save.send(sender=Chat, instance=message.chat, created=False)
+        return response
 
 
 @api_view(["POST"])

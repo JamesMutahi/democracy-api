@@ -119,6 +119,14 @@ class Message(BaseModel):
     def __str__(self):
         return f"Message({self.author.username} {self.chat})"
 
+    def delete(self, *args, **kwargs):
+        if self.is_read:
+            self.text = ''
+            self.post = self.ballot = self.survey = self.petition = None
+            self.is_deleted = True
+            self.save()
+        return super(Message, self).delete(*args, **kwargs)
+
 
 class Asset(BaseModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

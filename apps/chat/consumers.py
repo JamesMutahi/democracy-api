@@ -198,45 +198,6 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
             await self.subscribe(pk=pk, request_id=request_id)
         return response, status
 
-    @action()
-    async def delete_message(self, request_id: str, pk: int, **kwargs):
-        message = await self.get_message(pk=pk)
-        if not message:
-            return self.reply(errors=['Not found'], action='delete', request_id=request_id, status=404)
-
-        await self.delete_message_(message)
-        return {}, 204
-
-    @database_sync_to_async
-    def delete_message_(self, message: Message):
-        if self.scope['user'] == message.author:
-            if message.is_read:
-                message.text = ''
-                message.post = message.ballot = message.survey = message.petition = None
-                message.is_deleted = True
-                message.save()
-            else:
-                message.delete()
-        self.signal_chat(message.chat)
-
-    @action()
-    async def edit_message(self, request_id: str, pk: int, **kwargs):
-        message = await self.get_message(pk=pk)
-        if not message:
-            return self.reply(errors=['Not found'], action='update', request_id=request_id, status=404)
-
-        text = kwargs.get('data', {}).get('text')
-        if text is not None:
-            await self.edit_message_(message, text)
-        return {}, 200
-
-    @database_sync_to_async
-    def edit_message_(self, message: Message, text: str):
-        message.text = text
-        message.is_edited = True
-        message.save()
-        self.signal_chat(message.chat)
-
     @database_sync_to_async
     def get_message(self, pk: int):
         return Message.objects.filter(

@@ -135,11 +135,6 @@ class MessageSerializer(serializers.ModelSerializer):
             'updated_at'
         ]
 
-    def validate(self, attrs):
-        if not attrs['chat'].users.contains(self.context['scope']['user']):
-            raise serializers.ValidationError(detail='Not found')
-        return super().validate(attrs)
-
     def create(self, validated_data):
         validated_data['author'] = self.context['scope']['user']
         if validated_data.get('post_id'):
@@ -181,6 +176,10 @@ class MessageSerializer(serializers.ModelSerializer):
             Asset.objects.create(message=message, file_key=unique_key, **asset)
         post_save.send(sender=Chat, instance=message.chat, created=False)
         return message
+
+    def update(self, instance, validated_data):
+        instance.is_edited = True
+        return super().update(instance, validated_data)
 
 
 class ChatSerializer(serializers.ModelSerializer):
