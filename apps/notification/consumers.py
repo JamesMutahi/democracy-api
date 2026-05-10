@@ -7,6 +7,7 @@ from djangochannelsrestframework.mixins import ListModelMixin
 
 from apps.notification.models import Notification, Preferences
 from apps.notification.serializers import NotificationSerializer, PreferencesSerializer
+from apps.utils.throttles import interaction_rate_limit, rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -63,11 +64,18 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         return queryset.filter(recipient=self.scope['user'])
 
     @action()
+    @rate_limit(limit=40, period=60)
+    async def list(self, page_size=None, **kwargs):
+        return await super().list(**kwargs)
+
+    @action()
+    @interaction_rate_limit
     async def mark_as_read(self, pk: int, request_id, **kwargs):
         data = await self.mark_as_read_(pk=pk)
         return await self.reply(data=data, action='update', request_id=request_id, status=200)
 
     @action()
+    @interaction_rate_limit
     def mark_as_read_(self, pk, **kwargs):
         notification = Notification.objects.get(pk=pk)
         notification.is_read = True
@@ -76,12 +84,14 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         return serializer.data
 
     @action()
+    @rate_limit(limit=40, period=60)
     def preferences(self, **kwargs):
         preferences, created = Preferences.objects.get_or_create(user=self.scope['user'])
         serializer = PreferencesSerializer(preferences, context={'scope': self.scope})
         return serializer.data, 200
 
     @action()
+    @rate_limit(limit=40, period=60)
     def update_preferences(self, **kwargs):
         preferences = Preferences.objects.get(user=self.scope['user'])
         serializer = PreferencesSerializer(preferences, data=kwargs['data'], partial=True)

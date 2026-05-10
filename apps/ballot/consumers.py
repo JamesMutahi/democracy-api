@@ -8,6 +8,7 @@ from djangochannelsrestframework.observer import model_observer
 from apps.ballot.models import Ballot, Option, Reason, OptionVote
 from apps.ballot.serializers import BallotSerializer
 from apps.utils.list_paginator import list_paginator
+from apps.utils.throttles import rate_limit, interaction_rate_limit
 
 
 class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
@@ -146,6 +147,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     # ====================== List Action ======================
     @action()
+    @rate_limit(limit=40, period=60)
     async def list(self, request_id: str, page_size=None, **kwargs):
         # Get user's region asynchronously
         kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_regions()
@@ -182,6 +184,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     # ====================== Retrieve & Subscription ======================
     @action()
+    @rate_limit(limit=40, period=60)
     async def retrieve(self, request_id: str, **kwargs):
         response, status = await super().retrieve(**kwargs)
         pk = response.get("id")
@@ -191,6 +194,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         return response, status
 
     @action()
+    @interaction_rate_limit
     async def unsubscribe(self, pk: int, request_id: str, **kwargs):
         await self.ballot_activity.unsubscribe(pk=pk, request_id=request_id)
         await self.option_activity.unsubscribe(pk=pk, request_id=request_id)
@@ -198,6 +202,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     # ====================== Voting Actions ======================
     @action()
+    @interaction_rate_limit
     async def vote(self, pk: int, **kwargs):
         result = await self.perform_vote(option_pk=pk)
         if isinstance(result, dict) and result.get('error'):
@@ -264,6 +269,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         return True
 
     @action()
+    @interaction_rate_limit
     async def add_reason(self, pk: int, text: str, **kwargs):
         result = await self.perform_add_reason(ballot_pk=pk, text=text)
         return result, 200

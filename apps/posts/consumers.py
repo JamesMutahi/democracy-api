@@ -17,6 +17,7 @@ from apps.posts.serializers import PostSerializer, ReportSerializer, ThreadSeria
 from apps.recommendations.tasks import record_interaction
 from apps.recommendations.post_recommender import PostRecommender
 from apps.utils.list_paginator import list_paginator
+from apps.utils.throttles import rate_limit, interaction_rate_limit
 
 User = get_user_model()
 
@@ -247,19 +248,21 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     # ====================== Main Actions ======================
     @action()
+    @rate_limit(limit=40, period=60)
     async def list(self, page_size=None, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
         return data, 200
 
     @action()
+    @rate_limit(limit=25, period=60)
     async def for_you(self, page_size=None, **kwargs):
-        posts = await self.get_recommendations(**kwargs)
+        posts = await self.get_for_you(**kwargs)
         data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
         return data, 200
 
     @database_sync_to_async
-    def get_recommendations(self, **kwargs):
+    def get_for_you(self, **kwargs):
         recommender = PostRecommender(self.scope['user'])
         posts = recommender.get_recommendations(limit=50, diversity_factor=0.08, exclude_post_ids=kwargs.get('previous_posts'))
         return posts
@@ -271,6 +274,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return data, 200
 
     @action()
+    @rate_limit(limit=20, period=60)
     async def trending(self, page_size=None, **kwargs):
         posts = await self.get_trending(**kwargs)
         data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
@@ -283,6 +287,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return posts
 
     @action()
+    @rate_limit(limit=40, period=60)
     async def replies(self, page_size=None, **kwargs):
         kwargs['author_pk'] = await self.get_author_pk(kwargs['pk'])
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
@@ -290,30 +295,35 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return data, 200
 
     @action()
+    @rate_limit(limit=40, period=60)
     async def community_notes(self, request_id: str, page_size=None, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
         return data, 200
 
     @action()
+    @rate_limit(limit=40, period=60)
     async def bookmarks(self, request_id: str, page_size=None, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
         return data, 200
 
     @action()
+    @rate_limit(limit=40, period=60)
     async def liked_posts(self, request_id: str, page_size=None, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
         return data, 200
 
     @action()
+    @rate_limit(limit=40, period=60)
     async def user_posts(self, request_id: str, page_size=None, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.paginate_posts(posts, page_size=page_size, serializer_class=ThreadSerializer, **kwargs)
         return data, 200
 
     @action()
+    @rate_limit(limit=40, period=60)
     async def user_replies(self, request_id: str, page_size=None, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
@@ -326,6 +336,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return data, 200
 
     @action()
+    @rate_limit(limit=40, period=60)
     async def user_community_notes(self, request_id: str, page_size=None, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
@@ -333,6 +344,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     # ====================== Other Actions ======================
     @action()
+    @rate_limit(limit=40, period=60)
     async def retrieve(self, request_id: str, **kwargs):
         response, status = await super().retrieve(**kwargs)
         pk = response.get("id")
@@ -342,6 +354,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return response, status
 
     @action()
+    @rate_limit(limit=40, period=60)
     async def reply_to(self, request_id: str, pk: int, **kwargs):
         data = await self.get_reply_to_posts(pk)
         return data, 200
@@ -358,6 +371,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     # ====================== Interaction Actions ======================
     @action()
+    @interaction_rate_limit
     def like(self, pk: int, **kwargs):
         post = self.get_object(pk=pk)
         data = self.record_like(post=post)
@@ -377,6 +391,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return {'pk': post.pk, 'is_liked': is_liked, 'likes': post.likes.count()}
 
     @action()
+    @interaction_rate_limit
     async def bookmark(self, pk: int, **kwargs):
         data = await self.bookmark_post(pk)
         return data, 200
@@ -394,6 +409,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return {'pk': pk, 'is_bookmarked': is_bookmarked, 'bookmarks': post.bookmarks.count()}
 
     @action()
+    @interaction_rate_limit
     async def upvote(self, pk: int, **kwargs):
         data = await self.upvote_post(pk)
         return data, 200
@@ -411,6 +427,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return {'pk': pk, 'is_upvoted': is_upvoted, 'upvotes': post.upvotes.count()}
 
     @action()
+    @interaction_rate_limit
     async def downvote(self, pk: int, **kwargs):
         data = await self.downvote_post(pk)
         return data, 200
@@ -428,6 +445,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return {'pk': pk, 'is_downvoted': is_downvoted, 'downvotes': post.downvotes.count()}
 
     @action()
+    @interaction_rate_limit
     async def delete_repost(self, pk: int, request_id: str, **kwargs):
         data = await self.delete_repost_(pk)
         if not data:
@@ -461,6 +479,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return None
 
     @action()
+    @interaction_rate_limit
     def add_view(self, pk: int, **kwargs):
         user = self.scope['user']
 
@@ -484,6 +503,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return {'pk': pk}, 200
 
     @action()
+    @interaction_rate_limit
     def add_click(self, pk: int, **kwargs):
         post = self.get_object(pk=pk)
         self.record_click(post=post)
@@ -500,6 +520,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return click
 
     @action()
+    @interaction_rate_limit
     def mute(self, pk: int, **kwargs):
         post = self.get_object(pk=pk)
         if post.is_muted:
@@ -511,6 +532,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return {'pk': pk, 'is_muted': post.is_muted}, 200
 
     @action()
+    @interaction_rate_limit
     def report(self, **kwargs):
         serializer = ReportSerializer(data=kwargs['data'], context={'scope': self.scope})
         serializer.is_valid(raise_exception=True)
@@ -518,6 +540,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return serializer.data, 200
 
     @action()
+    @interaction_rate_limit
     async def unsubscribe(self, pk: int, request_id: str, **kwargs):
         await self.post_activity.unsubscribe(pk=pk, request_id=request_id)
         return {}, 200

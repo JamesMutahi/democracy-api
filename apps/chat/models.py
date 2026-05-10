@@ -63,42 +63,9 @@ class Chat(BaseModel):
         return f"Chat({self.id})"
 
 
-class UploadImageTo:
-    def __init__(self, name):
-        self.name = name
-
-    def __call__(self, instance, filename):
-        return '{}/messages/{}'.format(instance.author.id, filename)
-
-    def deconstruct(self):
-        return 'apps.chat.models.UploadImageTo', [self.name], {}
-
-
-class UploadVideoTo:
-    def __init__(self, name):
-        self.name = name
-
-    def __call__(self, instance, filename):
-        return '{}/messages/{}'.format(instance.author.id, filename)
-
-    def deconstruct(self):
-        return 'apps.chat.models.UploadVideoTo', [self.name], {}
-
-
-class UploadFileTo:
-    def __init__(self, name):
-        self.name = name
-
-    def __call__(self, instance, filename):
-        return '{}/messages/{}'.format(instance.author.id, filename)
-
-    def deconstruct(self):
-        return 'apps.chat.models.UploadFileTo', [self.name], {}
-
-
 class Message(BaseModel):
     chat = models.ForeignKey(Chat, on_delete=models.CASCADE, related_name="messages")
-    uuid = models.UUIDField() # ID from client to resolve local DB and server DB
+    uuid = models.UUIDField()  # ID from client to resolve local DB and server DB
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name="messages")
     text = models.TextField(max_length=500, blank=True)
     post = models.ForeignKey(Post, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
@@ -124,7 +91,7 @@ class Message(BaseModel):
             self.text = ''
             self.post = self.ballot = self.survey = self.petition = None
             self.is_deleted = True
-            self.save()
+            return self.save()
         return super(Message, self).delete(*args, **kwargs)
 
 

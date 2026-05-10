@@ -11,6 +11,7 @@ from apps.chat.models import Message, Chat
 from apps.chat.serializers import MessageSerializer, ChatSerializer
 from apps.chat.views import get_or_create_direct_chat
 from apps.notification.tasks import delete_notification_on_marked_as_read
+from apps.utils.throttles import interaction_rate_limit, rate_limit
 
 User = get_user_model()
 
@@ -103,6 +104,7 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
 
     # ==================== Custom Chat Creation (with self-chat support) ====================
     @action()
+    @interaction_rate_limit
     async def create(self, data: dict, request_id: str, **kwargs):
         """Create a new chat + first message (supports self-chat)"""
         chat = await self.get_or_create_chat(data)
@@ -138,6 +140,7 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
 
     # ==================== List & Messages ====================
     @action()
+    @rate_limit(limit=40, period=60)
     async def list(self, request_id: str, last_chat: int = None, page_size=None, **kwargs):
         data = await self.list_chats(page_size=page_size or self.page_size, last_chat=last_chat, **kwargs)
         await self.reply(action='list', data=data, request_id=request_id)
@@ -166,6 +169,7 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
         }
 
     @action()
+    @rate_limit(limit=40, period=60)
     def messages(self, chat_id: int = None, oldest_message: int = None,
                  newest_message: int = None, page_size=20, **kwargs):
         chat = self.get_object(pk=chat_id)
@@ -191,6 +195,7 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
 
     # ==================== Other Actions ====================
     @action()
+    @rate_limit(limit=40, period=60)
     async def retrieve(self, request_id: str, **kwargs):
         response, status = await super().retrieve(**kwargs)
         pk = response.get("id")
@@ -198,15 +203,8 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
             await self.subscribe(pk=pk, request_id=request_id)
         return response, status
 
-    @database_sync_to_async
-    def get_message(self, pk: int):
-        return Message.objects.filter(
-            pk=pk,
-            author=self.scope["user"],
-            is_deleted=False
-        ).first()
-
     @action()
+    @interaction_rate_limit
     async def mark_as_read(self, pk: int, **kwargs):
         await self.mark_as_read_(pk)
         return {}, 200
@@ -216,13 +214,10 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
         chat = Chat.objects.get(pk=pk)
         chat.messages.filter(is_read=False).exclude(author=self.scope["user"]).update(is_read=True)
         delete_notification_on_marked_as_read.delay_on_commit(pk, self.scope["user"].id)
-        self.signal_chat(chat)
-
-    @staticmethod
-    def signal_chat(chat: Chat):
         post_save.send(sender=Chat, instance=chat, created=False)
 
     @action()
+    @interaction_rate_limit
     async def unsubscribe(self, pk: int, request_id: str, **kwargs):
         await self.chat_activity.unsubscribe(pk=pk, request_id=request_id)
         await self.message_activity.unsubscribe(chat=pk, request_id=request_id)

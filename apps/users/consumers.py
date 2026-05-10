@@ -16,6 +16,7 @@ from apps.recommendations.follow_recommender import FollowRecommender
 from apps.users.models import ProfileVisit
 from apps.users.serializers import UserSerializer
 from apps.utils.list_paginator import list_paginator
+from apps.utils.throttles import rate_limit, interaction_rate_limit
 
 User = get_user_model()
 
@@ -84,12 +85,14 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     # ====================== List ======================
     @action()
+    @rate_limit(limit=40, period=60)
     def list(self, page: int = 1, page_size=None, last_user: int = None, **kwargs):
         users = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = self.users_paginator(users, page, page_size or self.page_size, last_user)
         return data, 200
 
     @action()
+    @rate_limit(limit=20, period=60)
     def recommendations(self, page: int = 1, page_size=page_size, **kwargs):
         recommender = FollowRecommender(self.scope['user'])
         users = recommender.get_follow_recommendations(limit=50)
@@ -98,6 +101,7 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     # ====================== Subscription ======================
     @action()
+    @interaction_rate_limit
     async def subscribe(self, request_id: str, **kwargs):
         response, status = await super().retrieve(**kwargs)
         pk = response.get("id")
@@ -106,12 +110,14 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         return response, status
 
     @action()
+    @interaction_rate_limit
     async def unsubscribe(self, pk: int, request_id: str, **kwargs):
         await self.user_activity.unsubscribe(pk=pk, request_id=request_id)
         return {}, 200
 
     # ====================== Social Actions with Permission Checks ======================
     @action()
+    @interaction_rate_limit
     async def mute(self, pk: int, **kwargs):
         if pk == self.scope['user'].id:
             return await self.reply(errors=["You cannot mute yourself"], status=400, action='mute')
@@ -133,6 +139,7 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         return UserSerializer(target, context={'scope': self.scope}).data
 
     @action()
+    @interaction_rate_limit
     async def block(self, pk: int, **kwargs):
         if pk == self.scope['user'].id:
             return await self.reply(errors=["You cannot block yourself"], status=400, action='block')
@@ -157,6 +164,7 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         return UserSerializer(target, context={'scope': self.scope}).data
 
     @action()
+    @interaction_rate_limit
     async def follow(self, pk: int, **kwargs):
         if pk == self.scope['user'].id:
             return await self.reply(errors=["You cannot follow yourself"], status=400, action='follow')
@@ -180,6 +188,7 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         return UserSerializer(target, context={'scope': self.scope}).data
 
     @action()
+    @interaction_rate_limit
     async def toggle_notifications(self, pk: int, **kwargs):
         if pk == self.scope['user'].id:
             return await self.reply(errors=["Cannot change notification for yourself"], status=400, action='notify')
@@ -200,6 +209,7 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         return UserSerializer(target, context={'scope': self.scope}).data
 
     @action()
+    @interaction_rate_limit
     async def add_visit(self, pk: int, **kwargs):
         await database_sync_to_async(self.record_profile_visit)(pk=pk)
         return {'pk': pk}, 200
@@ -221,6 +231,7 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     # ====================== Private Lists (with Permission) ======================
     @action()
+    @rate_limit(limit=40, period=60)
     async def muted(self, request_id: str, page: int = 1, page_size=None, last_user: int = None, **kwargs):
         """Only the owner can see their muted list"""
         if not self._is_current_user(self.scope['user'].id):
@@ -230,6 +241,7 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         return data, 200
 
     @action()
+    @rate_limit(limit=40, period=60)
     async def blocked(self, request_id: str, page: int = 1, page_size=None, last_user: int = None, **kwargs):
         """Only the owner can see their blocked list"""
         if not self._is_current_user(self.scope['user'].id):
@@ -240,22 +252,26 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     # ====================== Public Lists ======================
     @action()
+    @rate_limit(limit=40, period=60)
     async def following(self, request_id: str, pk: int, page: int = 1, page_size=None, last_user: int = None, **kwargs):
         data = await self.get_following_list(pk, page, page_size or self.page_size, last_user)
         return data, 200
 
     @action()
+    @rate_limit(limit=40, period=60)
     async def followers(self, request_id: str, pk: int, page: int = 1, page_size=None, last_user: int = None, **kwargs):
         data = await self.get_followers_list(pk, page, page_size or self.page_size, last_user)
         return data, 200
 
     @action()
+    @rate_limit(limit=40, period=60)
     async def petition_supporters(self, request_id: str, pk: int, page: int = 1, page_size=None, last_user: int = None,
                                   **kwargs):
         data = await self.get_petition_supporters(pk, page, page_size or self.page_size, last_user)
         return data, 200
 
     @action()
+    @rate_limit(limit=40, period=60)
     async def meeting_participants(self, request_id: str, pk: int, page: int = 1, page_size=None, last_user: int = None,
                                   **kwargs):
         data = await self.get_meeting_participants(pk, page, page_size or self.page_size, last_user)

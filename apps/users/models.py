@@ -66,6 +66,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         """
         send_mail(subject, message, from_email, [self.email], **kwargs)
 
+
 class ProfileVisit(models.Model):
     """Through model for User.visits with timestamp"""
     visitor = models.ForeignKey('CustomUser', on_delete=models.CASCADE, related_name='visits_made')

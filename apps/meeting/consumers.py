@@ -11,6 +11,7 @@ from apps.meeting.models import Meeting
 from apps.meeting.serializers import MeetingSerializer
 from apps.meeting.services import MeetingParticipantService
 from apps.utils.list_paginator import list_paginator
+from apps.utils.throttles import rate_limit, interaction_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +143,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
 
     # ====================== List & Create ======================
     @action()
+    @rate_limit(limit=40, period=60)
     async def list(self, request_id: str, page_size=None, **kwargs):
         kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_user_regions()
 
@@ -172,6 +174,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
         }
 
     @action()
+    @rate_limit(limit=40, period=60)
     async def user_meetings(self, request_id: str, page_size=None, **kwargs):
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.list_(queryset=queryset, page_size=page_size or self.page_size, **kwargs)
@@ -179,6 +182,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
 
     # ====================== Join / Leave ======================
     @action()
+    @interaction_rate_limit
     async def subscribe(self, pk: int, request_id: str, **kwargs):
         await self.meeting_activity.subscribe(pk=pk, request_id=request_id)
         result = await self.add_participant(pk=pk)
@@ -192,6 +196,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
         return MeetingSerializer(meeting, context={'scope': self.scope}).data
 
     @action()
+    @interaction_rate_limit
     async def unsubscribe(self, pk: int, request_id: str, **kwargs):
         await database_sync_to_async(MeetingParticipantService.user_left)(pk, self.scope['user'].id)
         await self.meeting_activity.unsubscribe(pk=pk, request_id=request_id)
@@ -213,6 +218,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
 
     # ====================== Permission-Protected Actions ======================
     @action()
+    @interaction_rate_limit
     async def patch(self, pk: int, **kwargs):  # Override to add explicit check
         meeting = await database_sync_to_async(self.get_object)(pk=pk)
         if meeting.host_id != self.scope['user'].id:
@@ -224,6 +230,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
         return await super().patch(**kwargs)
 
     @action()
+    @interaction_rate_limit
     async def delete(self, pk: int, **kwargs):
         meeting = await database_sync_to_async(self.get_object)(pk=pk)
         if meeting.host_id != self.scope['user'].id:

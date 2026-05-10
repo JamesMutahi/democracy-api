@@ -7,6 +7,7 @@ from djangochannelsrestframework.mixins import RetrieveModelMixin
 from apps.survey.models import Survey
 from apps.survey.serializers import SurveySerializer, ResponseSerializer
 from apps.utils.list_paginator import list_paginator
+from apps.utils.throttles import rate_limit, interaction_rate_limit
 
 
 class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
@@ -81,6 +82,7 @@ class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     # ====================== List Action ======================
     @action()
+    @rate_limit(limit=40, period=60)
     async def list(self, request_id: str, page_size=None, **kwargs):
         kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_user_regions()
 
@@ -112,6 +114,7 @@ class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     # ====================== Submit Response ======================
     @action()
+    @interaction_rate_limit
     async def submit(self, data: dict, request_id: str, **kwargs):
         survey = await self.get_survey_for_submission(data['survey'])
 

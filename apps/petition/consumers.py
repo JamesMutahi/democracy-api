@@ -10,6 +10,7 @@ from djangochannelsrestframework.observer import model_observer
 from apps.petition.models import Petition, PetitionSupport, PetitionClick
 from apps.petition.serializers import PetitionSerializer
 from apps.utils.list_paginator import list_paginator
+from apps.utils.throttles import interaction_rate_limit, rate_limit
 
 
 class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer):
@@ -151,6 +152,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
 
     # ====================== List & Create ======================
     @action()
+    @rate_limit(limit=40, period=60)
     async def list(self, request_id: str, page_size=None, **kwargs):
         kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_user_regions()
 
@@ -181,6 +183,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
         }
 
     @action()
+    @rate_limit(limit=40, period=60)
     async def create(self, data: dict, request_id: str, **kwargs):
         response, status = await super().create(data, **kwargs)
         if isinstance(response, dict) and "id" in response:
@@ -188,6 +191,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
         return response, status
 
     @action()
+    @rate_limit(limit=40, period=60)
     async def retrieve(self, request_id: str, **kwargs):
         response, status = await super().retrieve(**kwargs)
         pk = response["id"]
@@ -201,6 +205,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
 
     # ====================== Support Action (Optimized) ======================
     @action()
+    @interaction_rate_limit
     async def support(self, pk: int, request_id: str, **kwargs):
         result = await self.record_support(pk=pk)
         if isinstance(result, dict) and result.get('error'):
@@ -261,6 +266,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
 
     # ====================== Other Actions ======================
     @action()
+    @interaction_rate_limit
     async def change_status(self, pk: int, request_id: str, **kwargs):
         result = await self.perform_change_status(pk=pk)
         return result, 200
@@ -273,6 +279,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
         return {'pk': petition.pk, 'is_open': petition.is_open}
 
     @action()
+    @interaction_rate_limit
     def add_view(self, pk: int, **kwargs):
         petition = self.get_object(pk=pk)
         petition.views += 1
@@ -280,6 +287,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
         return {'pk': pk}, 200
 
     @action()
+    @interaction_rate_limit
     def add_click(self, pk: int, **kwargs):
         petition = self.get_object(pk=pk)
         self.record_click(petition=petition)
@@ -296,6 +304,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
         return click
 
     @action()
+    @rate_limit(limit=40, period=60)
     async def user_petitions(self, request_id: str, page_size=None, **kwargs):
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.list_(queryset=queryset, page_size=page_size or self.page_size, **kwargs)
