@@ -2,12 +2,15 @@ import uuid
 
 from django.contrib.auth import get_user_model
 from django.contrib.gis.db import models
+from django.contrib.postgres.indexes import GinIndex
+from django.contrib.postgres.search import SearchVectorField, SearchVector
 from django.db import transaction
 from django.db.models import ExpressionWrapper, Count, F, FloatField
 from django.db.models.functions import NullIf
 from django.db.models.signals import post_save
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+from taggit.managers import TaggableManager
 
 from apps.ballot.models import Ballot
 from apps.constitution.models import Section
@@ -46,12 +49,14 @@ class Post(BaseModel):
     meeting = models.ForeignKey(Meeting, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
     section = models.ForeignKey(Section, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
     tagged_users = models.ManyToManyField(User, blank=True, related_name='tagged_in_posts')
+    hashtags = TaggableManager(blank=True, verbose_name="Hashtags")
     # User interaction
     likes = models.ManyToManyField(User, blank=True, through='PostLike', related_name='liked_posts')
     bookmarks = models.ManyToManyField(User, blank=True, related_name='bookmarked_posts')
     views = models.PositiveIntegerField(default=0)
     clicks = models.ManyToManyField(User, blank=True, through='PostClick', related_name='clicked_posts')
     is_muted = models.BooleanField(_('muted'), default=False)  # For muting conversations/threads
+    search_vector = SearchVectorField(null=True, blank=True)
     # For community notes
     upvotes = models.ManyToManyField(User, blank=True, related_name='upvotes')
     downvotes = models.ManyToManyField(User, blank=True, related_name='downvotes')
@@ -65,6 +70,9 @@ class Post(BaseModel):
     class Meta:
         ordering = ['-published_at']
         db_table = 'Post'
+        indexes = [
+            GinIndex(fields=['search_vector']),
+        ]
 
     def __str__(self):
         return self.body
@@ -90,6 +98,13 @@ class Post(BaseModel):
     def get_reposts_count(self):
         count = self.reposts.filter(reply_to=None, community_note_of=None).count()
         return count
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Update vector after initial save
+        Post.objects.filter(pk=self.pk).update(
+            search_vector=SearchVector('body', config='english')
+        )
 
     def delete(self, *args, **kwargs):
         self.reposts.filter(body='').delete()

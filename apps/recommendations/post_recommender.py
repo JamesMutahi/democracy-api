@@ -1,4 +1,5 @@
 import datetime
+import logging
 import random
 from datetime import timedelta
 
@@ -14,6 +15,7 @@ from apps.posts.models import Post, Asset
 from .models import UserInteraction, PostRecommendationCache
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 CACHE_TIMEOUT = 60 * 30
 CACHE_KEY_PREFIX = 'user_recs_'
@@ -89,6 +91,162 @@ class PostRecommender:
         ).order_by('-trending_score')[:limit]
 
         return list(trending_posts)
+
+    def get_trending_hashtags(self, limit=10, days=7):
+        """Cached trending hashtags - most popular hashtags"""
+        from django.core.cache import cache
+
+        cache_key = f"trending_hashtags:{days}d:{limit}"
+
+        # Return from cache if available
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
+        # Compute fresh data
+        results = self._compute_trending_hashtags(limit=limit, days=days)
+
+        # Cache for 10 minutes (trending doesn't change every second)
+        cache.set(cache_key, results, timeout=600)
+        return results
+
+    @staticmethod
+    def _compute_trending_hashtags(limit=10, days=7):
+        from taggit.models import TaggedItem
+        from django.db.models import Count
+        from datetime import timedelta
+
+        start_date = timezone.now() - timedelta(days=days)
+
+        trending = TaggedItem.objects.filter(
+            content_type__app_label='posts',
+            content_type__model='post',
+            object_id__in=Post.objects.filter(
+                status='published',
+                is_active=True,
+                is_deleted=False,
+                published_at__gte=start_date
+            ).values_list('id', flat=True)
+        ).select_related('tag').values(
+            'tag__name'
+        ).annotate(
+            post_count=Count('tag')
+        ).order_by('-post_count')[:limit]
+
+        return [
+            {
+                "name": f"#{item['tag__name']}",
+                "count": item['post_count'],
+                "slug": item['tag__name']
+            }
+            for item in trending
+        ]
+
+    def get_trending_words(self, limit=15, days=7):
+        """Get trending words with caching"""
+        from django.core.cache import cache
+
+        cache_key = f"trending_words:{days}d:{limit}"
+
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
+        results = self._compute_trending_words(limit=limit, days=days, min_frequency=3)
+
+        # Cache for 10 minutes (trending changes slowly)
+        cache.set(cache_key, results, timeout=600)
+
+        return results
+
+    @staticmethod
+    def _compute_trending_words(limit=15, days=7, min_frequency=3):
+        """Get trending words with no aggressive stemming + minimum frequency filter"""
+        from django.db import connection
+        from datetime import timedelta
+
+        start_date = timezone.now() - timedelta(days=days)
+
+        # Stop words
+        stop_words = {
+            'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'up', 'about', 'into',
+            'over', 'after', 'this', 'that', 'these', 'those', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+            'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'shall', 'should', 'can', 'could', 'may',
+            'might', 'must', 'a', 'an', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them',
+            'my', 'your', 'his', 'its', 'our', 'their', 'not', 'no', 'yes', 'if', 'then', 'else', 'when', 'where',
+            'how', 'what', 'who', 'which', 'why', 'all', 'any', 'both', 'each', 'few', 'more', 'most', 'other',
+            'some', 'such', 'than', 'too', 'very', 'just', 'now', 'so', 'as', 'like', 'get', 'got', 'make', 'made',
+            'one', 'two', 'three', 'also', 'because', 'however', 'although', 'still', 'even', 'back', 'well', 'say'
+        }
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT word, ndoc as post_count
+                    FROM ts_stat($$
+                        SELECT to_tsvector('simple', COALESCE(body, ''))
+                        FROM "Post" 
+                        WHERE status = 'published' 
+                          AND is_active = true 
+                          AND is_deleted = false 
+                          AND published_at >= %s
+                    $$)
+                    WHERE length(word) >= 4
+                      AND ndoc >= %s                              -- Minimum frequency filter
+                      AND word !~ '^[0-9]+$'                      -- pure numbers
+                      AND LOWER(word) NOT IN (SELECT unnest(%s::text[]))
+                      AND NOT word ~* '^(http|www|com|net|org|gov|edu|png|jpg|jpeg|pdf|gif)$'
+                    ORDER BY ndoc DESC
+                    LIMIT %s;
+                """, [start_date, min_frequency, list(stop_words), limit])
+
+                results = cursor.fetchall()
+
+            return [{"word": word, "count": count} for word, count in results]
+
+        except Exception as e:
+            logger.error(f"Failed to compute trending words: {e}", exc_info=True)
+            return []
+
+    def get_trending_topics(self, limit=30, days=7):
+        """Return only names of trending topics (hashtags + words), ranked by count"""
+        hashtags = self.get_trending_hashtags(limit=limit, days=days)
+        words = self.get_trending_words(limit=limit, days=days)
+
+        topics = []
+
+        # Add hashtags
+        for h in hashtags:
+            topics.append(h['name'])  # e.g. "#democracy"
+
+        # Add words (avoid duplicates with hashtags)
+        hashtag_set = {h['name'].lower().strip('#') for h in hashtags}
+        for w in words:
+            if w['word'].lower() not in hashtag_set:
+                topics.append(w['word'])  # e.g. "election"
+
+        # Rank by count (we need to preserve original order from sources)
+        # Since both sources are already ordered by count, we merge and re-sort
+
+        # Rebuild with counts for proper ranking
+        topic_dict = {}
+
+        for h in hashtags:
+            topic_dict[h['name']] = h['count']
+
+        for w in words:
+            word_name = w['word']
+            if word_name.lower() not in hashtag_set:
+                topic_dict[word_name] = w['count']
+
+        # Sort by count descending and return only names
+        sorted_topics = sorted(
+            topic_dict.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        return [name for name, count in sorted_topics[:limit]]
 
     def _compute_scored_posts(self, exclude_post_ids):
         base_qs = Post.objects.filter(
@@ -194,7 +352,8 @@ class PostRecommender:
             output_field=FloatField()
         )
 
-    def _get_content_type_score(self):
+    @staticmethod
+    def _get_content_type_score():
         return Case(
             When(ballot__isnull=False, then=Value(0.95)),
             When(petition__isnull=False, then=Value(0.85)),
@@ -205,7 +364,8 @@ class PostRecommender:
             output_field=FloatField()
         )
 
-    def _get_media_score(self):
+    @staticmethod
+    def _get_media_score():
         # Check if any related asset is a video
         has_video = Asset.objects.filter(
             post=OuterRef('pk'),
@@ -237,7 +397,8 @@ class PostRecommender:
             output_field=FloatField()
         )
 
-    def _get_freshness_score(self):
+    @staticmethod
+    def _get_freshness_score():
         return Case(
             When(published_at__gte=Now() - timedelta(hours=2), then=Value(1.0)),
             When(published_at__gte=Now() - timedelta(hours=24), then=Value(0.8)),
@@ -264,7 +425,8 @@ class PostRecommender:
             output_field=FloatField()
         )
 
-    def _get_note_quality_score(self):
+    @staticmethod
+    def _get_note_quality_score():
         """Boost posts that have a high-quality community note using Subquery"""
 
         from apps.posts.models import Post  # Import here to avoid circular imports

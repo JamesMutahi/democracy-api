@@ -1,9 +1,12 @@
+import re
+
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
-from django.contrib.postgres.search import TrigramSimilarity
+from django.contrib.postgres.search import TrigramSimilarity, SearchQuery, SearchRank, SearchHeadline
 from django.core.cache import cache
 from django.db import transaction
-from django.db.models import QuerySet, Case, When, Count, Q, F
+from django.db.models import QuerySet, Case, When, Count, Q, F, Value
+from django.db.models.functions import Coalesce
 from django.db.models.signals import post_save
 from django.utils import timezone
 from djangochannelsrestframework.decorators import action
@@ -11,11 +14,12 @@ from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin, DeleteModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.pagination import WebsocketLimitOffsetPagination
+from taggit.models import Tag
 
 from apps.posts.models import Post, PostLike, PostClick
 from apps.posts.serializers import PostSerializer, ReportSerializer, ThreadSerializer
-from apps.recommendations.tasks import record_interaction
 from apps.recommendations.post_recommender import PostRecommender
+from apps.recommendations.tasks import record_interaction
 from apps.utils.list_paginator import list_paginator
 from apps.utils.throttles import rate_limit, interaction_rate_limit
 
@@ -111,7 +115,6 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
             queryset = queryset.filter(is_deleted=False)
 
         if action == 'list':
-            # Main feed with optional fuzzy search
             queryset = queryset.filter(
                 community_note_of=None,
                 status='published'
@@ -119,12 +122,93 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
             search_term = kwargs.get('search_term', '').strip()
             if search_term:
-                # Trigram only when searching - expensive, so apply late
-                queryset = queryset.annotate(
-                    similarity=TrigramSimilarity('body', search_term)
-                ).filter(similarity__gt=0.1).order_by('-similarity')
+                if search_term.startswith('#'):
+                    tag = search_term[1:].strip().lower()
+                    queryset = queryset.filter(hashtags__name=tag)
+                else:
+                    search_term_lower = search_term.lower().strip()
+
+                    # Handle "from:username" syntax
+                    from_match = re.match(r'from:(\w+)', search_term_lower)
+                    if from_match:
+                        username = from_match.group(1)
+                        queryset = queryset.filter(author__username__iexact=username)
+                        return queryset.order_by('-published_at')
+
+                    # Handle @username + optional search terms
+                    if search_term_lower.startswith('@'):
+                        parts = search_term_lower.split(maxsplit=1)
+                        username_part = parts[0].lstrip('@')
+                        keyword_part = parts[1] if len(parts) > 1 else None
+
+                        # Filter posts by author (partial match)
+                        user_filter = Q(author__username__istartswith=username_part) | \
+                                      Q(author__name__istartswith=username_part)
+
+                        queryset = queryset.filter(user_filter)
+
+                        # If there are additional keywords, search in post body
+                        if keyword_part:
+                            search_query = SearchQuery(
+                                keyword_part,
+                                config='english',
+                                search_type='websearch'
+                            )
+                            queryset = queryset.annotate(
+                                rank=SearchRank('search_vector', search_query),
+                                similarity=TrigramSimilarity('body', keyword_part),
+                                highlighted_body=SearchHeadline(
+                                    'body',
+                                    search_query,
+                                    start_sel='<mark>',
+                                    stop_sel='</mark>',
+                                    max_words=50,
+                                    min_words=20
+                                )
+                            ).filter(
+                                Q(search_vector=search_query) | Q(similarity__gt=0.1)
+                            ).order_by('-rank', '-similarity', '-published_at')
+                        else:
+                            # Just @username → show recent posts from that user
+                            queryset = queryset.order_by('-published_at')
+
+                        return queryset
+
+                    # General search: Body + Author Name + Username
+                    search_query = SearchQuery(
+                        search_term,
+                        config='english',
+                        search_type='websearch'
+                    )
+
+                    queryset = queryset.annotate(
+                        rank=SearchRank('search_vector', search_query),
+                        body_similarity=TrigramSimilarity('body', search_term),
+                        author_username_sim=TrigramSimilarity('author__username', search_term),
+                        author_name_sim=TrigramSimilarity(
+                            Coalesce('author__name', Value('')), search_term
+                        ),
+                        highlighted_body=SearchHeadline(
+                            'body',
+                            search_query,
+                            start_sel='<mark>',
+                            stop_sel='</mark>',
+                            max_words=50,
+                            min_words=20
+                        )
+                    ).filter(
+                        Q(search_vector=search_query) |
+                        Q(body_similarity__gt=0.1) |
+                        Q(author_username_sim__gt=0.25) |
+                        Q(author_name_sim__gt=0.25)
+                    ).order_by(
+                        '-author_username_sim',  # Prioritize matching users
+                        '-author_name_sim',
+                        '-rank',
+                        '-body_similarity',
+                        '-published_at'
+                    )
             else:
-                # Default sort for list without search
                 queryset = queryset.order_by('-published_at')
 
             # Date range filter (if provided)
@@ -175,11 +259,38 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
             search_term = kwargs.get('search_term')
             if search_term:
-                queryset = queryset.filter(
-                    Q(author__username__icontains=search_term) |
-                    Q(author__name__icontains=search_term) |
-                    Q(body__icontains=search_term)
-                ).distinct()
+                search_query = SearchQuery(
+                    search_term,
+                    config='english',
+                    search_type='websearch'
+                )
+                queryset = queryset.annotate(
+                    rank=SearchRank('search_vector', search_query),
+                    body_similarity=TrigramSimilarity('body', search_term),
+                    author_username_sim=TrigramSimilarity('author__username', search_term),
+                    author_name_sim=TrigramSimilarity(
+                        Coalesce('author__name', Value('')), search_term
+                    ),
+                    highlighted_body=SearchHeadline(
+                        'body',
+                        search_query,
+                        start_sel='<mark>',
+                        stop_sel='</mark>',
+                        max_words=50,
+                        min_words=20
+                    )
+                ).filter(
+                    Q(search_vector=search_query) |
+                    Q(body_similarity__gt=0.1) |
+                    Q(author_username_sim__gt=0.25) |
+                    Q(author_name_sim__gt=0.25)
+                ).order_by(
+                    '-author_username_sim',  # Prioritize matching users
+                    '-author_name_sim',
+                    '-rank',
+                    '-body_similarity',
+                    '-published_at'
+                )
 
             sort_by = kwargs.get('sort_by')
             if sort_by == 'recent':
@@ -264,7 +375,8 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     @database_sync_to_async
     def get_for_you(self, **kwargs):
         recommender = PostRecommender(self.scope['user'])
-        posts = recommender.get_recommendations(limit=50, diversity_factor=0.08, exclude_post_ids=kwargs.get('previous_posts'))
+        posts = recommender.get_recommendations(limit=50, diversity_factor=0.08,
+                                                exclude_post_ids=kwargs.get('previous_posts'))
         return posts
 
     @action()
@@ -544,6 +656,187 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     async def unsubscribe(self, pk: int, request_id: str, **kwargs):
         await self.post_activity.unsubscribe(pk=pk, request_id=request_id)
         return {}, 200
+
+    @action()
+    @rate_limit(limit=50, period=60)
+    async def hashtags(self, search_term: str = "", limit: int = 15, **kwargs):
+        """
+        Dedicated endpoint to search hashtags.
+        Supports partial matching and returns popularity count.
+        """
+        results = await self.get_hashtag_search_results(search_term.strip(), limit)
+        return results, 200
+
+    @database_sync_to_async
+    def get_hashtag_search_results(self, query: str, limit: int = 15):
+        from django.core.cache import cache
+        import hashlib
+
+        cache_key = f"hashtag_search:{hashlib.md5(query.encode()).hexdigest()[:12]}"
+
+        # Return cached result if available
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
+        if not query:
+            # Return trending hashtags when no query
+            recommender = PostRecommender(self.scope['user'])
+            results = recommender.get_trending_hashtags(limit)
+        else:
+            # Search hashtags
+            tag_query = query.lstrip('#').lower()
+            hashtags = Tag.objects.filter(
+                name__icontains=tag_query
+            ).annotate(
+                post_count=Count('taggit_taggeditem_items', distinct=True)
+            ).order_by('-post_count', 'name')[:limit]
+
+            results = [
+                {
+                    "name": f"#{tag.name}",
+                    "count": tag.post_count,
+                }
+                for tag in hashtags
+            ]
+
+        # Cache for 5 minutes
+        cache.set(cache_key, results, timeout=300)
+        return results
+
+    @action()
+    async def trending_topics(self, **kwargs):
+        """Get currently trending topics (hashtags + words)"""
+        data = await self.get_trending_topics()
+        return data, 200
+
+    @database_sync_to_async
+    def get_trending_topics(self):
+        recommender = PostRecommender(self.scope['user'])
+        return recommender.get_trending_topics(limit=30, days=7)
+
+    @action()
+    @rate_limit(limit=40, period=60)
+    async def hashtag_feed(self, hashtag: str, page_size=None, **kwargs):
+        posts = await self.get_hashtag_posts(hashtag, **kwargs)
+        data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
+        return data, 200
+
+    @database_sync_to_async
+    def get_hashtag_posts(self, hashtag: str, **kwargs):
+        tag = hashtag.strip('#').lower()
+        return self.queryset.filter(hashtags__name__iexact=tag).order_by('-published_at')
+
+    @action()
+    async def subscribe_hashtag(self, hashtag: str, request_id: str = None, **kwargs):
+        await self.hashtag_activity.subscribe(hashtag=hashtag, request_id=request_id)
+        return {"status": "subscribed", "hashtag": hashtag.lower()}, 201
+
+    @action()
+    async def unsubscribe_hashtag(self, hashtag: str, request_id: str = None, **kwargs):
+        await self.hashtag_activity.unsubscribe(hashtag=hashtag, request_id=request_id)
+        return {"status": "unsubscribed", "hashtag": hashtag.lower()}, 200
+
+    # ====================== AUTOCOMPLETE ======================
+
+    @action()
+    @rate_limit(limit=80, period=60)
+    async def autocomplete(self, query: str, limit: int = 10, **kwargs):
+        """Cached autocomplete for better performance"""
+        if not query or len(query.strip()) < 1:
+            return {"results": []}, 200
+
+        results = await self.get_cached_autocomplete(query.strip().lower(), limit)
+        return {"results": results}, 200
+
+    @database_sync_to_async
+    def get_cached_autocomplete(self, query: str, limit: int = 10):
+        from django.core.cache import cache
+        import hashlib
+
+        # Create cache key based on query
+        cache_key = f"autocomplete:{hashlib.md5(query.encode()).hexdigest()[:12]}"
+
+        # Try cache first (short TTL because trends change)
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
+        results = self._get_autocomplete_results(query, limit)
+
+        # Cache for 3 minutes (autocomplete can be aggressive)
+        cache.set(cache_key, results, timeout=180)
+        return results
+
+    def _get_autocomplete_results(self, query: str, limit: int = 10):
+        """Core autocomplete logic (without cache)"""
+        results = []
+
+        # 1. Hashtags (Highest Priority)
+        tag_query = query.lstrip('#')
+        hashtags = Tag.objects.filter(name__istartswith=tag_query).annotate(
+            post_count=Count('taggit_taggeditem_items')
+        ).order_by('-post_count', 'name')[:limit // 2 + 3]
+
+        for tag in hashtags:
+            results.append({
+                "type": "hashtag",
+                "text": f"#{tag.name}",
+                "count": tag.post_count
+            })
+
+        # 2. Users
+        users = User.objects.filter(
+            Q(username__istartswith=query) | Q(name__istartswith=query)
+        ).only('id', 'username', 'name')[:6]
+
+        for user in users:
+            results.append({
+                "type": "user",
+                "text": f"@{user.username}",
+                "display": user.name or user.username,
+                "id": user.id
+            })
+
+        # 3. Topics / Words
+        if len(query) >= 3:
+            word_results = self._get_word_autocomplete(query, limit=5)
+            results.extend(word_results)
+
+        return results[:limit]
+
+    @database_sync_to_async
+    def _get_word_autocomplete(self, query: str, limit: int = 5):
+        """Word autocomplete using ts_stat"""
+        from django.db import connection
+
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT DISTINCT word, ndoc as count
+                FROM ts_stat($$
+                    SELECT to_tsvector('english', body)
+                    FROM posts_post 
+                    WHERE status = 'published' 
+                    AND is_active = true 
+                    AND is_deleted = false
+                    AND published_at >= NOW() - INTERVAL '30 days'
+                $$)
+                WHERE word LIKE %s
+                  AND length(word) >= 4
+                ORDER BY ndoc DESC
+                LIMIT %s;
+            """, [f"{query}%", limit])
+
+            results = cursor.fetchall()
+
+        return [
+            {
+                "type": "topic",
+                "text": word,
+                "count": count
+            }
+            for word, count in results
+        ]
 
 
 def get_reply_to(post: Post):

@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from django.db.models.signals import post_save
 from django.utils import timezone
 from rest_framework import serializers
+from taggit.serializers import TagListSerializerField
 
 from apps.ballot.models import Ballot
 from apps.ballot.serializers import BallotSerializer
@@ -25,7 +26,7 @@ User = get_user_model()
 
 
 class TagSerializer(serializers.Serializer):
-    id = serializers.IntegerField()
+    id = serializers.CharField()
     text = serializers.CharField()
 
 
@@ -66,6 +67,7 @@ class AssetSerializer(serializers.ModelSerializer):
 class PostSerializer(serializers.ModelSerializer):
     author = UserSerializer(read_only=True)
     published_at = serializers.DateTimeField(default=timezone.now, read_only=True)
+    body = serializers.SerializerMethodField()
     likes = serializers.SerializerMethodField(read_only=True)
     is_liked = serializers.SerializerMethodField(read_only=True)
     bookmarks = serializers.SerializerMethodField(read_only=True)
@@ -80,6 +82,7 @@ class PostSerializer(serializers.ModelSerializer):
     meeting = MeetingSerializer(read_only=True)
     section = SectionSerializer(read_only=True)
     tagged_users = UserSerializer(read_only=True, many=True)
+    hashtags = TagListSerializerField(required=False, allow_null=True)
     reply_to_id = serializers.IntegerField(write_only=True, allow_null=True)
     repost_of_id = serializers.PrimaryKeyRelatedField(
         queryset=Post.objects.all(),
@@ -148,6 +151,7 @@ class PostSerializer(serializers.ModelSerializer):
             'is_bookmarked',
             'tagged_users',
             'tags',
+            'hashtags',
             'views',
             'is_muted',
             'replies',
@@ -179,12 +183,25 @@ class PostSerializer(serializers.ModelSerializer):
         )
         extra_kwargs = {'is_active': {'read_only': True}}
 
+    def to_internal_value(self, data):
+        ret = super().to_internal_value(data)
+        if 'body' in data:
+            ret['body'] = data['body']
+        return ret
+
     def get_fields(self):
         fields = super(PostSerializer, self).get_fields()
         fields['reply_to'] = PostSerializer(read_only=True)
         fields['repost_of'] = PostSerializer(read_only=True)
         fields['community_note_of'] = PostSerializer(read_only=True)
         return fields
+
+    @staticmethod
+    def get_body(obj):
+        # Use highlighted version if available (from search)
+        if hasattr(obj, 'highlighted_body'):
+            return obj.highlighted_body
+        return obj.body
 
     @staticmethod
     def get_likes(obj):
@@ -275,8 +292,15 @@ class PostSerializer(serializers.ModelSerializer):
             validated_data['section'] = validated_data.pop('section_id')
 
         # Tagged users
-        if validated_data.get('tags'):
-            validated_data['tagged_users'] = get_tagged(validated_data.pop('tags'))
+        tags = validated_data.pop('tags', None)
+        if tags:
+            users = []
+            for tag in tags:
+                if tag['id'].isdigit():
+                    user_qs = User.objects.filter(id=tag['id'], username=tag['text'])
+                    if user_qs.exists():
+                        users.append(user_qs.first())
+            validated_data['tagged_users'] = users
 
         # Extract object if link is present in post body
         linked_object = extract_linked_object(text=validated_data['body'])
@@ -299,6 +323,17 @@ class PostSerializer(serializers.ModelSerializer):
         if len(assets) > 0:
             validated_data['is_active'] = False
         post = super().create(validated_data)
+
+        # Hashtags
+        if tags:
+            hashtags = []
+            for tag in tags:
+                if f'#{tag["id"]}' in validated_data['body']:
+                    hashtags.append(tag['id'])
+            if hashtags:
+                post.hashtags.add(*hashtags)
+
+        # Assets
         for asset in assets:
             # Create a unique key for S3 to avoid collisions
             file_extension = asset['name'].split('.')[-1]
@@ -310,22 +345,6 @@ class PostSerializer(serializers.ModelSerializer):
         if post.repost_of:
             post_save.send(sender=Post, instance=post.repost_of, created=False)
         return post
-
-    def update(self, instance, validated_data):
-        instance.published_at = timezone.now()
-        if validated_data.get('tags'):
-            tagged_users = get_tagged(validated_data.pop('tags'))
-            instance.tagged_users.set(tagged_users)
-        return super().update(instance, validated_data)
-
-
-def get_tagged(tags):
-    tagged_users = []
-    for tag in tags:
-        user_qs = User.objects.filter(id=tag['id'], username=tag['text'])
-        if user_qs.exists():
-            tagged_users.append(user_qs.first())
-    return tagged_users
 
 
 class ReportSerializer(serializers.ModelSerializer):
