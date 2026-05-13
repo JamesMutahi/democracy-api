@@ -14,6 +14,7 @@ from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin, DeleteModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.pagination import WebsocketLimitOffsetPagination
+from rest_framework.exceptions import PermissionDenied
 from taggit.models import Tag
 
 from apps.posts.models import Post, PostLike, PostClick
@@ -493,6 +494,10 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     def record_like(self, post: Post):
         """Record a like with timestamp"""
         user = self.scope['user']
+
+        if user in post.author.blocked.all():
+            raise PermissionDenied("You have been blocked by this user.")
+
         if post.likes.filter(pk=user.pk).exists():
             post.likes.remove(user)
             is_liked = False
@@ -512,6 +517,10 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     def bookmark_post(self, pk: int):
         user = self.scope['user']
         post = Post.objects.get(pk=pk)
+
+        if user in post.author.blocked.all():
+            raise PermissionDenied("You have been blocked by this user.")
+
         if post.bookmarks.filter(pk=user.pk).exists():
             post.bookmarks.remove(user)
             is_bookmarked = False
@@ -726,16 +735,6 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     def get_hashtag_posts(self, hashtag: str, **kwargs):
         tag = hashtag.strip('#').lower()
         return self.queryset.filter(hashtags__name__iexact=tag).order_by('-published_at')
-
-    @action()
-    async def subscribe_hashtag(self, hashtag: str, request_id: str = None, **kwargs):
-        await self.hashtag_activity.subscribe(hashtag=hashtag, request_id=request_id)
-        return {"status": "subscribed", "hashtag": hashtag.lower()}, 201
-
-    @action()
-    async def unsubscribe_hashtag(self, hashtag: str, request_id: str = None, **kwargs):
-        await self.hashtag_activity.unsubscribe(hashtag=hashtag, request_id=request_id)
-        return {"status": "unsubscribed", "hashtag": hashtag.lower()}, 200
 
     # ====================== AUTOCOMPLETE ======================
 

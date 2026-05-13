@@ -38,7 +38,7 @@ class FollowRecommender:
 
         base_qs = User.objects.filter(is_active=True).exclude(
             id=self.user.id
-        ).exclude(id__in=excluded).exclude(id__in=muted).exclude(id__in=blocked)
+        ).exclude(blocked=self.user).exclude(id__in=excluded).exclude(id__in=muted).exclude(id__in=blocked)
 
         scored_users = base_qs.annotate(
             location_score=self._get_location_score(),

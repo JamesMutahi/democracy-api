@@ -20,8 +20,17 @@ from apps.utils.presigned_url import generate_presigned_url, s3_client
 User = get_user_model()
 
 
+class NotBlockedPermission(permissions.BasePermission):
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        for participant in obj.users.all():
+            if participant != user and user in participant.blocked.all():
+                raise PermissionDenied("You have been blocked.")
+        return True
+
+
 class MessageCreateView(generics.CreateAPIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, NotBlockedPermission]
     serializer_class = MessageSerializer
 
     def get_serializer_context(self):
@@ -105,6 +114,7 @@ class AssetUploadCompleteView(APIView):
         except Asset.DoesNotExist:
             return Response({"error": "Asset not found"}, status=404)
 
+
 class MessageDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [permissions.IsAuthenticated, ]
     serializer_class = MessageSerializer
@@ -127,7 +137,7 @@ class MessageDetailView(generics.RetrieveUpdateDestroyAPIView):
         message = Message.objects.get(pk=self.kwargs["pk"])
         if not request.user == message.author:
             raise PermissionDenied("You cannot delete this message.")
-        response =  super().destroy(request, *args, **kwargs)
+        response = super().destroy(request, *args, **kwargs)
         post_save.send(sender=Chat, instance=message.chat, created=False)
         return response
 

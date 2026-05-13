@@ -274,9 +274,8 @@ class PostSerializer(serializers.ModelSerializer):
             # Author can only have one repost of a post without body
             if validated_data['body'] == '':
                 validated_data['repost_of_id'].reposts.filter(author=self.context['scope']['user'], body='',
-                                                              reply_to=None, community_note_of=None, image1=None,
-                                                              video=None, ballot=None, survey=None, petition=None,
-                                                              meeting=None).delete()
+                                                              reply_to=None, community_note_of=None, ballot=None,
+                                                              survey=None, petition=None, meeting=None).delete()
             validated_data['repost_of'] = validated_data.pop('repost_of_id')
         if validated_data.get('community_note_of_id'):
             validated_data['community_note_of'] = validated_data.pop('community_note_of_id')
@@ -299,7 +298,9 @@ class PostSerializer(serializers.ModelSerializer):
                 if tag['id'].isdigit():
                     user_qs = User.objects.filter(id=tag['id'], username=tag['text'])
                     if user_qs.exists():
-                        users.append(user_qs.first())
+                        user = user_qs.first()
+                        if not self.context['scope']['user'] in user.blocked.all():
+                            users.append(user_qs.first())
             validated_data['tagged_users'] = users
 
         # Extract object if link is present in post body

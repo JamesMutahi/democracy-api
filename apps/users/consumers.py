@@ -177,6 +177,9 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         target = User.objects.get(pk=pk)
         current = self.scope['user']
 
+        if current in target.blocked.all():
+            raise PermissionDenied("You have been blocked by this user.")
+
         if target in current.following.all():
             current.following.remove(target)
             current.notifiers.remove(target)

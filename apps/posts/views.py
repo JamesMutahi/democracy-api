@@ -1,6 +1,8 @@
 import botocore
 from django.conf import settings
 from rest_framework import generics, permissions, status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -9,8 +11,16 @@ from apps.posts.serializers import PostSerializer
 from apps.utils.presigned_url import generate_presigned_url, s3_client
 
 
+class NotBlockedPermission(permissions.BasePermission):
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        if user in obj.author.blocked.all():
+            raise PermissionDenied("You have been blocked by this user.")
+        return True
+
+
 class PostCreateView(generics.CreateAPIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, NotBlockedPermission]
     serializer_class = PostSerializer
 
     def get_serializer_context(self):
@@ -34,6 +44,28 @@ class PostCreateView(generics.CreateAPIView):
             {"post": serializer.data, "uploads": upload_data},
             status=status.HTTP_201_CREATED,
         )
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def generate_upload_urls(request):
+    data = request.data.copy()
+    post_id = data.pop("post_id", None)
+    if not post_id:
+        return Response(
+            {"post_id": "This field is required"}, status=status.HTTP_400_BAD_REQUEST
+        )
+    try:
+        post = Post.objects.get(id=post_id)
+    except Post.DoesNotExist:
+        return Response('Post does not exist', status=status.HTTP_404_NOT_FOUND)
+
+    upload_data = []
+    for asset in post.assets.all():
+        # Generate the upload link for this specific file
+        link = generate_presigned_url(asset.file_key, asset.content_type)
+        upload_data.append({"asset_id": asset.id, "name": asset.name, "url": link})
+    return Response(upload_data, status=status.HTTP_200_OK)
 
 
 class AssetUploadCompleteView(APIView):
