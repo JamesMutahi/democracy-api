@@ -18,6 +18,7 @@ class BaseModel(models.Model):
 
 class Meeting(BaseModel):
     host = models.ForeignKey(User, on_delete=models.CASCADE, related_name='meetings')
+    co_hosts = models.ManyToManyField(User, related_name='host_in', blank=True)
     title = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     county = models.ForeignKey(County, on_delete=models.PROTECT, null=True, blank=True, related_name='meetings')
@@ -36,6 +37,17 @@ class Meeting(BaseModel):
 
     def __str__(self):
         return self.title
+
+
+class SpeakerRequest(BaseModel):
+    meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name='speaker_requests')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='speaker_requests')
+    is_approved = models.BooleanField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'SpeakerRequest'
+        unique_together = ('meeting', 'user')
+        ordering = ['-created_at']
 
 
 class Comment(BaseModel):

@@ -116,6 +116,58 @@ class MeetingParticipantService:
         except Exception:
             return False
 
+
+    # ====================== MUTED PARTICIPANTS ======================
+
+    # Mute tracking using Redis Sets
+    @staticmethod
+    def _get_muted_key(meeting_id: int) -> str:
+        return f"meeting:muted:{meeting_id}"
+
+    @staticmethod
+    def set_mute_status(meeting_id: int, user_id: int, is_muted: bool):
+        """Set mute status for a user in a meeting"""
+        muted_key = MeetingParticipantService._get_muted_key(meeting_id)
+        user_id_str = str(user_id)
+
+        try:
+            with redis_client.pipeline() as pipe:
+                if is_muted:
+                    pipe.sadd(muted_key, user_id_str)
+                else:
+                    pipe.srem(muted_key, user_id_str)
+                pipe.expire(muted_key, 7200)
+                pipe.execute()
+
+            MeetingParticipantService.signal_meeting(Meeting.objects.get(id=meeting_id))
+            logger.debug(f"User {user_id} muted={is_muted} in meeting {meeting_id}")
+
+            return True  # Return success indicator
+
+        except Exception as e:
+            logger.error(f"Error setting mute status for user {user_id} in meeting {meeting_id}: {e}")
+            return False
+
+    @staticmethod
+    def get_muted_users(meeting_id: int) -> List[int]:
+        """Get list of muted user IDs"""
+        muted_key = MeetingParticipantService._get_muted_key(meeting_id)
+        try:
+            members = redis_client.smembers(muted_key)
+            return [int(uid) for uid in members]
+        except Exception as e:
+            logger.error(f"Error fetching muted users: {e}")
+            return []
+
+    @staticmethod
+    def is_muted(meeting_id: int, user_id: int) -> bool:
+        muted_key = MeetingParticipantService._get_muted_key(meeting_id)
+        try:
+            return bool(redis_client.sismember(muted_key, str(user_id)))
+        except Exception:
+            return False
+
+
     # ====================== CLEANUP ======================
 
     @staticmethod

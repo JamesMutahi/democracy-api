@@ -12,14 +12,14 @@ class CustomIndexDashboard(Dashboard):
             models=('django.contrib.sites.models.Site', 'apps.geo.models.County', 'apps.geo.models.Ward',),
         ))
         self.children.append(modules.ModelList(
-            title=_('General'),
+            title=_('Hub'),
             column=1,
             collapsible=True,
             models=('apps.ballot.models.Ballot', 'apps.survey.models.Survey', 'apps.survey.models.Response',
                     'apps.posts.models.Report', 'apps.meeting.models.Meeting',),
         ))
         self.children.append(modules.ModelList(
-            title=_('User data'),
+            title=_('Social media'),
             column=1,
             collapsible=True,
             models=(

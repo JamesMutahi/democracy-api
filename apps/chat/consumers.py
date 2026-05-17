@@ -55,7 +55,6 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
         return {
             'data': instance.pk,
             'action': action.value,
-            'request_id': 'chats',
             'pk': instance.pk,
             'response_status': 201 if action.value == 'create' else 204 if action.value == 'delete' else 200
         }
@@ -86,8 +85,7 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
     def message_activity_serializer(self, instance: Message, action, **kwargs):
         return {
             'data': {'pk': instance.pk, 'chat_id': instance.chat.id},
-            'action': action.value,
-            'request_id': 'messages',
+            'action': 'message_' + action.value,
             'pk': instance.pk,
             'response_status': 201 if action.value == 'create' else 204 if action.value == 'delete' else 200
         }

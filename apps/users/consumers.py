@@ -11,6 +11,7 @@ from djangochannelsrestframework.observer import model_observer
 from rest_framework.exceptions import PermissionDenied
 
 from apps.meeting.models import Meeting
+from apps.meeting.services import MeetingParticipantService
 from apps.petition.models import Petition
 from apps.recommendations.follow_recommender import FollowRecommender
 from apps.users.models import ProfileVisit
@@ -276,8 +277,15 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     @action()
     @rate_limit(limit=40, period=60)
     async def meeting_participants(self, request_id: str, pk: int, page: int = 1, page_size=None, last_user: int = None,
-                                  **kwargs):
+                                   **kwargs):
         data = await self.get_meeting_participants(pk, page, page_size or self.page_size, last_user)
+        return data, 200
+
+    @action()
+    @rate_limit(limit=40, period=60)
+    async def meeting_listeners(self, request_id: str, pk: int, page: int = 1, page_size=None, last_user: int = None,
+                                **kwargs):
+        data = await self.get_meeting_listeners(pk, page, page_size or self.page_size, last_user)
         return data, 200
 
     # ====================== Private List Helpers ======================
@@ -312,8 +320,18 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     @database_sync_to_async
     def get_meeting_participants(self, pk: int, page: int, page_size: int, last_user: int = None):
+        ids = MeetingParticipantService.get_all_participant_ids(pk)
+        users = User.objects.filter(id__in=ids)
+        return self.users_paginator(users, page, page_size, last_user)
+
+    @database_sync_to_async
+    def get_meeting_listeners(self, pk: int, page: int, page_size: int, last_user: int = None):
+        ids = MeetingParticipantService.get_all_participant_ids(pk)
         meeting = Meeting.objects.get(pk=pk)
-        users = meeting.participants.all()
+        users = User.objects.filter(id__in=ids)
+        users = users.exclude(id=meeting.host_id)
+        users = users.exclude(id__in=meeting.co_hosts.all())
+        users = users.exclude(id__in=meeting.speakers.all())
         return self.users_paginator(users, page, page_size, last_user)
 
     # ====================== Helpers ======================
