@@ -70,36 +70,42 @@ class MessageSerializer(serializers.ModelSerializer):
     section = SectionSerializer(read_only=True)
     post_id = serializers.PrimaryKeyRelatedField(
         queryset=Post.objects.all(),
+        source='post',
         write_only=True,
         required=False,
         allow_null=True
     )
     ballot_id = serializers.PrimaryKeyRelatedField(
         queryset=Ballot.objects.all(),
+        source='ballot',
         write_only=True,
         required=False,
         allow_null=True
     )
     survey_id = serializers.PrimaryKeyRelatedField(
         queryset=Survey.objects.all(),
+        source='survey',
         write_only=True,
         required=False,
         allow_null=True
     )
     petition_id = serializers.PrimaryKeyRelatedField(
         queryset=Petition.objects.all(),
+        source='petition',
         write_only=True,
         required=False,
         allow_null=True
     )
     meeting_id = serializers.PrimaryKeyRelatedField(
         queryset=Meeting.objects.all(),
+        source='meeting',
         write_only=True,
         required=False,
         allow_null=True
     )
     section_id = serializers.PrimaryKeyRelatedField(
         queryset=Section.objects.all(),
+        source='section',
         write_only=True,
         required=False,
         allow_null=True
@@ -137,33 +143,21 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data['author'] = self.context['scope']['user']
-        if validated_data.get('post_id'):
-            validated_data['post'] = validated_data.pop('post_id')
-        if validated_data.get('ballot_id'):
-            validated_data['ballot'] = validated_data.pop('ballot_id')
-        if validated_data.get('survey_id'):
-            validated_data['survey'] = validated_data.pop('survey_id')
-        if validated_data.get('petition_id'):
-            validated_data['petition'] = validated_data.pop('petition_id')
-        if validated_data.get('meeting_id'):
-            validated_data['meeting'] = validated_data.pop('meeting_id')
-        if validated_data.get('section_id'):
-            validated_data['section'] = validated_data.pop('section_id')
 
         # Extract object if link is present in message text
         linked_object = extract_linked_object(text=validated_data['text'])
         if linked_object:
-            if isinstance(linked_object, Post) and not validated_data.get('post'):
+            if isinstance(linked_object, Post) and not validated_data.get('post_id'):
                 validated_data['post_id'] = linked_object.pk
-            if isinstance(linked_object, Ballot) and not validated_data.get('ballot'):
+            if isinstance(linked_object, Ballot) and not validated_data.get('ballot_id'):
                 validated_data['ballot_id'] = linked_object.pk
-            if isinstance(linked_object, Survey) and not validated_data.get('survey'):
+            if isinstance(linked_object, Survey) and not validated_data.get('survey_id'):
                 validated_data['survey_id'] = linked_object.pk
-            if isinstance(linked_object, Petition) and not validated_data.get('petition'):
+            if isinstance(linked_object, Petition) and not validated_data.get('petition_id'):
                 validated_data['petition_id'] = linked_object.pk
-            if isinstance(linked_object, Meeting) and not validated_data.get('meeting'):
+            if isinstance(linked_object, Meeting) and not validated_data.get('meeting_id'):
                 validated_data['meeting_id'] = linked_object.pk
-            if isinstance(linked_object, Section) and not validated_data.get('section'):
+            if isinstance(linked_object, Section) and not validated_data.get('section_id'):
                 validated_data['section_id'] = linked_object.pk
 
         # Calling create method with new validated data

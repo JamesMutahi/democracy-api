@@ -5,8 +5,11 @@ from django.db import transaction
 from django.db.models import QuerySet, Q
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
-from djangochannelsrestframework.mixins import CreateModelMixin, ListModelMixin, PatchModelMixin, RetrieveModelMixin
+from djangochannelsrestframework.mixins import CreateModelMixin, ListModelMixin, PatchModelMixin, RetrieveModelMixin, \
+    DeleteModelMixin
 from djangochannelsrestframework.observer import model_observer
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.generics import get_object_or_404
 
 from apps.meeting.models import Meeting, SpeakerRequest
 from apps.meeting.serializers import MeetingSerializer, SpeakerRequestSerializer
@@ -17,7 +20,8 @@ from apps.utils.throttles import rate_limit, interaction_rate_limit
 logger = logging.getLogger(__name__)
 
 
-class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer):
+class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, RetrieveModelMixin, DeleteModelMixin,
+                      GenericAsyncAPIConsumer):
     queryset = Meeting.objects.all()
     serializer_class = MeetingSerializer
     lookup_field = "pk"
@@ -30,7 +34,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
             await self.close()
 
     # ====================== Real-time Observer ======================
-    @model_observer(Meeting, many_to_many=True)
+    @model_observer(Meeting)
     async def meeting_activity(self, message, **kwargs):
         await self.send_json(message)
 
@@ -53,7 +57,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
             'response_status': 200
         }
 
-    @model_observer(SpeakerRequest, many_to_many=True)
+    @model_observer(SpeakerRequest)
     async def speaker_request_activity(self, message, **kwargs):
         await self.send_json(message)
 
@@ -82,6 +86,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
         try:
             if self.scope['user'].is_authenticated:
                 user_id = self.scope['user'].id
+                await self.delete_all_user_requests()
                 await database_sync_to_async(
                     MeetingParticipantService.cleanup_user_from_all_meetings
                 )(user_id)
@@ -90,6 +95,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
 
         try:
             await self.meeting_activity.unsubscribe()
+            await self.speaker_request_activity.unsubscribe()
         except Exception as e:
             logger.warning(f"Error unsubscribing observer: {e}")
         await super().websocket_disconnect(message)
@@ -169,11 +175,9 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
     @rate_limit(limit=40, period=60)
     async def list(self, request_id: str, page_size=20, **kwargs):
         kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_user_regions()
-
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.list_(queryset=queryset, page_size=page_size or self.page_size, **kwargs)
-
-        await self.reply(action='list', data=data, request_id=request_id)
+        return data, 200
 
     @database_sync_to_async
     def get_user_regions(self):
@@ -206,10 +210,13 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
     # ====================== Join / Leave ======================
     @action()
     @interaction_rate_limit
-    async def subscribe(self, pk: int, request_id: str, **kwargs):
+    async def subscribe(self, pk: int, request_id: str, is_muted: bool = False, **kwargs):
         await self.meeting_activity.subscribe(pk=pk, request_id=request_id)
-        if self._user_can_handle_requests(pk=pk):
-            await self.speaker_request_activity.subscribe(pk=pk, request_id=request_id)
+        await self.speaker_request_activity.subscribe(pk=pk, request_id=request_id)
+        if is_muted:
+            await database_sync_to_async(
+                MeetingParticipantService.set_mute_status
+            )(meeting_id=pk, user_id=self.scope['user'].id, is_muted=is_muted)
         result = await self.add_participant(pk=pk)
         return result, 200
 
@@ -236,11 +243,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
     async def patch(self, pk: int, **kwargs):  # Override to add explicit check
         meeting = await database_sync_to_async(self.get_object)(pk=pk)
         if meeting.host_id != self.scope['user'].id:
-            return await self.reply(
-                action='patch',
-                errors=['Only the host can update this meeting'],
-                status=403
-            )
+            raise PermissionDenied("Only the host can update this meeting.")
         return await super().patch(**kwargs)
 
     @action()
@@ -248,11 +251,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
     async def delete(self, pk: int, **kwargs):
         meeting = await database_sync_to_async(self.get_object)(pk=pk)
         if meeting.host_id != self.scope['user'].id:
-            return await self.reply(
-                action='delete',
-                errors=['Only the host can delete this meeting'],
-                status=403
-            )
+            raise PermissionDenied("Only the host can delete this meeting.")
         await database_sync_to_async(MeetingParticipantService.cleanup_meeting)(pk)
         response, status = await super().delete(**kwargs)
         return response, status
@@ -262,60 +261,56 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
     @action()
     @interaction_rate_limit
     async def mute(self, pk: int, data: dict, **kwargs):
+        meeting = await database_sync_to_async(self.get_object)(pk=pk)
 
-        if not self._user_is_speaker(pk):
-            return await self.reply(
-                action='mute',
-                errors=['You are not a speaker'],
-                status=403
-            )
+        if not self._user_is_speaker(meeting):
+            raise PermissionDenied("You are not a speaker.")
 
         await database_sync_to_async(
             MeetingParticipantService.set_mute_status
         )(meeting_id=pk, user_id=self.scope['user'].id, is_muted=data['is_muted'])
+        await database_sync_to_async(MeetingParticipantService.signal_meeting)(meeting=meeting)
 
         return {"is_muted": data['is_muted']}, 200
 
     @database_sync_to_async
-    def _user_is_speaker(self, pk: int):
+    def _user_is_speaker(self, meeting: Meeting):
         user = self.scope['user']
-        meeting = self.get_object(pk=pk)
         return meeting.host_id == user.id or meeting.co_hosts.contains(user) or meeting.speakers.contains(user)
 
     @action()
     @interaction_rate_limit
     async def mute_speaker(self, pk: int, data: dict, **kwargs):
-        """Host mutes or unmutes a participant"""
-        user = self.scope['user']
+        """Host/Co-host mutes a participant"""
         meeting = await database_sync_to_async(self.get_object)(pk=pk)
 
-        if meeting.host_id != user.id:
-            return await self.reply(
-                action='mute',
-                errors=['Only hosts can mute participants'],
-                status=403
-            )
+        if not await self._user_can_manage_speakers(meeting=meeting):
+            raise PermissionDenied("Only hosts can mute speakers.")
+
+        target_user_id = data.get('user_id')
+        if not target_user_id:
+            return await self.reply(action='mute_speaker', errors=['user_id is required'], status=400)
 
         await database_sync_to_async(
             MeetingParticipantService.set_mute_status
-        )(meeting_id=pk, user_id=data['user_id'], is_muted=data['is_muted'])
+        )(meeting_id=pk, user_id=target_user_id, is_muted=True)
+        await database_sync_to_async(MeetingParticipantService.signal_meeting)(meeting=meeting)
 
-        # Broadcast mute command (clients will apply it via Agora)
-        await self.channel_layer.group_send(
-            f"meeting__{pk}",
-            {
-                "data": {
-                    "user_id": data['user_id'],
-                    "is_muted": data['is_muted'],
-                    "muted_by": user.id,
-                },
-                "action": "mute_command",
-                'pk': pk,
-                'response_status': 200
-            }
-        )
+        return {"user_id": target_user_id, "is_muted": True}, 200
 
-        return {"is_muted": data['is_muted'], "user_id": data['user_id']}, 200
+    @action()
+    @interaction_rate_limit
+    async def mute_everyone(self, pk: int, **kwargs):
+        """Host/Co-host mutes every speaker in meeting"""
+        meeting = await database_sync_to_async(self.get_object)(pk=pk)
+
+        if not await self._user_can_manage_speakers(meeting=meeting):
+            raise PermissionDenied("Only hosts can mute speakers.")
+
+        await database_sync_to_async(MeetingParticipantService.mute_everyone)(meeting=meeting)
+        await database_sync_to_async(MeetingParticipantService.signal_meeting)(meeting=meeting)
+
+        return {}, 200
 
     # ====================== SPEAKER REQUESTS ======================
 
@@ -323,12 +318,9 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
     @rate_limit(limit=40, period=60)
     async def speaker_requests(self, pk: int, page_size=20, **kwargs):
         meeting = await database_sync_to_async(self.get_object)(pk=pk)
-        if not self._user_can_handle_requests(pk=pk):
-            return await self.reply(
-                action='speaker_requests',
-                errors=['Only the host can view speaker requests.'],
-                status=403
-            )
+        if not await self._user_can_manage_speakers(meeting=meeting):
+            raise PermissionDenied("Only the host can view speaker requests.")
+
         data = await self.get_requests(meeting=meeting, page_size=page_size, **kwargs)
         return data, 200
 
@@ -356,7 +348,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
         meeting = await database_sync_to_async(self.get_object)(pk=pk)
 
         if not self._user_can_access_meeting(meeting):
-            return {"error": "Not authorized to speak in this meeting"}, 403
+            raise PermissionDenied("Not authorized to speak in this meeting.")
 
         data = await self._request_to_speak(user=user, meeting=meeting)
 
@@ -391,41 +383,101 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
     @interaction_rate_limit
     async def handle_speaker_request(self, pk: int, data: dict, **kwargs):
         """Host approves or rejects a speaker request"""
-        request = await database_sync_to_async(SpeakerRequest.objects.get)(pk=pk)
+        request = await self.get_speaker_request(pk=pk)
 
-        if not self._user_can_handle_requests(request.meeting_id):
-            return {"error": "Only the host can manage speaker requests"}, 403
+        if not await self._user_can_manage_speakers(meeting=request.meeting):
+            raise PermissionDenied("Only hosts can manage speaker requests.")
 
         data = await self._handle_speaker_request(request=request, is_approved=data['is_approved'])
 
-        # Broadcast decision to all clients
-        await self.channel_layer.group_send(
-            f"meeting__{pk}",
-            {
-                "data": data,
-                "action": "speaker_decision",
-                'pk': pk,
-                'response_status': 200
-            }
-        )
+        return data, 200
 
-        return {}, 200
+    @staticmethod
+    @database_sync_to_async
+    def get_speaker_request(pk: int):
+        return get_object_or_404(SpeakerRequest.objects.all(), pk=pk)
 
     @database_sync_to_async
     @transaction.atomic
     def _handle_speaker_request(self, request: SpeakerRequest, is_approved: bool, **kwargs):
-        request.is_approved = is_approved
-        request.save()
         if is_approved:
             request.meeting.speakers.add(request.user)
+        else:
+            request.meeting.speakers.remove(request.user)
+        request.is_approved = is_approved
+        request.save()
         return {"user_id": request.user.id, "is_approved": is_approved, "decided_by": self.scope['user'].id}
 
+    @action()
+    @interaction_rate_limit
+    async def manage_co_host(self, pk: int, user_id: int, **kwargs):
+        """Host adds and removes co-hosts"""
+        meeting = await database_sync_to_async(self.get_object)(pk=pk)
+
+        if not meeting.host_id == self.scope['user'].id:
+            raise PermissionDenied("Only the host can manage co-hosts.")
+
+        if meeting.host_id == user_id:
+            raise ValidationError("Cannot add host to co-hosts.")
+
+        data = await self._manage_co_host(pk=pk, user_id=user_id)
+        return data, 200
+
     @database_sync_to_async
-    def _user_can_handle_requests(self, pk: int):
-        meeting = self.get_object(pk=pk)
-        isHost = meeting.host_id == self.scope['user'].id or meeting.co_hosts.contains(self.scope['user'])
-        return isHost
+    def _manage_co_host(self, pk: int, user_id: int):
+        meeting: Meeting = self.get_object(pk=pk)
+
+        if meeting.co_hosts.filter(pk=user_id).exists():
+            meeting.co_hosts.remove(user_id)
+            is_co_host = False
+        else:
+            if not meeting.speakers.filter(pk=user_id).exists():
+                MeetingParticipantService.set_mute_status(meeting_id=pk, user_id=user_id, is_muted=True)
+            meeting.co_hosts.add(user_id)
+            meeting.speakers.remove(user_id)
+            is_co_host = True
+        MeetingParticipantService.signal_meeting(meeting)
+        return {'pk': pk, 'is_co_host': is_co_host}
+
+    @action()
+    @interaction_rate_limit
+    async def manage_speaker(self, pk: int, user_id: int, **kwargs):
+        """Host and co-hosts add and remove speakers"""
+        meeting = await database_sync_to_async(self.get_object)(pk=pk)
+
+        if not await self._user_can_manage_speakers(meeting=meeting):
+            raise PermissionDenied("Only hosts can manage speaker requests.")
+
+        if meeting.host_id == user_id:
+            raise ValidationError("Cannot add host to speakers.")
+
+        data = await self._manage_speaker(pk=pk, user_id=user_id)
+        return data, 200
+
+    @database_sync_to_async
+    def _manage_speaker(self, pk: int, user_id: int):
+        meeting: Meeting = self.get_object(pk=pk)
+
+        if meeting.speakers.filter(pk=user_id).exists():
+            meeting.speakers.remove(user_id)
+            is_speaker = False
+        else:
+            if not meeting.co_hosts.filter(pk=user_id).exists():
+                MeetingParticipantService.set_mute_status(meeting_id=pk, user_id=user_id, is_muted=True)
+            meeting.speakers.add(user_id)
+            meeting.co_hosts.remove(user_id)
+            is_speaker = True
+        MeetingParticipantService.signal_meeting(meeting)
+        return {'pk': pk, 'is_speaker': is_speaker}
+
+    @database_sync_to_async
+    def _user_can_manage_speakers(self, meeting: Meeting):
+        user = self.scope['user']
+        return (
+                meeting.host_id == user.id or
+                meeting.co_hosts.filter(id=user.id).exists()
+        )
 
     @database_sync_to_async
     def delete_all_user_requests(self):
-        SpeakerRequest.objects.filter(user=self.scope['user']).delete()
+        return SpeakerRequest.objects.filter(user=self.scope['user']).delete()

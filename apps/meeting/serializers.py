@@ -1,5 +1,9 @@
+from datetime import timedelta
+
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.utils import timezone
 from rest_framework import serializers
 
 from apps.geo.models import County, Constituency, Ward
@@ -13,10 +17,18 @@ User = get_user_model()
 
 class SpeakerRequestSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
+    decided_by = serializers.SerializerMethodField()
 
     class Meta:
         model = SpeakerRequest
-        fields = ['id', 'meeting', 'user', 'is_approved']
+        fields = ['id', 'meeting', 'user', 'is_approved', 'decided_by']
+
+    @staticmethod
+    def get_decided_by(obj):
+        name = None
+        if obj.decided_by:
+            name = obj.decided_by.name
+        return name
 
 
 class MeetingSerializer(serializers.ModelSerializer):
@@ -24,17 +36,17 @@ class MeetingSerializer(serializers.ModelSerializer):
     co_hosts = UserSerializer(read_only=True, many=True)
     co_host_ids = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(),
+        source='co_hosts',
         many=True,
         write_only=True,
-        source='hosts',
         required=False
     )
     speakers = UserSerializer(read_only=True, many=True)
     speaker_ids = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(),
+        source='speakers',
         many=True,
         write_only=True,
-        source='speakers',
         required=False
     )
     participants_count = serializers.SerializerMethodField(read_only=True)
@@ -43,25 +55,22 @@ class MeetingSerializer(serializers.ModelSerializer):
     county = CountySerializer(read_only=True)
     county_id = serializers.PrimaryKeyRelatedField(
         queryset=County.objects.all(),
-        many=True,
-        write_only=True,
         source='county',
+        write_only=True,
         required=False
     )
     constituency = ConstituencySerializer(read_only=True)
     constituency_id = serializers.PrimaryKeyRelatedField(
         queryset=Constituency.objects.all(),
-        many=True,
-        write_only=True,
         source='constituency',
+        write_only=True,
         required=False
     )
     ward = WardSerializer(read_only=True)
     ward_id = serializers.PrimaryKeyRelatedField(
         queryset=Ward.objects.all(),
-        many=True,
-        write_only=True,
         source='ward',
+        write_only=True,
         required=False
     )
 
@@ -85,11 +94,13 @@ class MeetingSerializer(serializers.ModelSerializer):
             'participants',
             'participants_count',
             'muted',
+            'is_recorded',
             'is_live_stream',
             'start_time',
             'end_time',
             'is_active',
         ]
+        extra_kwargs = {'start_time': {'allow_null': True, 'required': False, }}
 
     @staticmethod
     def get_participants_count(obj):
@@ -107,7 +118,7 @@ class MeetingSerializer(serializers.ModelSerializer):
         if not participant_ids:
             serialized = []
         else:
-            limited_ids = participant_ids[:50]
+            limited_ids = participant_ids[:20]
 
             users = User.objects.filter(id__in=limited_ids)
 
@@ -132,6 +143,10 @@ class MeetingSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data['host'] = self.context['scope']['user']
+        if validated_data['start_time'] is None:
+            validated_data['start_time'] = timezone.now()
+        if not validated_data['is_live_stream']:
+            validated_data['end_time'] = validated_data['start_time'] + timedelta(seconds=int(settings.MEETING_PERIOD))
         return super().create(validated_data)
 
     def update(self, instance, validated_data):

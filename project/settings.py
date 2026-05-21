@@ -269,6 +269,10 @@ AWS_S3_REGION_NAME = config('AWS_S3_REGION_NAME')
 AWS_S3_ENDPOINT_URL = config('AWS_S3_ENDPOINT_URL')
 # AWS_S3_CUSTOM_DOMAIN = f"{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com"
 
+AGORA_ID = config('AGORA_ID')
+AGORA_SECRET = config('AGORA_SECRET')
+MEETING_PERIOD = config('MEETING_PERIOD') # in seconds
+
 STORAGES = {
     "default": {
         "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",

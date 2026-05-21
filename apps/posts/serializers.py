@@ -83,45 +83,58 @@ class PostSerializer(serializers.ModelSerializer):
     section = SectionSerializer(read_only=True)
     tagged_users = UserSerializer(read_only=True, many=True)
     hashtags = TagListSerializerField(required=False, allow_null=True)
-    reply_to_id = serializers.IntegerField(write_only=True, allow_null=True)
+    reply_to_id = serializers.PrimaryKeyRelatedField(
+        queryset=Post.objects.all(),
+        source='reply_to',
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
     repost_of_id = serializers.PrimaryKeyRelatedField(
         queryset=Post.objects.all(),
+        source='repost_of',
         write_only=True,
         required=False,
         allow_null=True
     )
     community_note_of_id = serializers.PrimaryKeyRelatedField(
         queryset=Post.objects.all(),
+        source='community_note_of',
         write_only=True,
         required=False,
         allow_null=True
     )
     ballot_id = serializers.PrimaryKeyRelatedField(
         queryset=Ballot.objects.all(),
+        source='ballot',
         write_only=True,
         required=False,
         allow_null=True
     )
     survey_id = serializers.PrimaryKeyRelatedField(
         queryset=Survey.objects.all(),
+        source='survey',
         write_only=True,
         required=False,
         allow_null=True
     )
     petition_id = serializers.PrimaryKeyRelatedField(
         queryset=Petition.objects.all(),
+        source='petition',
         write_only=True,
         required=False,
         allow_null=True
     )
     meeting_id = serializers.PrimaryKeyRelatedField(
         queryset=Meeting.objects.all(),
+        source='meeting',
         write_only=True,
         required=False,
         allow_null=True
     )
     section_id = serializers.PrimaryKeyRelatedField(
         queryset=Section.objects.all(),
+        source='section',
         write_only=True,
         required=False,
         allow_null=True
@@ -268,27 +281,13 @@ class PostSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data['author'] = self.context['scope']['user']
-        if validated_data.get('reply_to_id'):
-            validated_data['reply_to'] = Post.objects.get(id=validated_data['reply_to_id'])
         if validated_data.get('repost_of_id'):
-            # Author can only have one repost of a post without body
+            # Author can only have one repost of a post without body or relevant fields
             if validated_data['body'] == '':
                 validated_data['repost_of_id'].reposts.filter(author=self.context['scope']['user'], body='',
                                                               reply_to=None, community_note_of=None, ballot=None,
                                                               survey=None, petition=None, meeting=None).delete()
             validated_data['repost_of'] = validated_data.pop('repost_of_id')
-        if validated_data.get('community_note_of_id'):
-            validated_data['community_note_of'] = validated_data.pop('community_note_of_id')
-        if validated_data.get('ballot_id'):
-            validated_data['ballot'] = validated_data.pop('ballot_id')
-        if validated_data.get('survey_id'):
-            validated_data['survey'] = validated_data.pop('survey_id')
-        if validated_data.get('petition_id'):
-            validated_data['petition'] = validated_data.pop('petition_id')
-        if validated_data.get('meeting_id'):
-            validated_data['meeting'] = validated_data.pop('meeting_id')
-        if validated_data.get('section_id'):
-            validated_data['section'] = validated_data.pop('section_id')
 
         # Tagged users
         tags = validated_data.pop('tags', None)
@@ -306,17 +305,17 @@ class PostSerializer(serializers.ModelSerializer):
         # Extract object if link is present in post body
         linked_object = extract_linked_object(text=validated_data['body'])
         if linked_object:
-            if isinstance(linked_object, Post) and not validated_data.get('repost_of'):
+            if isinstance(linked_object, Post) and not validated_data.get('repost_of_id'):
                 validated_data['repost_of_id'] = linked_object.pk
-            if isinstance(linked_object, Ballot) and not validated_data.get('ballot'):
+            if isinstance(linked_object, Ballot) and not validated_data.get('ballot_id'):
                 validated_data['ballot_id'] = linked_object.pk
-            if isinstance(linked_object, Survey) and not validated_data.get('survey'):
+            if isinstance(linked_object, Survey) and not validated_data.get('survey_id'):
                 validated_data['survey_id'] = linked_object.pk
-            if isinstance(linked_object, Petition) and not validated_data.get('petition'):
+            if isinstance(linked_object, Petition) and not validated_data.get('petition_id'):
                 validated_data['petition_id'] = linked_object.pk
-            if isinstance(linked_object, Meeting) and not validated_data.get('meeting'):
+            if isinstance(linked_object, Meeting) and not validated_data.get('meeting_id'):
                 validated_data['meeting_id'] = linked_object.pk
-            if isinstance(linked_object, Section) and not validated_data.get('section'):
+            if isinstance(linked_object, Section) and not validated_data.get('section_id'):
                 validated_data['section_id'] = linked_object.pk
 
         # Calling create method with new validated data

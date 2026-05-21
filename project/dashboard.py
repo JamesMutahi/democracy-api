@@ -6,31 +6,27 @@ class CustomIndexDashboard(Dashboard):
     def __init__(self, **kwargs):
         Dashboard.__init__(self, **kwargs)
         self.children.append(modules.ModelList(
-            title=_('App'),
+            title=_('Social media'),
             column=1,
             collapsible=True,
-            models=('django.contrib.sites.models.Site', 'apps.geo.models.County', 'apps.geo.models.Ward',),
+            models=(
+                'apps.users.models.CustomUser', 'apps.posts.models.Post', 'apps.posts.models.Report',
+                'apps.chat.models.Chat', 'apps.notification.models.Notification',
+                'apps.notification.models.Preferences',),
         ))
         self.children.append(modules.ModelList(
             title=_('Hub'),
             column=1,
             collapsible=True,
-            models=('apps.ballot.models.Ballot', 'apps.survey.models.Survey', 'apps.survey.models.Response',
-                    'apps.posts.models.Report', 'apps.meeting.models.Meeting',),
+            models=('apps.ballot.models.Ballot', 'apps.petition.models.Petition', 'apps.meeting.models.Meeting',
+                    'apps.survey.models.Survey', 'apps.survey.models.Response',),
         ))
         self.children.append(modules.ModelList(
-            title=_('Social media'),
+            title=_('Miscellaneous'),
             column=1,
             collapsible=True,
-            models=(
-                'apps.users.models.CustomUser', 'apps.posts.models.Post', 'apps.petition.models.Petition',
-                'apps.chat.models.Chat', 'apps.notification.models.Notification',),
-        ))
-        self.children.append(modules.ModelList(
-            title=_('Constitution'),
-            column=1,
-            collapsible=True,
-            models=('apps.constitution.models.Section',),
+            models=('django.contrib.sites.models.Site', 'apps.geo.models.County', 'apps.geo.models.Constituency',
+                    'apps.geo.models.Ward', 'apps.constitution.models.Section',),
         ))
         self.children.append(modules.ModelList(
             title=_('Recommendations'),
@@ -51,12 +47,7 @@ class CustomIndexDashboard(Dashboard):
                 'django_celery_results.models.TaskResult',
             ),
         ))
-        self.children.append(modules.ModelList(
-            title=_('Notifications'),
-            column=1,
-            collapsible=True,
-            models=('apps.notification.models.Notification', 'apps.notification.models.Preferences',),
-        ))
+
         # append a recent actions module
         self.children.append(modules.RecentActions(
             title=_('Recent actions'),

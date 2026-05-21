@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
+from apps.geo.models import County, Constituency, Ward
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
 from apps.petition.models import Petition
 from apps.users.serializers import UserSerializer
@@ -14,11 +15,26 @@ class PetitionSerializer(serializers.ModelSerializer):
     recent_supporters = serializers.SerializerMethodField(read_only=True)
     is_supported = serializers.SerializerMethodField(read_only=True)
     county = CountySerializer(read_only=True)
-    county_id = serializers.IntegerField(write_only=True, allow_null=True)
+    county_id = serializers.PrimaryKeyRelatedField(
+        queryset=County.objects.all(),
+        write_only=True,
+        source='county',
+        required=False
+    )
     constituency = ConstituencySerializer(read_only=True)
-    constituency_id = serializers.IntegerField(write_only=True, allow_null=True)
+    constituency_id = serializers.PrimaryKeyRelatedField(
+        queryset=Constituency.objects.all(),
+        write_only=True,
+        source='constituency',
+        required=False
+    )
     ward = WardSerializer(read_only=True)
-    ward_id = serializers.IntegerField(write_only=True, allow_null=True)
+    ward_id = serializers.PrimaryKeyRelatedField(
+        queryset=Ward.objects.all(),
+        write_only=True,
+        source='ward',
+        required=False
+    )
 
     class Meta:
         model = Petition

@@ -1,5 +1,9 @@
+from datetime import timedelta
+
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from apps.geo.models import County, Ward, Constituency
@@ -26,8 +30,9 @@ class Meeting(BaseModel):
                                      related_name='meetings')
     ward = models.ForeignKey(Ward, on_delete=models.PROTECT, null=True, blank=True, related_name='meetings')
     speakers = models.ManyToManyField(User, blank=True, related_name='speaker_in')
+    is_recorded = models.BooleanField(default=False)
     is_live_stream = models.BooleanField(default=False)
-    start_time = models.DateTimeField(blank=True, null=True)
+    start_time = models.DateTimeField(default=timezone.now)
     end_time = models.DateTimeField(blank=True, null=True)
     is_active = models.BooleanField(_('active'), default=True)
 
@@ -43,6 +48,8 @@ class SpeakerRequest(BaseModel):
     meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name='speaker_requests')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='speaker_requests')
     is_approved = models.BooleanField(null=True, blank=True)
+    decided_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='speaker_request_decisions')
 
     class Meta:
         db_table = 'SpeakerRequest'

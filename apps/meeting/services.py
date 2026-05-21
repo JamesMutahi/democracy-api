@@ -116,7 +116,6 @@ class MeetingParticipantService:
         except Exception:
             return False
 
-
     # ====================== MUTED PARTICIPANTS ======================
 
     # Mute tracking using Redis Sets
@@ -127,6 +126,19 @@ class MeetingParticipantService:
     @staticmethod
     def set_mute_status(meeting_id: int, user_id: int, is_muted: bool):
         """Set mute status for a user in a meeting"""
+        return MeetingParticipantService.set_mute_status_in_pipeline(meeting_id=meeting_id, user_id=user_id,
+                                                                     is_muted=is_muted)
+
+    @staticmethod
+    def mute_everyone(meeting: Meeting):
+        """Mute all speakers in a meeting. Host and cohosts are not muted."""
+        for speaker in meeting.speakers.all():
+            MeetingParticipantService.set_mute_status_in_pipeline(meeting_id=meeting.id, user_id=speaker.user_id,
+                                                                  is_muted=True)
+        return True
+
+    @staticmethod
+    def set_mute_status_in_pipeline(meeting_id: int, user_id: int, is_muted: bool):
         muted_key = MeetingParticipantService._get_muted_key(meeting_id)
         user_id_str = str(user_id)
 
@@ -138,8 +150,6 @@ class MeetingParticipantService:
                     pipe.srem(muted_key, user_id_str)
                 pipe.expire(muted_key, 7200)
                 pipe.execute()
-
-            MeetingParticipantService.signal_meeting(Meeting.objects.get(id=meeting_id))
             logger.debug(f"User {user_id} muted={is_muted} in meeting {meeting_id}")
 
             return True  # Return success indicator
@@ -161,12 +171,12 @@ class MeetingParticipantService:
 
     @staticmethod
     def is_muted(meeting_id: int, user_id: int) -> bool:
+        """Check if a user is muted"""
         muted_key = MeetingParticipantService._get_muted_key(meeting_id)
         try:
             return bool(redis_client.sismember(muted_key, str(user_id)))
         except Exception:
             return False
-
 
     # ====================== CLEANUP ======================
 

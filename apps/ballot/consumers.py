@@ -35,6 +35,15 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         ballot = Ballot.objects.select_related('county', 'constituency', 'ward').get(pk=pk)
         return BallotSerializer(ballot, context={'scope': self.scope}).data
 
+    @ballot_activity.groups_for_signal
+    def ballot_activity_groups(self, instance: Ballot, **kwargs):
+        yield f'ballot__{instance.pk}'
+
+    @ballot_activity.groups_for_consumer
+    def ballot_activity_groups(self, pk=None, **kwargs):
+        if pk is not None:
+            yield f'ballot__{pk}'
+
     @ballot_activity.serializer
     def ballot_activity_serializer(self, instance: Ballot, action, **kwargs):
         return {
@@ -53,6 +62,15 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
             message['action'] = 'update'
         await self.send_json(message)
 
+    @option_activity.groups_for_signal
+    def option_activity_groups(self, instance: Option, **kwargs):
+        yield f'ballot__{instance.ballot.pk}'
+
+    @option_activity.groups_for_consumer
+    def option_activity_groups(self, ballot=None, **kwargs):
+        if ballot is not None:
+            yield f'ballot__{ballot}'
+
     @option_activity.serializer
     def option_activity_serializer(self, instance: Option, action, **kwargs):
         return {
@@ -70,6 +88,15 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
             message['data'] = await self.get_ballot_serializer_data(pk=ballot_pk)
             message['action'] = 'update'
         await self.send_json(message)
+
+    @vote_activity.groups_for_signal
+    def vote_activity_groups(self, instance: OptionVote, **kwargs):
+        yield f'ballot__{instance.option.ballot.pk}'
+
+    @vote_activity.groups_for_consumer
+    def vote_activity_groups(self, pk=None, **kwargs):
+        if pk is not None:
+            yield f'ballot__{pk}'
 
     @vote_activity.serializer
     def vote_activity_serializer(self, instance: OptionVote, action, **kwargs):
@@ -191,6 +218,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         if pk:
             await self.ballot_activity.subscribe(pk=pk, request_id=request_id)
             await self.option_activity.subscribe(pk=pk, request_id=request_id)
+            await self.vote_activity.subscribe(pk=pk, request_id=request_id)
         return response, status
 
     @action()
@@ -198,6 +226,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     async def unsubscribe(self, pk: int, request_id: str, **kwargs):
         await self.ballot_activity.unsubscribe(pk=pk, request_id=request_id)
         await self.option_activity.unsubscribe(pk=pk, request_id=request_id)
+        await self.vote_activity.unsubscribe(pk=pk, request_id=request_id)
         return {}, 200
 
     # ====================== Voting Actions ======================
