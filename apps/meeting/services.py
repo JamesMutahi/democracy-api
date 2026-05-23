@@ -130,10 +130,13 @@ class MeetingParticipantService:
                                                                      is_muted=is_muted)
 
     @staticmethod
-    def mute_everyone(meeting: Meeting):
-        """Mute all speakers in a meeting. Host and cohosts are not muted."""
-        for speaker in meeting.speakers.all():
-            MeetingParticipantService.set_mute_status_in_pipeline(meeting_id=meeting.id, user_id=speaker.user_id,
+    def mute_everyone(meeting: Meeting, user_id: int):
+        """Mute all co_hosts && speakers in a meeting. Host is not muted."""
+        for user in meeting.co_hosts.all().exclude(id=user_id):
+            MeetingParticipantService.set_mute_status_in_pipeline(meeting_id=meeting.id, user_id=user.id,
+                                                                  is_muted=True)
+        for user in meeting.speakers.all():
+            MeetingParticipantService.set_mute_status_in_pipeline(meeting_id=meeting.id, user_id=user.id,
                                                                   is_muted=True)
         return True
 

@@ -307,7 +307,8 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
         if not await self._user_can_manage_speakers(meeting=meeting):
             raise PermissionDenied("Only hosts can mute speakers.")
 
-        await database_sync_to_async(MeetingParticipantService.mute_everyone)(meeting=meeting)
+        await database_sync_to_async(MeetingParticipantService.mute_everyone)(meeting=meeting,
+                                                                              user_id=self.scope['user'].id)
         await database_sync_to_async(MeetingParticipantService.signal_meeting)(meeting=meeting)
 
         return {}, 200
