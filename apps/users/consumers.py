@@ -103,6 +103,15 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     # ====================== Subscription ======================
     @action()
     @interaction_rate_limit
+    async def retrieve(self, request_id: str, **kwargs):
+        response, status = await super().retrieve(**kwargs)
+        pk = response.get("id")
+        if pk:
+            await self.user_activity.subscribe(pk=pk, request_id=request_id)
+        return response, status
+
+    @action()
+    @interaction_rate_limit
     async def subscribe(self, request_id: str, **kwargs):
         response, status = await super().retrieve(**kwargs)
         pk = response.get("id")

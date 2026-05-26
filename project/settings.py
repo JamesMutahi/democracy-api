@@ -110,6 +110,15 @@ GRAPPELLI_INDEX_DASHBOARD = 'project.dashboard.CustomIndexDashboard'
 
 SITE_ID = 1
 
+if DEBUG and MODE == "dev":
+    CORS_ALLOW_ALL_ORIGINS = True
+else:
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "https://your-production-app.com", # TODO: Set domain
+    ]
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
