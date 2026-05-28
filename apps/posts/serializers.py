@@ -173,6 +173,7 @@ class PostSerializer(serializers.ModelSerializer):
             'is_quoted',
             'reply_to',
             'repost_of',
+            'repost_type',
             'community_note_of',
             'ballot',
             'survey',
@@ -283,10 +284,9 @@ class PostSerializer(serializers.ModelSerializer):
         validated_data['author'] = self.context['scope']['user']
         if validated_data.get('repost_of_id'):
             # Author can only have one repost of a post without body or relevant fields
-            if validated_data['body'] == '':
-                validated_data['repost_of_id'].reposts.filter(author=self.context['scope']['user'], body='',
-                                                              reply_to=None, community_note_of=None, ballot=None,
-                                                              survey=None, petition=None, meeting=None).delete()
+            if validated_data['repost_type'] == Post.RepostType.REPOST:
+                validated_data['repost_of_id'].reposts.filter(author=self.context['scope']['user'],
+                                                              repost_type=Post.RepostType.REPOST).delete()
             validated_data['repost_of'] = validated_data.pop('repost_of_id')
 
         # Tagged users

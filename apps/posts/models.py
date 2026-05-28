@@ -31,16 +31,21 @@ class BaseModel(models.Model):
 
 
 class Post(BaseModel):
-    STATUS_CHOICES = (
-        ('draft', 'Draft'),
-        ('published', 'Published'),
-    )
+    class Status(models.TextChoices):
+        REPOST = 'draft', 'Draft'
+        QUOTE = 'published', 'Published'
+
+    class RepostType(models.TextChoices):
+        REPOST = 'repost', 'Repost'
+        QUOTE = 'quote', 'Quote'
+
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='posts')
     body = models.TextField(blank=True)
     location = models.PointField(srid=4326, null=True, blank=True)
     # Dependencies
     reply_to = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='replies')
     repost_of = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='reposts')
+    repost_type = models.CharField(max_length=10, null=True, blank=True, choices=RepostType.choices)
     community_note_of = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True,
                                           related_name='community_notes')
     ballot = models.ForeignKey(Ballot, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
@@ -61,7 +66,7 @@ class Post(BaseModel):
     upvotes = models.ManyToManyField(User, blank=True, related_name='upvotes')
     downvotes = models.ManyToManyField(User, blank=True, related_name='downvotes')
     # Status
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='published')
+    status = models.CharField(max_length=10, choices=Status.choices, default='published')
     published_at = models.DateTimeField(default=timezone.now)
     # Deletion and deactivation
     is_deleted = models.BooleanField(_('deleted'), default=False)
