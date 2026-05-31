@@ -31,6 +31,8 @@ DEBUG = config('DEBUG', cast=bool, default=True)
 
 MODE = config('MODE', default="dev")
 
+is_development = MODE == "dev"
+
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv())
 
 # Sentry
@@ -97,7 +99,7 @@ INSTALLED_APPS = [
     'storages',
 ]
 
-if DEBUG and MODE == "development":
+if is_development and DEBUG:
     DATA_UPLOAD_MAX_NUMBER_FIELDS = None
 
 AUTH_USER_MODEL = 'users.CustomUser'
@@ -110,7 +112,7 @@ GRAPPELLI_INDEX_DASHBOARD = 'project.dashboard.CustomIndexDashboard'
 
 SITE_ID = 1
 
-if DEBUG and MODE == "dev":
+if is_development and DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True
 else:
     CORS_ALLOWED_ORIGINS = [

@@ -1,14 +1,14 @@
 from django.db.models import QuerySet
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
-from djangochannelsrestframework.mixins import ListModelMixin
+from djangochannelsrestframework.mixins import ListModelMixin, RetrieveModelMixin
 
 from apps.constitution.models import Section
 from apps.constitution.serializers import SectionSerializer
 from apps.utils.throttles import rate_limit
 
 
-class ConstitutionConsumer(ListModelMixin, GenericAsyncAPIConsumer):
+class ConstitutionConsumer(ListModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer):
     serializer_class = SectionSerializer
     queryset = Section.objects.all()
     lookup_field = "pk"

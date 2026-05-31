@@ -56,10 +56,7 @@ class PostRecommender:
             reply_to__isnull=True,  # No replies
             community_note_of__isnull=True,  # No community notes
             # published_at__gte=Now() - timedelta(hours=24) # Limit within a day
-        ).filter(
-            # Allow Quotes (reposts with text), exclude silent reposts
-            Q(repost_of__isnull=True) | Q(body__gt='')
-        ).exclude(id__in=exclude_post_ids)
+        ).exclude(repost_type=Post.RepostType.REPOST).exclude(id__in=exclude_post_ids)
 
         # Hard exclude muted and blocked authors
         muted_authors = self.user.muted.values_list('id', flat=True)
@@ -257,9 +254,7 @@ class PostRecommender:
             community_note_of__isnull=True,
         ).exclude(id__in=exclude_post_ids)
 
-        base_qs = base_qs.filter(
-            Q(repost_of__isnull=True) | Q(body__gt='')
-        )
+        base_qs = base_qs.exclude(repost_type=Post.RepostType.REPOST)
 
         # Hard exclude muted and blocked
         muted_authors = self.user.muted.values_list('id', flat=True)
