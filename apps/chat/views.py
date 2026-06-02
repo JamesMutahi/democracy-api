@@ -1,3 +1,5 @@
+import uuid
+
 import botocore
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -153,7 +155,7 @@ def direct_message(request):
             {"user_ids": "This field is required"}, status=status.HTTP_400_BAD_REQUEST
         )
 
-    if len(user_ids > 5):
+    if len(user_ids) > 5:
         return Response(
             {"user_ids": "Only 5 allowed at a time"}, status=status.HTTP_400_BAD_REQUEST
         )
@@ -163,21 +165,26 @@ def direct_message(request):
     created_chats = []  # Store Chat model instances
     upload_data = []
 
+    target_users = []
     for user_id in user_ids:
         try:
             target_user = User.objects.get(id=user_id)
+            target_users.append(target_user)
         except User.DoesNotExist:
             return Response(
                 {"error": f"User with id {user_id} does not exist"},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+
+    for target_user in target_users:
         # Get or create chat
         chat = get_or_create_direct_chat(user, target_user)
 
         # Prepare message data
         message_data = data.copy()
         message_data["chat"] = chat.id
+        message_data["uuid"] = uuid.uuid4()
 
         # Create the message
         serializer = MessageSerializer(data=message_data, context=context)
