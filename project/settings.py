@@ -31,8 +31,6 @@ DEBUG = config('DEBUG', cast=bool, default=True)
 
 MODE = config('MODE', default="dev")
 
-is_development = MODE == "dev"
-
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv())
 
 # Sentry
@@ -99,7 +97,7 @@ INSTALLED_APPS = [
     'storages',
 ]
 
-if is_development and DEBUG:
+if MODE == 'dev' and DEBUG:
     DATA_UPLOAD_MAX_NUMBER_FIELDS = None
 
 AUTH_USER_MODEL = 'users.CustomUser'
@@ -112,14 +110,10 @@ GRAPPELLI_INDEX_DASHBOARD = 'project.dashboard.CustomIndexDashboard'
 
 SITE_ID = 1
 
-if is_development and DEBUG:
-    CORS_ALLOW_ALL_ORIGINS = True
-else:
-    CORS_ALLOWED_ORIGINS = [
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-        "https://your-production-app.com", # TODO: Set domain
-    ]
+# CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOWED_ORIGINS = config('ORIGINS', cast=Csv())
+CSRF_TRUSTED_ORIGINS = config('ORIGINS', cast=Csv())
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -225,15 +219,6 @@ USE_I18N = True
 
 USE_TZ = True
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/5.2/howto/static-files/
-
-STATIC_ROOT = os.path.join(BASE_DIR, 'static')
-STATIC_URL = '/static/'
-
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-MEDIA_URL = '/media/'
-
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
@@ -278,21 +263,40 @@ AWS_STORAGE_BUCKET_NAME = config('AWS_STORAGE_BUCKET_NAME')
 AWS_S3_REGION_NAME = config('AWS_S3_REGION_NAME')
 # AWS_S3_SIGNATURE_VERSION = config('AWS_S3_SIGNATURE_VERSION')
 AWS_S3_ENDPOINT_URL = config('AWS_S3_ENDPOINT_URL')
-# AWS_S3_CUSTOM_DOMAIN = f"{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com"
+AWS_S3_CUSTOM_DOMAIN = config('AWS_S3_CUSTOM_DOMAIN')
+
+# Static files (CSS, JavaScript, Images)
+# https://docs.djangoproject.com/en/5.2/howto/static-files/
+
+# STATIC_ROOT = os.path.join(BASE_DIR, 'static')
+# STATIC_URL = '/static/'
+
+STATIC_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
+
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+MEDIA_URL = '/media/'
 
 AGORA_ID = config('AGORA_ID')
 AGORA_SECRET = config('AGORA_SECRET')
-MEETING_PERIOD = config('MEETING_PERIOD') # in seconds
+MEETING_PERIOD = config('MEETING_PERIOD')  # in seconds
 
 STORAGES = {
     "default": {
         "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        "OPTIONS": {
+            "location": "media",                # Files go into /media/ folder in R2
+            "querystring_auth": False,          # Set to True for private, expiring URLs
+            "file_overwrite": False,            # Prevents users from overwriting existing uploads
+        },
     },
-    # "staticfiles": {
-    #     "BACKEND": "storages.backends.s3boto3.S3StaticStorage",
-    # },
     "staticfiles": {
-        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        "BACKEND": "storages.backends.s3boto3.S3StaticStorage",
+        "OPTIONS": {
+            "location": "static",
+            "default_acl": "public-read",
+            "querystring_auth": False,  # Vital for publicly caching static assets
+            "file_overwrite": True,
+        },
     },
 }
 

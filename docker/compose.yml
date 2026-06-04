@@ -1,5 +1,19 @@
 name: democracy
 
+x-environment: &shared-environment
+  SENTRY_DSN: ${SENTRY_DSN}
+  SENTRY_RELEASE: ${SENTRY_RELEASE}
+  SECRET_KEY: ${SECRET_KEY}
+  DEBUG: ${DEBUG}
+  MODE: ${MODE}
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+  ORIGINS: ${ORIGINS}
+  DB_NAME: ${DB_NAME}
+  DB_USER: ${DB_USER}
+  DB_PASSWORD: ${DB_PASSWORD}
+  DB_HOST: "db"
+  DB_PORT: "5432"
+
 services:
   db:
     image: postgis/postgis:17-3.5
@@ -24,26 +38,15 @@ services:
     build:
       context: ..
       dockerfile: ./docker/Dockerfile
-    container_name: democracy
+    container_name: democracy_web
+    command: uvicorn project.asgi:application --host 0.0.0.0 --port 8000 --workers 3
     ports:
       - "8000:8000"
     depends_on:
       - db
       - redis
     environment:
-      SENTRY_DSN: ${SENTRY_DSN}
-      SENTRY_RELEASE: ${SENTRY_RELEASE}
-      SECRET_KEY: ${SECRET_KEY}
-      DEBUG: ${DEBUG}
-      MODE: ${MODE}
-      #     LOGLEVEL: ${DJANGO_LOGLEVEL}
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
-
-      DB_NAME: ${DB_NAME}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_HOST: "db" # Name of the database container above.
-      DB_PORT: "5432" # Port set in the database container above.
+      <<: *shared-environment
     env_file:
       - .env
 
@@ -55,19 +58,7 @@ services:
     volumes:
       - .:/app
     environment:
-      SENTRY_DSN: ${SENTRY_DSN}
-      SENTRY_RELEASE: ${SENTRY_RELEASE}
-      SECRET_KEY: ${SECRET_KEY}
-      DEBUG: ${DEBUG}
-      MODE: ${MODE}
-      #     LOGLEVEL: ${DJANGO_LOGLEVEL}
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
-
-      DB_NAME: ${DB_NAME}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_HOST: "db" # Name of the database container above.
-      DB_PORT: "5432" # Port set in the database container above.
+      <<: *shared-environment
     depends_on:
       - db
       - redis
@@ -81,19 +72,7 @@ services:
     volumes:
       - .:/app
     environment:
-      SENTRY_DSN: ${SENTRY_DSN}
-      SENTRY_RELEASE: ${SENTRY_RELEASE}
-      SECRET_KEY: ${SECRET_KEY}
-      DEBUG: ${DEBUG}
-      MODE: ${MODE}
-      #     LOGLEVEL: ${DJANGO_LOGLEVEL}
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
-
-      DB_NAME: ${DB_NAME}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_HOST: "db" # Name of the database container above.
-      DB_PORT: "5432" # Port set in the database container above.
+      <<: *shared-environment
     depends_on:
       - db
       - redis
@@ -108,25 +87,23 @@ services:
     ports:
       - "5555:5555"
     environment:
-      SENTRY_DSN: ${SENTRY_DSN}
-      SENTRY_RELEASE: ${SENTRY_RELEASE}
-      SECRET_KEY: ${SECRET_KEY}
-      DEBUG: ${DEBUG}
-      MODE: ${MODE}
-      #     LOGLEVEL: ${DJANGO_LOGLEVEL}
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
-
-      DB_NAME: ${DB_NAME}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_HOST: "db" # Name of the database container above.
-      DB_PORT: "5432" # Port set in the database container above.
+      <<: *shared-environment
     depends_on:
       - db
       - redis
       - web
       - celery
       - celery_beat
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflare-tunnel
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+    depends_on:
+      - web
 
 volumes:
   postgres_data:

@@ -36,6 +36,3 @@ RUN chmod +x docker/entrypoint.sh
 
 # Use entrypoint to migrate
 ENTRYPOINT ["./docker/entrypoint.sh"]
-
-# Run Django’s development server
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]

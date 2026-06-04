@@ -1,7 +1,7 @@
 #!/bin/sh
 
 echo "Applying database migrations..."
-python manage.py migrate
+python manage.py migrate --noinput
 
 echo "Installing fixtures..."
 python manage.py loaddata ./fixtures/constitution.json

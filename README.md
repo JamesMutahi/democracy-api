@@ -15,6 +15,7 @@ SECRET_KEY='SECRET_KEY'
 DEBUG=True
 MODE='dev'
 ALLOWED_HOSTS=localhost,127.0.0.1
+ORIGINS=http://localhost:5500
 
 # Postgresql DB
 DB_NAME='DB_NAME'
