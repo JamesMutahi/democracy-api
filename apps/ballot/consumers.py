@@ -1,11 +1,12 @@
 from channels.db import database_sync_to_async
 from django.db.models import QuerySet, Q
+from django.db.models.signals import post_save
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
 
-from apps.ballot.models import Ballot, Option, Reason, OptionVote
+from apps.ballot.models import Ballot, Option, Reason
 from apps.ballot.serializers import BallotSerializer
 from apps.utils.list_paginator import list_paginator
 from apps.utils.throttles import rate_limit, interaction_rate_limit
@@ -75,33 +76,6 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     def option_activity_serializer(self, instance: Option, action, **kwargs):
         return {
             'data': instance.ballot.pk,
-            'action': 'update',
-            'pk': instance.pk,
-            'response_status': 200,
-        }
-
-    @model_observer(OptionVote, many_to_many=True)
-    async def vote_activity(self, message, **kwargs):
-        # When a vote changes, send update for the parent ballot
-        ballot_pk = message['data']
-        if ballot_pk:
-            message['data'] = await self.get_ballot_serializer_data(pk=ballot_pk)
-            message['action'] = 'update'
-        await self.send_json(message)
-
-    @vote_activity.groups_for_signal
-    def vote_activity_groups(self, instance: OptionVote, **kwargs):
-        yield f'ballot__{instance.option.ballot.pk}'
-
-    @vote_activity.groups_for_consumer
-    def vote_activity_groups(self, pk=None, **kwargs):
-        if pk is not None:
-            yield f'ballot__{pk}'
-
-    @vote_activity.serializer
-    def vote_activity_serializer(self, instance: OptionVote, action, **kwargs):
-        return {
-            'data': instance.option.ballot.pk,
             'action': 'update',
             'pk': instance.pk,
             'response_status': 200,
@@ -218,7 +192,6 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         if pk:
             await self.ballot_activity.subscribe(pk=pk, request_id=request_id)
             await self.option_activity.subscribe(pk=pk, request_id=request_id)
-            await self.vote_activity.subscribe(pk=pk, request_id=request_id)
         return response, status
 
     @action()
@@ -226,7 +199,6 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     async def unsubscribe(self, pk: int, request_id: str, **kwargs):
         await self.ballot_activity.unsubscribe(pk=pk, request_id=request_id)
         await self.option_activity.unsubscribe(pk=pk, request_id=request_id)
-        await self.vote_activity.unsubscribe(pk=pk, request_id=request_id)
         return {}, 200
 
     # ====================== Voting Actions ======================
@@ -276,8 +248,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
                 # Add vote to the chosen option
                 option.votes.add(user)
 
-                # Refresh and return updated ballot
-                ballot.refresh_from_db()
+                post_save.send(sender=Ballot, instance=ballot, created=False)
                 return BallotSerializer(ballot, context={'scope': self.scope}).data
 
         except Option.DoesNotExist:
