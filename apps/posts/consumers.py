@@ -475,7 +475,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     @database_sync_to_async
     def get_reply_to_posts(self, pk: int):
         post = Post.objects.get(pk=pk)
-        posts = get_reply_to(post)
+        posts = get_reply_to(post, posts=[post])
         return PostSerializer(posts, many=True, context={'scope': self.scope}).data
 
     @database_sync_to_async
@@ -838,13 +838,12 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         ]
 
 
-def get_reply_to(post: Post):
+def get_reply_to(post: Post, posts):
     """Recursive helper to get reply chain and community notes"""
-    posts = []
     if post.reply_to:
         posts.append(post.reply_to)
-        posts.extend(get_reply_to(post.reply_to))
+        get_reply_to(post.reply_to, posts=posts)
     if post.community_note_of:
         posts.append(post.community_note_of)
-        posts.extend(get_reply_to(post.community_note_of))
+        get_reply_to(post.community_note_of, posts=posts)
     return posts
