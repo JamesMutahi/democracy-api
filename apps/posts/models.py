@@ -112,7 +112,7 @@ class Post(BaseModel):
         )
 
     def delete(self, *args, **kwargs):
-        self.reposts.filter(body='').delete()
+        self.reposts.filter(repost_type=Post.RepostType.REPOST).delete()
         if self.reply_to is None:
             self.replies.all().delete()
         if self.reply_to is not None and self.replies.exists():

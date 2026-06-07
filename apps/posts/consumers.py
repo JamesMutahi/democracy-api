@@ -583,9 +583,8 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         post = self.get_object(pk=pk)
         repost_qs = post.reposts.filter(
             repost_of=post.pk,
+            repost_type=Post.RepostType.REPOST,
             author=self.scope["user"],
-            reply_to=None,
-            body=''
         )
         if repost_qs.exists():
             repost = repost_qs.first()

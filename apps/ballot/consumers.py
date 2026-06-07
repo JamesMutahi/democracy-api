@@ -5,6 +5,7 @@ from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
+from rest_framework.exceptions import ValidationError
 
 from apps.ballot.models import Ballot, Option, Reason
 from apps.ballot.serializers import BallotSerializer
@@ -206,12 +207,6 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     @interaction_rate_limit
     async def vote(self, pk: int, **kwargs):
         result = await self.perform_vote(option_pk=pk)
-        if isinstance(result, dict) and result.get('error'):
-            return await self.reply(
-                action='vote',
-                errors=[result['error']],
-                status=result.get('status', 403)
-            )
         return result, 200
 
     @database_sync_to_async
@@ -252,9 +247,9 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
                 return BallotSerializer(ballot, context={'scope': self.scope}).data
 
         except Option.DoesNotExist:
-            return {'error': 'Option not found or ballot is inactive', 'status': 404}
+            raise ValidationError("Option not found.")
         except Exception:
-            return {'error': 'Failed to cast vote', 'status': 400}
+            raise ValidationError("Failed to cast vote.")
 
     def _user_can_vote_in_ballot(self, user, ballot: Ballot) -> bool:
         if not ballot.county:

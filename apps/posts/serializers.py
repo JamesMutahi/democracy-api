@@ -245,13 +245,13 @@ class PostSerializer(serializers.ModelSerializer):
         return obj.get_reposts_count()
 
     def get_is_reposted(self, obj):
-        is_reposted = obj.reposts.filter(is_active=True, author=self.context['scope']['user'], reply_to=None,
-                                         body='').exists()
+        is_reposted = obj.reposts.filter(is_active=True, author=self.context['scope']['user'],
+                                         repost_type=Post.RepostType.REPOST).exists()
         return is_reposted
 
     def get_is_quoted(self, obj):
-        is_quoted = obj.reposts.filter(is_active=True, author=self.context['scope']['user'], reply_to=None).exclude(
-            body='').exists()
+        is_quoted = obj.reposts.filter(is_active=True, author=self.context['scope']['user'],
+                                       repost_type=Post.RepostType.QUOTE).exists()
         return is_quoted
 
     @staticmethod
