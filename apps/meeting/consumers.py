@@ -149,7 +149,7 @@ class MeetingConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retriev
 
             # Date range
             if start_date and end_date:
-                queryset = queryset.filter(start_time__range=(start_date, end_date))
+                queryset = queryset.filter(Q(start_time__lte=end_date) & Q(end_time__gte=start_date))
 
             # Sorting
             if sort_by == 'recent':

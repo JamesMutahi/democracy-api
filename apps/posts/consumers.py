@@ -14,7 +14,7 @@ from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin, DeleteModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.pagination import WebsocketLimitOffsetPagination
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from taggit.models import Tag
 
 from apps.posts.models import Post, PostLike, PostClick
@@ -47,7 +47,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
             await self.close()
 
     # ====================== Observers ======================
-    @model_observer(Post, many_to_many=True)
+    @model_observer(Post)
     async def post_activity(self, message, **kwargs):
         if message['action'] != 'delete':
             message['data'] = await self.get_post_serializer_data(pk=message['data']['pk'])
@@ -504,7 +504,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         else:
             post.likes.add(user)
             is_liked = True
-
+        self._signal_post_update(post)
         return {'pk': post.pk, 'is_liked': is_liked, 'likes': post.likes.count()}
 
     @action()
@@ -527,6 +527,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         else:
             post.bookmarks.add(user)
             is_bookmarked = True
+        self._signal_post_update(post)
         return {'pk': pk, 'is_bookmarked': is_bookmarked, 'bookmarks': post.bookmarks.count()}
 
     @action()
@@ -539,13 +540,21 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     def upvote_post(self, pk: int):
         user = self.scope['user']
         post = Post.objects.get(pk=pk)
+        post.downvotes.remove(user)
         if post.upvotes.filter(pk=user.pk).exists():
             post.upvotes.remove(user)
             is_upvoted = False
         else:
             post.upvotes.add(user)
             is_upvoted = True
-        return {'pk': pk, 'is_upvoted': is_upvoted, 'upvotes': post.upvotes.count()}
+        self._signal_post_update(post)
+        return {
+            'pk': pk,
+            'is_upvoted': is_upvoted,
+            'upvotes': post.upvotes.count(),
+            'is_downvoted': False,
+            'downvotes': post.downvotes.count()
+        }
 
     @action()
     @interaction_rate_limit
@@ -557,25 +566,26 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     def downvote_post(self, pk: int):
         user = self.scope['user']
         post = Post.objects.get(pk=pk)
+        post.upvotes.remove(user)
         if post.downvotes.filter(pk=user.pk).exists():
             post.downvotes.remove(user)
             is_downvoted = False
         else:
             post.downvotes.add(user)
             is_downvoted = True
-        return {'pk': pk, 'is_downvoted': is_downvoted, 'downvotes': post.downvotes.count()}
+        self._signal_post_update(post)
+        return {
+            'pk': pk,
+            'is_upvoted': False,
+            'upvotes': post.upvotes.count(),
+            'is_downvoted': is_downvoted,
+            'downvotes': post.downvotes.count()
+        }
 
     @action()
     @interaction_rate_limit
     async def delete_repost(self, pk: int, request_id: str, **kwargs):
         data = await self.delete_repost_(pk)
-        if not data:
-            return await self.reply(
-                request_id=request_id,
-                errors=['Not found'],
-                status=404,
-                action='delete_repost'
-            )
         return data, 204
 
     @database_sync_to_async
@@ -586,17 +596,18 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
             repost_type=Post.RepostType.REPOST,
             author=self.scope["user"],
         )
-        if repost_qs.exists():
-            repost = repost_qs.first()
-            repost_pk = repost.pk
-            repost.delete()
-            post_save.send(sender=Post, instance=post, created=False)
-            return {
-                'pk': post.pk,
-                'repost_pk': repost_pk,
-                'reposts': post.get_reposts_count()
-            }
-        return None
+        if not repost_qs.exists():
+            raise ValidationError("Not found")
+
+        repost = repost_qs.first()
+        repost_pk = repost.pk
+        repost.delete()
+        post_save.send(sender=Post, instance=post, created=False)
+        return {
+            'pk': post.pk,
+            'repost_pk': repost_pk,
+            'reposts': post.get_reposts_count()
+        }
 
     @action()
     @interaction_rate_limit
@@ -735,6 +746,10 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         tag = hashtag.strip('#').lower()
         return self.queryset.filter(hashtags__name__iexact=tag).order_by('-published_at')
 
+    @staticmethod
+    def _signal_post_update(post: Post):
+        post_save.send(sender=Post, instance=post, created=False)
+
     # ====================== AUTOCOMPLETE ======================
 
     @action()
@@ -742,10 +757,10 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     async def autocomplete(self, query: str, limit: int = 10, **kwargs):
         """Cached autocomplete for better performance"""
         if not query or len(query.strip()) < 1:
-            return {"results": []}, 200
+            return [], 200
 
         results = await self.get_cached_autocomplete(query.strip().lower(), limit)
-        return {"results": results}, 200
+        return results, 200
 
     @database_sync_to_async
     def get_cached_autocomplete(self, query: str, limit: int = 10):
@@ -791,9 +806,10 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         for user in users:
             results.append({
                 "type": "user",
-                "text": f"@{user.username}",
-                "display": user.name or user.username,
-                "id": user.id
+                "id": user.id,
+                "name": user.name,
+                "username": user.username,
+                "image": user.image.url,
             })
 
         # 3. Topics / Words
@@ -803,8 +819,8 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
         return results[:limit]
 
-    @database_sync_to_async
-    def _get_word_autocomplete(self, query: str, limit: int = 5):
+    @staticmethod
+    def _get_word_autocomplete(query: str, limit: int = 5):
         """Word autocomplete using ts_stat"""
         from django.db import connection
 
@@ -813,7 +829,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
                 SELECT DISTINCT word, ndoc as count
                 FROM ts_stat($$
                     SELECT to_tsvector('english', body)
-                    FROM posts_post 
+                    FROM "Post" 
                     WHERE status = 'published' 
                     AND is_active = true 
                     AND is_deleted = false
@@ -829,7 +845,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
         return [
             {
-                "type": "topic",
+                "type": "word",
                 "text": word,
                 "count": count
             }

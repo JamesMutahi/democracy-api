@@ -5,7 +5,7 @@ from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError, PermissionDenied
 
 from apps.ballot.models import Ballot, Option, Reason
 from apps.ballot.serializers import BallotSerializer
@@ -137,7 +137,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
         # 4. Date range
         if start_date and end_date:
-            queryset = queryset.filter(start_time__range=(start_date, end_date))
+            queryset = queryset.filter(Q(start_time__lte=end_date) & Q(end_time__gte=start_date))
 
         # 5. Sorting (applied last)
         if sort_by == 'recent':
@@ -227,7 +227,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
                 # Regional permission check
                 if not self._user_can_vote_in_ballot(user, ballot):
-                    return {'error': 'You are not a registered voter in the region', 'status': 403}
+                    raise PermissionDenied('You are not a registered voter in the region')
 
                 # === Remove user from ALL other options in this ballot ===
                 # This is the efficient way (avoids .update() on m2m)
@@ -245,11 +245,8 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
                 post_save.send(sender=Ballot, instance=ballot, created=False)
                 return BallotSerializer(ballot, context={'scope': self.scope}).data
-
         except Option.DoesNotExist:
             raise ValidationError("Option not found.")
-        except Exception:
-            raise ValidationError("Failed to cast vote.")
 
     def _user_can_vote_in_ballot(self, user, ballot: Ballot) -> bool:
         if not ballot.county:
