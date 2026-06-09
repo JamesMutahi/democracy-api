@@ -5,7 +5,7 @@ from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
-from rest_framework.exceptions import ValidationError, PermissionDenied
+from rest_framework.exceptions import PermissionDenied, NotFound
 
 from apps.ballot.models import Ballot, Option, Reason
 from apps.ballot.serializers import BallotSerializer
@@ -246,7 +246,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
                 post_save.send(sender=Ballot, instance=ballot, created=False)
                 return BallotSerializer(ballot, context={'scope': self.scope}).data
         except Option.DoesNotExist:
-            raise ValidationError("Option not found.")
+            raise NotFound("Option not found.")
 
     def _user_can_vote_in_ballot(self, user, ballot: Ballot) -> bool:
         if not ballot.county:

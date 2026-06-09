@@ -14,10 +14,11 @@ from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin, DeleteModelMixin
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.pagination import WebsocketLimitOffsetPagination
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import PermissionDenied, NotFound
+from rest_framework.generics import get_object_or_404
 from taggit.models import Tag
 
-from apps.posts.models import Post, PostLike, PostClick
+from apps.posts.models import Post, PostLike, PostClick, SearchHistory
 from apps.posts.serializers import PostSerializer, ReportSerializer, ThreadSerializer
 from apps.recommendations.post_recommender import PostRecommender
 from apps.recommendations.tasks import record_interaction
@@ -597,7 +598,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
             author=self.scope["user"],
         )
         if not repost_qs.exists():
-            raise ValidationError("Not found")
+            raise NotFound("Not found")
 
         repost = repost_qs.first()
         repost_pk = repost.pk
@@ -751,16 +752,96 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         post_save.send(sender=Post, instance=post, created=False)
 
     # ====================== AUTOCOMPLETE ======================
+    @action()
+    def save_searched_term(self, search_term, **kwargs):
+        if len(search_term) > 0:
+            SearchHistory.objects.update_or_create(
+                user=self.scope['user'],
+                search_term=search_term,
+                defaults={'updated_at': timezone.now()}
+            )
+        self._invalidate_search_history_cache()
+        return search_term, 200
+
+    @action()
+    def save_searched_profile(self, user_id: int, **kwargs):
+        profile = get_object_or_404(User.objects.all(), pk=user_id)
+        SearchHistory.objects.update_or_create(
+            user=self.scope['user'],
+            profile=profile,
+            defaults={'updated_at': timezone.now()}
+        )
+        self._invalidate_search_history_cache()
+        return user_id, 200
+
+    @action()
+    def delete_searched_term(self, search_term, **kwargs):
+        SearchHistory.objects.filter(user=self.scope['user'], search_term=search_term).delete()
+        self._invalidate_search_history_cache()
+        return {}, 200
+
+    @action()
+    def delete_searched_profile(self, user_id: int, **kwargs):
+        profile = get_object_or_404(User.objects.all(), pk=user_id)
+        SearchHistory.objects.filter(user=self.scope['user'], profile=profile).delete()
+        self._invalidate_search_history_cache()
+        return {}, 200
+
+    @action()
+    def clear_search_history(self, **kwargs):
+        SearchHistory.objects.filter(user=self.scope['user']).delete()
+        self._invalidate_search_history_cache()
+        return {}, 200
+
+    def _invalidate_search_history_cache(self):
+        cache_key = f"search_history:{self.scope['user'].id}"
+        cache.delete(cache_key)
 
     @action()
     @rate_limit(limit=80, period=60)
     async def autocomplete(self, query: str, limit: int = 10, **kwargs):
         """Cached autocomplete for better performance"""
         if not query or len(query.strip()) < 1:
-            return [], 200
+            results = await self.get_cached_search_history(limit)
+            return results[:limit], 200
 
         results = await self.get_cached_autocomplete(query.strip().lower(), limit)
         return results, 200
+
+    @database_sync_to_async
+    def get_cached_search_history(self, limit: int = 10):
+        from django.core.cache import cache
+
+        # Create cache key
+        cache_key = f"search_history:{self.scope['user'].id}"
+
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
+        results = self._get_search_history(limit)
+
+        cache.set(cache_key, results)
+        return results
+
+    def _get_search_history(self, limit: int = 10):
+        results = []
+        recent_history = SearchHistory.objects.filter(user=self.scope['user'])[:limit]
+        for item in recent_history:
+            if item.search_term is not None:
+                results.append({
+                    "type": "word",
+                    "text": item.search_term,
+                })
+            if item.profile is not None:
+                results.append({
+                    "type": "user",
+                    "id": item.profile.id,
+                    "name": item.profile.name,
+                    "username": item.profile.username,
+                    "image": item.profile.image.url,
+                })
+        return results[:limit]
 
     @database_sync_to_async
     def get_cached_autocomplete(self, query: str, limit: int = 10):
@@ -801,7 +882,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         # 2. Users
         users = User.objects.filter(
             Q(username__istartswith=query) | Q(name__istartswith=query)
-        ).only('id', 'username', 'name')[:6]
+        ).only('id', 'username', 'name', 'image')[:6]
 
         for user in users:
             results.append({

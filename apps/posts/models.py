@@ -178,6 +178,16 @@ class PostClick(models.Model):
         return f"{self.user} clicked post {self.post.id} at {self.clicked_at}"
 
 
+class SearchHistory(BaseModel):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='search_history')
+    search_term = models.CharField(max_length=255, null=True, blank=True)
+    profile = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+        db_table = 'SearchHistory'
+
+
 class Report(BaseModel):
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='reports')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reports')
