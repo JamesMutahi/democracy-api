@@ -27,8 +27,16 @@ def generate_agora_token(request):
         try:
             meeting = Meeting.objects.get(pk=meeting_id)
             if not meeting.is_live_stream:
-                if meeting.end_time < timezone.now():
-                    return Response({'error': 'Meeting has ended'}, status=400)
+
+                join_time = timezone.now()
+
+                # Start time check
+                if join_time < meeting.start_time:
+                    return Response({'error': 'Meeting has not started'}, status=403)
+
+                # End time check
+                if meeting.end_time < join_time:
+                    return Response({'error': 'Meeting has ended'}, status=403)
             # Role: 1 = Broadcaster (can publish audio/video), 2 = Audience
             is_speaker = meeting.speakers.filter(id=user_id).exists()
             role = 1 if (meeting.host_id == user_id or is_speaker) else 2

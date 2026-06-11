@@ -6,6 +6,7 @@ from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import ListModelMixin, CreateModelMixin, RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
+from rest_framework.exceptions import PermissionDenied, NotFound
 
 from apps.petition.models import Petition, PetitionSupport, PetitionClick
 from apps.petition.serializers import PetitionSerializer
@@ -208,12 +209,6 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
     @interaction_rate_limit
     async def support(self, pk: int, request_id: str, **kwargs):
         result = await self.record_support(pk=pk)
-        if isinstance(result, dict) and result.get('error'):
-            return await self.reply(
-                action='support',
-                errors=[result['error']],
-                status=result.get('status', 403)
-            )
         return result, 200
 
     @database_sync_to_async
@@ -226,7 +221,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
                 )
 
                 if not self._user_can_support(petition):
-                    return {'error': 'You are not a registered voter in the region', 'status': 403}
+                    raise PermissionDenied('You are not a registered voter in the region')
 
                 user = self.scope['user']
                 if petition.supporters.filter(pk=user.pk).exists():
@@ -246,9 +241,7 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
                 }
 
         except Petition.DoesNotExist:
-            return {'error': 'Petition not found or closed', 'status': 404}
-        except Exception:
-            return {'error': 'Failed to update support', 'status': 400}
+            raise NotFound('Petition not found')
 
     def _user_can_support(self, petition: Petition) -> bool:
         """Fast region check"""

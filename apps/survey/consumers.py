@@ -1,8 +1,10 @@
 from channels.db import database_sync_to_async
 from django.db.models import QuerySet, Q
+from django.utils import timezone
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin
+from rest_framework.exceptions import NotFound, PermissionDenied
 
 from apps.survey.models import Survey
 from apps.survey.serializers import SurveySerializer, ResponseSerializer
@@ -116,40 +118,40 @@ class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     @action()
     @interaction_rate_limit
     async def submit(self, data: dict, request_id: str, **kwargs):
-        survey = await self.get_survey_for_submission(data['survey'])
-
-        if not survey:
-            return await self.reply(
-                action='submit',
-                errors=['Survey not found or inactive'],
-                status=404
-            )
-
-        in_region = await self.check_region(survey=survey)
-        if not in_region:
-            return await self.reply(
-                action='submit',
-                errors=['You are not a registered voter in the region'],
-                status=403
-            )
-
-        result = await self.submit_(data=data)
-        return await self.reply(
-            data=result,
-            action='submit',
-            request_id=request_id,
-            status=201
-        )
+        data = await self.submit_(data=data)
+        return data, 201
 
     @database_sync_to_async
-    def get_survey_for_submission(self, survey_id: int):
+    def submit_(self, data: dict):
+        survey = self.get_survey(data['survey'])
+
+        if not self._user_can_submit(survey=survey):
+            raise PermissionDenied('You are not a registered voter in the region')
+
+        voting_time = timezone.now()
+
+        # Start time check
+        if voting_time < survey.start_time:
+            raise PermissionDenied('Voting has not started yet')
+
+        # End time check
+        if survey.end_time < voting_time:
+            raise PermissionDenied('Voting has ended')
+
+        """Submit survey response and return updated survey"""
+        serializer = ResponseSerializer(data=data, context={'scope': self.scope})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return SurveySerializer(survey, context={'scope': self.scope}).data
+
+    @staticmethod
+    def get_survey(survey_id: int):
         try:
             return Survey.objects.get(pk=survey_id, is_active=True)
         except Survey.DoesNotExist:
-            return None
+            raise NotFound('Survey not found')
 
-    @database_sync_to_async
-    def check_region(self, survey: Survey):
+    def _user_can_submit(self, survey: Survey):
         """Region validation"""
         user = self.scope['user']
 
@@ -166,14 +168,3 @@ class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
             return False
 
         return True
-
-    @database_sync_to_async
-    def submit_(self, data: dict):
-        """Submit survey response and return updated survey"""
-        serializer = ResponseSerializer(data=data, context={'scope': self.scope})
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-
-        # Return fresh survey with updated response count etc.
-        survey = Survey.objects.select_related('county', 'constituency', 'ward').get(pk=data['survey'])
-        return SurveySerializer(survey, context={'scope': self.scope}).data

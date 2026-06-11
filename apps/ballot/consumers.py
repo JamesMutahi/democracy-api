@@ -1,11 +1,12 @@
 from channels.db import database_sync_to_async
 from django.db.models import QuerySet, Q
 from django.db.models.signals import post_save
+from django.utils import timezone
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
-from rest_framework.exceptions import PermissionDenied, NotFound
+from rest_framework.exceptions import PermissionDenied, NotFound, ValidationError
 
 from apps.ballot.models import Ballot, Option, Reason
 from apps.ballot.serializers import BallotSerializer
@@ -225,6 +226,16 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
                 )
                 ballot = option.ballot
 
+                voting_time = timezone.now()
+
+                # Start time check
+                if voting_time < ballot.start_time:
+                    raise PermissionDenied('Voting has not started yet')
+
+                # End time check
+                if ballot.end_time < voting_time:
+                    raise PermissionDenied('Voting has ended')
+
                 # Regional permission check
                 if not self._user_can_vote_in_ballot(user, ballot):
                     raise PermissionDenied('You are not a registered voter in the region')
@@ -246,7 +257,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
                 post_save.send(sender=Ballot, instance=ballot, created=False)
                 return BallotSerializer(ballot, context={'scope': self.scope}).data
         except Option.DoesNotExist:
-            raise NotFound("Option not found.")
+            raise NotFound("Option not found")
 
     def _user_can_vote_in_ballot(self, user, ballot: Ballot) -> bool:
         if not ballot.county:
@@ -273,12 +284,12 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         try:
             ballot = Ballot.objects.prefetch_related('options__votes').get(pk=ballot_pk, is_active=True)
         except Ballot.DoesNotExist:
-            return {'error': 'Ballot not found or inactive', 'status': 404}
+            raise NotFound('Ballot not found or inactive')
 
         # Check if user has already voted (efficient .exists())
         has_voted = ballot.options.filter(votes=user).exists()
         if not has_voted:
-            return {'error': 'Please cast your vote first', 'status': 400}
+            raise ValidationError('Please cast your vote first')
 
         if len(text) == 0:
             Reason.objects.filter(ballot=ballot, user=user).delete()
