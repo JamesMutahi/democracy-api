@@ -8,8 +8,8 @@ from rest_framework import serializers
 
 from apps.geo.models import County, Constituency, Ward
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
-from apps.meeting.models import Meeting, SpeakerRequest
-from apps.meeting.services import MeetingParticipantService
+from apps.broadcast.models import Broadcast, SpeakerRequest
+from apps.broadcast.services import BroadcastParticipantService
 from apps.users.serializers import UserSerializer
 
 User = get_user_model()
@@ -21,7 +21,7 @@ class SpeakerRequestSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SpeakerRequest
-        fields = ['id', 'meeting', 'user', 'is_approved', 'decided_by']
+        fields = ['id', 'broadcast', 'user', 'is_approved', 'decided_by']
 
     @staticmethod
     def get_decided_by(obj):
@@ -31,7 +31,7 @@ class SpeakerRequestSerializer(serializers.ModelSerializer):
         return name
 
 
-class MeetingSerializer(serializers.ModelSerializer):
+class BroadcastSerializer(serializers.ModelSerializer):
     host = UserSerializer(read_only=True)
     co_hosts = UserSerializer(read_only=True, many=True)
     co_host_ids = serializers.PrimaryKeyRelatedField(
@@ -75,10 +75,11 @@ class MeetingSerializer(serializers.ModelSerializer):
     )
 
     class Meta:
-        model = Meeting
+        model = Broadcast
         fields = [
             'id',
             'host',
+            'type',
             'co_hosts',
             'co_host_ids',
             'title',
@@ -95,7 +96,6 @@ class MeetingSerializer(serializers.ModelSerializer):
             'participants_count',
             'muted',
             'is_recorded',
-            'is_live_stream',
             'start_time',
             'end_time',
             'is_active',
@@ -104,16 +104,16 @@ class MeetingSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_participants_count(obj):
-        return MeetingParticipantService.get_participant_count(obj.id)
+        return BroadcastParticipantService.get_participant_count(obj.id)
 
     def get_participants(self, obj):
-        cache_key = f"meeting_participants_serialized_{obj.id}"
+        cache_key = f"broadcast_participants_serialized_{obj.id}"
 
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
-        participant_ids = MeetingParticipantService.get_all_participant_ids(obj.id)
+        participant_ids = BroadcastParticipantService.get_all_participant_ids(obj.id)
 
         if not participant_ids:
             serialized = []
@@ -130,14 +130,14 @@ class MeetingSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_muted(obj):
-        """Return list of muted user IDs for this meeting"""
-        return MeetingParticipantService.get_muted_users(obj.id)
+        """Return list of muted user IDs for this broadcast"""
+        return BroadcastParticipantService.get_muted_users(obj.id)
 
     def validate(self, attrs):
         speaker_ids = attrs.get('speaker_ids', None)
         if speaker_ids and len(speaker_ids) > 10:
             raise serializers.ValidationError({
-                "speaker_ids": "A meeting cannot have more than 10 speakers."
+                "speaker_ids": "A broadcast cannot have more than 10 speakers."
             })
         return super().validate(attrs)
 
@@ -145,8 +145,8 @@ class MeetingSerializer(serializers.ModelSerializer):
         validated_data['host'] = self.context['scope']['user']
         if validated_data['start_time'] is None:
             validated_data['start_time'] = timezone.now()
-        if not validated_data['is_live_stream']:
-            validated_data['end_time'] = validated_data['start_time'] + timedelta(seconds=int(settings.MEETING_PERIOD))
+        if not validated_data['type'] == Broadcast.Type.LIVESTREAM:
+            validated_data['end_time'] = validated_data['start_time'] + timedelta(seconds=int(settings.BROADCAST_PERIOD))
         return super().create(validated_data)
 
     def update(self, instance, validated_data):

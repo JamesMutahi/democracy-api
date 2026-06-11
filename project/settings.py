@@ -82,7 +82,7 @@ INSTALLED_APPS = [
     'apps.chat',
     'apps.notification',
     'apps.constitution',
-    'apps.meeting',
+    'apps.broadcast',
     'apps.recommendations',
     'rest_framework',
     'rest_framework_gis',
@@ -278,7 +278,7 @@ MEDIA_URL = '/media/'
 
 AGORA_ID = config('AGORA_ID')
 AGORA_SECRET = config('AGORA_SECRET')
-MEETING_PERIOD = config('MEETING_PERIOD')  # in seconds
+BROADCAST_PERIOD = config('BROADCAST_PERIOD', default=3600)  # in seconds
 
 STORAGES = {
     "default": {
@@ -317,7 +317,7 @@ LOGGING = {
         },
     },
     'loggers': {
-        'apps.meeting': {
+        'apps.broadcast': {
             'handlers': ['console'],
             'level': 'DEBUG',
             'propagate': True,

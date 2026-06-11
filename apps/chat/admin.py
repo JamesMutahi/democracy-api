@@ -8,8 +8,8 @@ class MessageInline(LeafletGeoAdminMixin, admin.TabularInline):
     model = Message
     fieldsets = [
         (None, {
-            'fields': ['id', 'author', 'uuid', 'text', 'post', 'ballot', 'survey', 'petition', 'meeting', 'is_read', 'is_edited',
-                       'is_deleted', 'created_at']}),
+            'fields': ['id', 'author', 'uuid', 'text', 'post', 'ballot', 'survey', 'petition', 'broadcast', 'is_read',
+                       'is_edited', 'is_deleted', 'created_at']}),
     ]
     extra = 0
     classes = ('grp-collapse grp-open',)

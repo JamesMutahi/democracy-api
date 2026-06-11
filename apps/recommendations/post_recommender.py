@@ -352,7 +352,7 @@ class PostRecommender:
         return Case(
             When(ballot__isnull=False, then=Value(0.95)),
             When(petition__isnull=False, then=Value(0.85)),
-            When(meeting__isnull=False, then=Value(0.80)),
+            When(broadcast__isnull=False, then=Value(0.80)),
             When(survey__isnull=False, then=Value(0.75)),
             When(section__isnull=False, then=Value(0.70)),
             default=Value(0.4),
@@ -414,8 +414,8 @@ class PostRecommender:
                 id__in=interacted_post_ids).values_list('survey_id', flat=True)), then=Value(0.75)),
             When(Q(petition__isnull=False) & Q(petition_id__in=Post.objects.filter(
                 id__in=interacted_post_ids).values_list('petition_id', flat=True)), then=Value(0.7)),
-            When(Q(meeting__isnull=False) & Q(meeting_id__in=Post.objects.filter(
-                id__in=interacted_post_ids).values_list('meeting_id', flat=True)), then=Value(0.8)),
+            When(Q(broadcast__isnull=False) & Q(broadcast_id__in=Post.objects.filter(
+                id__in=interacted_post_ids).values_list('broadcast_id', flat=True)), then=Value(0.8)),
             default=Value(0.3),
             output_field=FloatField()
         )

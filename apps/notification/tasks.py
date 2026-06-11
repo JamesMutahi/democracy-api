@@ -6,7 +6,7 @@ from django.db import transaction
 
 from apps.ballot.models import Ballot
 from apps.chat.models import Message
-from apps.meeting.models import Meeting
+from apps.broadcast.models import Broadcast
 from apps.notification.models import Notification
 from apps.notification.serializers import NotificationSerializer
 from apps.petition.models import Petition
@@ -19,10 +19,10 @@ channel_layer = get_channel_layer()
 
 def send_notification_create(notification: Notification):
     """ Sends create event """
-    if not notification or not notification.recipient_id:
+    if not notification or not notification.recipient.id:
         return
 
-    group_name = f"notifications_{notification.recipient_id}"
+    group_name = f"notifications_{notification.recipient.id}"
 
     serializer = NotificationSerializer(instance=notification, context={'scope': {'user': notification.recipient}})
 
@@ -38,10 +38,10 @@ def send_notification_create(notification: Notification):
 
 def send_notification_update(notification: Notification):
     """ Sends update event """
-    if not notification or not notification.recipient_id:
+    if not notification or not notification.recipient.id:
         return
 
-    group_name = f"notifications_{notification.recipient_id}"
+    group_name = f"notifications_{notification.recipient.id}"
 
     serializer = NotificationSerializer(instance=notification, context={'scope': {'user': notification.recipient}})
 
@@ -137,49 +137,49 @@ def create_petition_notifications_on_create(petition_id):
 
 
 @shared_task
-def create_meeting_notifications_on_create(meeting_id):
-    meeting = Meeting.objects.get(id=meeting_id)
-    if meeting.is_live_stream:
+def create_broadcast_notifications_on_create(broadcast_id):
+    broadcast = Broadcast.objects.get(id=broadcast_id)
+    if broadcast.type == Broadcast.Type.LIVESTREAM:
         return
     users = User.objects.filter(
-        notifiers=meeting.host,
+        notifiers=broadcast.host,
         preferences__allow_notifications=True
-    ).exclude(muted=meeting.host)
-    if meeting.county:
-        users = users.filter(county=meeting.county)
-        if meeting.constituency:
-            users = users.filter(constituency=meeting.constituency)
-            if meeting.ward:
-                users = users.filter(ward=meeting.ward)
+    ).exclude(muted=broadcast.host)
+    if broadcast.county:
+        users = users.filter(county=broadcast.county)
+        if broadcast.constituency:
+            users = users.filter(constituency=broadcast.constituency)
+            if broadcast.ward:
+                users = users.filter(ward=broadcast.ward)
     for user in users:
         notification = Notification.objects.create(
             recipient=user,
-            text=f'New meeting from {meeting.host}',
-            meeting=meeting,
+            text=f'New broadcast from {broadcast.host}',
+            broadcast=broadcast,
         )
         send_notification_create(notification)
 
 
 @shared_task
-def create_live_stream_notifications(meeting_id):
-    meeting = Meeting.objects.get(id=meeting_id)
-    if not meeting.is_live_stream:
+def create_live_stream_notifications(broadcast_id):
+    broadcast = Broadcast.objects.get(id=broadcast_id)
+    if not broadcast.type == Broadcast.Type.LIVESTREAM:
         return
     users = User.objects.filter(
-        notifiers=meeting.host,
+        notifiers=broadcast.host,
         preferences__allow_notifications=True
-    ).exclude(muted=meeting.host)
-    if meeting.county:
-        users = users.filter(county=meeting.county)
-        if meeting.constituency:
-            users = users.filter(constituency=meeting.constituency)
-            if meeting.ward:
-                users = users.filter(ward=meeting.ward)
+    ).exclude(muted=broadcast.host)
+    if broadcast.county:
+        users = users.filter(county=broadcast.county)
+        if broadcast.constituency:
+            users = users.filter(constituency=broadcast.constituency)
+            if broadcast.ward:
+                users = users.filter(ward=broadcast.ward)
     for user in users:
         notification = Notification.objects.create(
             recipient=user,
-            text=f'{meeting.host} started a live stream',
-            meeting=meeting,
+            text=f'{broadcast.host} started a live stream',
+            broadcast=broadcast,
         )
         send_notification_create(notification)
 

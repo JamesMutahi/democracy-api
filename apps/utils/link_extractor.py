@@ -6,7 +6,7 @@ from urlextract import URLExtract
 
 from apps.ballot.models import Ballot
 from apps.constitution.models import Section
-from apps.meeting.models import Meeting
+from apps.broadcast.models import Broadcast
 from apps.petition.models import Petition
 from apps.posts.models import Post
 from apps.survey.models import Survey
@@ -26,8 +26,8 @@ def extract_linked_object(text: str):
         if len(integer_strings) > 0:
             if 'post' in parsed_url.path:
                 return Post.objects.get(id=integer_strings[0])
-            if 'meeting' in parsed_url.path:
-                return Meeting.objects.get(id=integer_strings[0])
+            if 'broadcast' in parsed_url.path:
+                return Broadcast.objects.get(id=integer_strings[0])
             if 'ballot' in parsed_url.path:
                 return Ballot.objects.get(id=integer_strings[0])
             if 'survey' in parsed_url.path:

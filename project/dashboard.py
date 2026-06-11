@@ -18,7 +18,7 @@ class CustomIndexDashboard(Dashboard):
             title=_('Hub'),
             column=1,
             collapsible=True,
-            models=('apps.ballot.models.Ballot', 'apps.petition.models.Petition', 'apps.meeting.models.Meeting',
+            models=('apps.ballot.models.Ballot', 'apps.petition.models.Petition', 'apps.broadcast.models.Broadcast',
                     'apps.survey.models.Survey', 'apps.survey.models.Response',),
         ))
         self.children.append(modules.ModelList(

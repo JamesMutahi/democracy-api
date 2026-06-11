@@ -29,7 +29,7 @@ urlpatterns = [
     path('post/', include('apps.posts.urls')),
     path('chat/', include('apps.chat.urls')),
     path('petition/', include('apps.petition.urls')),
-    path('meeting/', include('apps.meeting.urls')),
+    path('broadcast/', include('apps.broadcast.urls')),
     path('recommendation-admin/', recommendation_admin.urls),
     path('admin/', admin.site.urls),
     path('nested_admin/', include('nested_admin.urls')),

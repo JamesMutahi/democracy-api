@@ -7,7 +7,7 @@ from django.utils.translation import gettext_lazy as _
 
 from apps.ballot.models import Ballot
 from apps.constitution.models import Section
-from apps.meeting.models import Meeting
+from apps.broadcast.models import Broadcast
 from apps.petition.models import Petition
 from apps.posts.models import Post
 from apps.survey.models import Survey
@@ -72,7 +72,7 @@ class Message(BaseModel):
     ballot = models.ForeignKey(Ballot, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
     survey = models.ForeignKey(Survey, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
     petition = models.ForeignKey(Petition, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
-    meeting = models.ForeignKey(Meeting, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
+    broadcast = models.ForeignKey(Broadcast, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
     section = models.ForeignKey(Section, on_delete=models.PROTECT, null=True, blank=True, related_name='messages')
     location = models.PointField(srid=4326, null=True)
     is_read = models.BooleanField(_('read'), default=False)

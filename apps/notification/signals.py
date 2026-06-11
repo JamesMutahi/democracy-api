@@ -4,7 +4,7 @@ from django.dispatch import receiver
 
 from apps.ballot.models import Ballot
 from apps.chat.models import Message
-from apps.meeting.models import Meeting
+from apps.broadcast.models import Broadcast
 from apps.notification import tasks
 from apps.notification.models import Preferences, Notification
 from apps.petition.models import Petition
@@ -23,7 +23,7 @@ def remember_status(sender, instance, **kwargs):
 @receiver(post_save, sender=Ballot)
 @receiver(post_save, sender=Survey)
 @receiver(post_save, sender=Petition)
-@receiver(post_save, sender=Meeting)
+@receiver(post_save, sender=Broadcast)
 @receiver(post_save, sender=Message)
 @receiver(post_save, sender=Post)
 @receiver(post_save, sender=User)
@@ -38,8 +38,8 @@ def create_notification(sender, instance, created, **kwargs):
             tasks.create_survey_notifications_on_create.delay(instance.id)
         if sender == Petition:
             tasks.create_petition_notifications_on_create.delay(instance.id)
-        if sender == Meeting:
-            tasks.create_meeting_notifications_on_create.delay(instance.id)
+        if sender == Broadcast:
+            tasks.create_broadcast_notifications_on_create.delay(instance.id)
         if sender == Message:
             tasks.create_message_notifications_on_create.delay(instance.id)
         if sender == Post:

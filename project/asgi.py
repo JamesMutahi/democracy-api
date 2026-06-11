@@ -29,7 +29,7 @@ from apps.survey.consumers import SurveyConsumer
 from apps.petition.consumers import PetitionConsumer
 from apps.notification.consumers import NotificationConsumer
 from apps.constitution.consumers import ConstitutionConsumer
-from apps.meeting.consumers import MeetingConsumer
+from apps.broadcast.consumers import BroadcastConsumer
 from apps.geo.consumers import GeoConsumer
 
 application = ProtocolTypeRouter({
@@ -49,7 +49,7 @@ application = ProtocolTypeRouter({
                     petitions=PetitionConsumer.as_asgi(),
                     notifications=NotificationConsumer.as_asgi(),
                     constitution=ConstitutionConsumer.as_asgi(),
-                    meetings=MeetingConsumer.as_asgi(),
+                    broadcasts=BroadcastConsumer.as_asgi(),
                     geo=GeoConsumer.as_asgi(),
                 )),
             ]), )

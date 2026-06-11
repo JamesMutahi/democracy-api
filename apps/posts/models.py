@@ -14,7 +14,7 @@ from taggit.managers import TaggableManager
 
 from apps.ballot.models import Ballot
 from apps.constitution.models import Section
-from apps.meeting.models import Meeting
+from apps.broadcast.models import Broadcast
 from apps.petition.models import Petition
 from apps.survey.models import Survey
 
@@ -51,7 +51,7 @@ class Post(BaseModel):
     ballot = models.ForeignKey(Ballot, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
     survey = models.ForeignKey(Survey, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
     petition = models.ForeignKey(Petition, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
-    meeting = models.ForeignKey(Meeting, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
+    broadcast = models.ForeignKey(Broadcast, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
     section = models.ForeignKey(Section, on_delete=models.PROTECT, null=True, blank=True, related_name='posts')
     tagged_users = models.ManyToManyField(User, blank=True, related_name='tagged_in_posts')
     hashtags = TaggableManager(blank=True, verbose_name="Hashtags")
@@ -206,7 +206,7 @@ def mark_deleted(post: Post):
     post.ballot = None
     post.survey = None
     post.petition = None
-    post.meeting = None
+    post.broadcast = None
     post.image1 = None
     post.image2 = None
     post.image3 = None

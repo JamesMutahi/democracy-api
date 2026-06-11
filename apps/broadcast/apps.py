@@ -1,7 +1,7 @@
 from django.apps import AppConfig
 
 
-class MeetingConfig(AppConfig):
+class BroadcastConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'apps.meeting'
+    name = 'apps.broadcast'
 

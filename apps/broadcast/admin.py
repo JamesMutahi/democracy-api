@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.meeting.models import Meeting, SpeakerRequest, Comment
+from apps.broadcast.models import Broadcast, SpeakerRequest, Comment
 
 
 class CommentInline(admin.TabularInline):
@@ -15,8 +15,8 @@ class SpeakerRequestInline(admin.TabularInline):
     classes = ('grp-collapse grp-closed',)
 
 
-@admin.register(Meeting)
-class MeetingAdmin(admin.ModelAdmin):
-    list_display = ['title', 'created_at']
+@admin.register(Broadcast)
+class BroadcastAdmin(admin.ModelAdmin):
+    list_display = ['title', 'type', 'created_at']
     filter_horizontal = ['co_hosts', 'speakers']
     inlines = [SpeakerRequestInline, CommentInline]

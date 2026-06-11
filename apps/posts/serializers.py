@@ -11,8 +11,8 @@ from apps.ballot.models import Ballot
 from apps.ballot.serializers import BallotSerializer
 from apps.constitution.models import Section
 from apps.constitution.serializers import SectionSerializer
-from apps.meeting.models import Meeting
-from apps.meeting.serializers import MeetingSerializer
+from apps.broadcast.models import Broadcast
+from apps.broadcast.serializers import BroadcastSerializer
 from apps.petition.models import Petition
 from apps.petition.serializers import PetitionSerializer
 from apps.posts.models import Post, Report, PostLike, Asset
@@ -79,7 +79,7 @@ class PostSerializer(serializers.ModelSerializer):
     ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
     petition = PetitionSerializer(read_only=True)
-    meeting = MeetingSerializer(read_only=True)
+    broadcast = BroadcastSerializer(read_only=True)
     section = SectionSerializer(read_only=True)
     tagged_users = UserSerializer(read_only=True, many=True)
     hashtags = TagListSerializerField(required=False, allow_null=True)
@@ -125,9 +125,9 @@ class PostSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True
     )
-    meeting_id = serializers.PrimaryKeyRelatedField(
-        queryset=Meeting.objects.all(),
-        source='meeting',
+    broadcast_id = serializers.PrimaryKeyRelatedField(
+        queryset=Broadcast.objects.all(),
+        source='broadcast',
         write_only=True,
         required=False,
         allow_null=True
@@ -178,7 +178,7 @@ class PostSerializer(serializers.ModelSerializer):
             'ballot',
             'survey',
             'petition',
-            'meeting',
+            'broadcast',
             'section',
             'community_note',
             'is_upvoted',
@@ -191,7 +191,7 @@ class PostSerializer(serializers.ModelSerializer):
             'ballot_id',
             'survey_id',
             'petition_id',
-            'meeting_id',
+            'broadcast_id',
             'section_id',
             'assets',
         )
@@ -313,8 +313,8 @@ class PostSerializer(serializers.ModelSerializer):
                 validated_data['survey_id'] = linked_object.pk
             if isinstance(linked_object, Petition) and not validated_data.get('petition_id'):
                 validated_data['petition_id'] = linked_object.pk
-            if isinstance(linked_object, Meeting) and not validated_data.get('meeting_id'):
-                validated_data['meeting_id'] = linked_object.pk
+            if isinstance(linked_object, Broadcast) and not validated_data.get('broadcast_id'):
+                validated_data['broadcast_id'] = linked_object.pk
             if isinstance(linked_object, Section) and not validated_data.get('section_id'):
                 validated_data['section_id'] = linked_object.pk
 
