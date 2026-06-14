@@ -1,7 +1,7 @@
 import re
 from urllib.parse import urlparse
 
-from django.contrib.sites.models import Site
+from django.conf import settings
 from urlextract import URLExtract
 
 from apps.ballot.models import Ballot
@@ -16,9 +16,17 @@ def extract_linked_object(text: str):
     extractor = URLExtract()
     urls = extractor.find_urls(text)
 
-    current_domain = Site.objects.get_current().domain
+    domains = settings.ALLOWED_HOSTS
 
-    matching_links = [url for url in urls if current_domain in url]
+    matching_links = []
+
+    for domain in domains:
+        constitution_pattern = fr'{domain}/constitution\?(?:[^&\s]*&)*id=(\d+)'
+        constitution_matches = re.findall(constitution_pattern, text)
+        if len(constitution_matches) > 0:
+            return Section.objects.get(id=constitution_matches[0])
+
+        matching_links.extend(url for url in urls if domain in url)
 
     for link in matching_links:
         parsed_url = urlparse(link)
@@ -26,7 +34,7 @@ def extract_linked_object(text: str):
         if len(integer_strings) > 0:
             if 'post' in parsed_url.path:
                 return Post.objects.get(id=integer_strings[0])
-            if 'broadcast' in parsed_url.path:
+            if 'meeting' in parsed_url.path or 'live-stream' in parsed_url.path:
                 return Broadcast.objects.get(id=integer_strings[0])
             if 'ballot' in parsed_url.path:
                 return Ballot.objects.get(id=integer_strings[0])
@@ -34,6 +42,4 @@ def extract_linked_object(text: str):
                 return Survey.objects.get(id=integer_strings[0])
             if 'petition' in parsed_url.path:
                 return Petition.objects.get(id=integer_strings[0])
-            if 'section' in parsed_url.path:
-                return Section.objects.get(id=integer_strings[0])
     return None

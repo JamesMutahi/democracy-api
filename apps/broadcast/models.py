@@ -24,7 +24,7 @@ class Broadcast(BaseModel):
 
     host = models.ForeignKey(User, on_delete=models.CASCADE, related_name='broadcasts')
     co_hosts = models.ManyToManyField(User, related_name='host_in', blank=True)
-    type = models.CharField(max_length=10, null=True, blank=True, choices=Type.choices)
+    type = models.CharField(max_length=10, choices=Type.choices)
     title = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     county = models.ForeignKey(County, on_delete=models.PROTECT, null=True, blank=True, related_name='broadcasts')
