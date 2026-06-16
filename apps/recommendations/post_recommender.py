@@ -1,6 +1,7 @@
 import datetime
 import logging
 import random
+import re
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
@@ -176,26 +177,44 @@ class PostRecommender:
             'one', 'two', 'three', 'also', 'because', 'however', 'although', 'still', 'even', 'back', 'well', 'say'
         }
 
+        url_pattern = re.compile(r'(https?://|www\.)[^\s]+', re.I)
+        email_pattern = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', re.I)
+        tracking_pattern = re.compile(r'(\?|&)[^=\s]+=[^\s&]+', re.I)
+
+        # Fetch raw posts and clean
+        posts = Post.objects.filter(
+            status='published',
+            is_active=True,
+            is_deleted=False,
+            published_at__gte=start_date
+        ).only('body')
+
+        cleaned_texts = []
+        for post in posts:
+            text = post.body or ''
+            text = url_pattern.sub('', text)
+            text = email_pattern.sub('', text)
+            text = tracking_pattern.sub('', text)
+            cleaned_texts.append(text)
+
+        if not cleaned_texts:
+            return []
+
         try:
             with connection.cursor() as cursor:
                 cursor.execute("""
-                    SELECT word, ndoc as post_count
-                    FROM ts_stat($$
-                        SELECT to_tsvector('simple', COALESCE(body, ''))
-                        FROM "Post" 
-                        WHERE status = 'published' 
-                          AND is_active = true 
-                          AND is_deleted = false 
-                          AND published_at >= %s
-                    $$)
-                    WHERE length(word) >= 4
-                      AND ndoc >= %s                              -- Minimum frequency filter
-                      AND word !~ '^[0-9]+$'                      -- pure numbers
-                      AND LOWER(word) NOT IN (SELECT unnest(%s::text[]))
-                      AND NOT word ~* '^(http|www|com|net|org|gov|edu|png|jpg|jpeg|pdf|gif)$'
-                    ORDER BY ndoc DESC
-                    LIMIT %s;
-                """, [start_date, min_frequency, list(stop_words), limit])
+                        SELECT word, ndoc as post_count
+                        FROM ts_stat($$
+                            SELECT to_tsvector('simple', unnest(%s::text[]))
+                        $$)
+                        WHERE length(word) >= 4
+                          AND ndoc >= %s
+                          AND word !~ '^[0-9]+$'
+                          AND LOWER(word) NOT IN (SELECT unnest(%s::text[]))
+                          AND NOT word ~* '^(http|https|www|com|net|org|gov|edu|io|co|uk|ca|au|de|fr|png|jpg|jpeg|gif|pdf|html|php|asp|email|mailto|utm|fbclid|gclid)$'
+                        ORDER BY ndoc DESC
+                        LIMIT %s;
+                    """, [cleaned_texts, min_frequency, list(stop_words), limit])
 
                 results = cursor.fetchall()
 
