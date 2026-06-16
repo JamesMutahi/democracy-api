@@ -73,6 +73,8 @@ class BroadcastSerializer(serializers.ModelSerializer):
         write_only=True,
         required=False
     )
+    has_started = serializers.SerializerMethodField(read_only=True)
+    has_ended = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Broadcast
@@ -96,11 +98,28 @@ class BroadcastSerializer(serializers.ModelSerializer):
             'participants_count',
             'muted',
             'is_recorded',
+            'has_started',
+            'has_ended',
             'start_time',
             'end_time',
             'is_active',
         ]
         extra_kwargs = {'start_time': {'allow_null': True, 'required': False, }}
+
+    @staticmethod
+    def get_has_started(obj):
+        has_started = True
+        if timezone.now() < obj.start_time:
+            has_started = False
+        return has_started
+
+    @staticmethod
+    def get_has_ended(obj):
+        has_ended = False
+        if obj.end_time:
+            if obj.end_time < timezone.now():
+                has_ended = True
+        return has_ended
 
     @staticmethod
     def get_participants_count(obj):

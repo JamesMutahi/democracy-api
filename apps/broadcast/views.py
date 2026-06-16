@@ -18,11 +18,11 @@ from django.conf import settings
 def generate_agora_token(request):
     try:
         data = request.data.copy()
-        broadcast_id = data.get('broadcast_id')
+        broadcast_id = data.get('broadcast_id', None)
         user_id = request.user.id
 
         if not broadcast_id:
-            return Response({'error': 'broadcast_id required'}, status=400)
+            return Response({'broadcast_id': 'This field is required'}, status=400)
 
         try:
             broadcast = Broadcast.objects.get(pk=broadcast_id)
@@ -32,11 +32,11 @@ def generate_agora_token(request):
 
                 # Start time check
                 if join_time < broadcast.start_time:
-                    return Response({'error': 'Broadcast has not started'}, status=403)
+                    return Response('Broadcast has not started', status=403)
 
                 # End time check
                 if broadcast.end_time < join_time:
-                    return Response({'error': 'Broadcast has ended'}, status=403)
+                    return Response('Broadcast has ended', status=403)
             # Role: 1 = Broadcaster (can publish audio/video), 2 = Audience
             is_speaker = broadcast.speakers.filter(id=user_id).exists()
             role = 1 if (broadcast.host_id == user_id or is_speaker) else 2
