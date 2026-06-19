@@ -32,7 +32,6 @@ class Broadcast(BaseModel):
                                      related_name='broadcasts')
     ward = models.ForeignKey(Ward, on_delete=models.PROTECT, null=True, blank=True, related_name='broadcasts')
     speakers = models.ManyToManyField(User, blank=True, related_name='speaker_in')
-    is_recorded = models.BooleanField(default=False)
     start_time = models.DateTimeField(default=timezone.now)
     end_time = models.DateTimeField(blank=True, null=True)
     is_active = models.BooleanField(_('active'), default=True)
@@ -43,6 +42,24 @@ class Broadcast(BaseModel):
 
     def __str__(self):
         return self.title
+
+
+class RecordingSession(BaseModel):
+    class Status(models.TextChoices):
+        IN_PROGRESS = 'in progress', 'In progress'
+        STOPPED = 'stopped', 'Stopped'
+        ERROR = 'error', 'Error'
+
+    broadcast = models.OneToOneField(Broadcast, on_delete=models.CASCADE, related_name='session')
+    resource_id = models.CharField(max_length=255)
+    sid = models.CharField(max_length=255)
+    stopped_at = models.DateTimeField(null=True, blank=True)
+    file_list = models.JSONField(null=True, blank=True)
+    status = models.CharField(max_length=50, choices=Status.choices, default=Status.IN_PROGRESS)
+
+    class Meta:
+        db_table = 'RecordingSession'
+        ordering = ['-created_at']
 
 
 class SpeakerRequest(BaseModel):

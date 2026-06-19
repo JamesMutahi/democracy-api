@@ -1,18 +1,22 @@
+import logging
 from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.core.exceptions import ObjectDoesNotExist
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.geo.models import County, Constituency, Ward
-from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
 from apps.broadcast.models import Broadcast, SpeakerRequest
 from apps.broadcast.services import BroadcastParticipantService
+from apps.geo.models import County, Constituency, Ward
+from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
 from apps.users.serializers import UserSerializer
+from apps.utils.presigned_url import s3_client
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class SpeakerRequestSerializer(serializers.ModelSerializer):
@@ -75,6 +79,7 @@ class BroadcastSerializer(serializers.ModelSerializer):
     )
     has_started = serializers.SerializerMethodField(read_only=True)
     has_ended = serializers.SerializerMethodField(read_only=True)
+    recording_url = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Broadcast
@@ -97,7 +102,7 @@ class BroadcastSerializer(serializers.ModelSerializer):
             'participants',
             'participants_count',
             'muted',
-            'is_recorded',
+            'recording_url',
             'has_started',
             'has_ended',
             'start_time',
@@ -120,6 +125,45 @@ class BroadcastSerializer(serializers.ModelSerializer):
             if obj.end_time < timezone.now():
                 has_ended = True
         return has_ended
+
+    def get_recording_url(self, obj):
+        """Returns presigned URL for the main recording file"""
+        try:
+            if not obj.session.file_list or not obj.session.stopped_at:
+                return None
+
+            # Try to get the best file (prefer .mp4, fallback to .m3u8)
+            main_file = None
+            for f in obj.file_list:
+                filename = f.get('fileName', '')
+                if filename.endswith('.mp4'):
+                    main_file = filename
+                    break
+                elif filename.endswith(('.m3u8', '.ts')):
+                    main_file = filename
+
+            if not main_file:
+                return None
+
+            return self._generate_presigned_url(obj, main_file)
+        except ObjectDoesNotExist:
+            return None
+
+    @staticmethod
+    def _generate_presigned_url(obj, key):
+        """Helper to generate presigned URL"""
+        try:
+            return s3_client.generate_presigned_url(
+                'get_object',
+                Params={
+                    'Bucket': settings.AWS_STORAGE_BUCKET_NAME,
+                    'Key': key
+                },
+                ExpiresIn=3600  # 1 hour
+            )
+        except Exception as e:
+            logger.error(f"Presigned URL failed for {key}: {e}")
+            return None
 
     @staticmethod
     def get_participants_count(obj):
@@ -165,7 +209,8 @@ class BroadcastSerializer(serializers.ModelSerializer):
         if validated_data['start_time'] is None:
             validated_data['start_time'] = timezone.now()
         if not validated_data['type'] == Broadcast.Type.LIVESTREAM:
-            validated_data['end_time'] = validated_data['start_time'] + timedelta(seconds=int(settings.BROADCAST_PERIOD))
+            validated_data['end_time'] = validated_data['start_time'] + timedelta(
+                seconds=int(settings.BROADCAST_PERIOD))
         return super().create(validated_data)
 
     def update(self, instance, validated_data):

@@ -263,7 +263,7 @@ class BroadcastConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retri
     async def mute(self, pk: int, data: dict, **kwargs):
         broadcast = await database_sync_to_async(self.get_object)(pk=pk)
 
-        if not self._user_is_speaker(broadcast):
+        if not await self._user_is_speaker(broadcast):
             raise PermissionDenied("You are not a speaker.")
 
         await database_sync_to_async(
