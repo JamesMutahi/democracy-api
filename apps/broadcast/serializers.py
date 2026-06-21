@@ -79,6 +79,7 @@ class BroadcastSerializer(serializers.ModelSerializer):
     )
     has_started = serializers.SerializerMethodField(read_only=True)
     has_ended = serializers.SerializerMethodField(read_only=True)
+    recording_status = serializers.SerializerMethodField(read_only=True)
     recording_url = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
@@ -102,6 +103,7 @@ class BroadcastSerializer(serializers.ModelSerializer):
             'participants',
             'participants_count',
             'muted',
+            'recording_status',
             'recording_url',
             'has_started',
             'has_ended',
@@ -125,6 +127,13 @@ class BroadcastSerializer(serializers.ModelSerializer):
             if obj.end_time < timezone.now():
                 has_ended = True
         return has_ended
+
+    @staticmethod
+    def get_recording_status(obj):
+        try:
+            return obj.session.status
+        except ObjectDoesNotExist:
+            return None
 
     def get_recording_url(self, obj):
         """Returns presigned URL for the main recording file"""

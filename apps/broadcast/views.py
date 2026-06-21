@@ -66,6 +66,9 @@ def generate_agora_token(request):
             privilegeExpiredTs=privilege_expired_ts
         )
 
+        if broadcast.type == Broadcast.Type.LIVESTREAM and broadcast.host_id == user_id:
+            create_live_stream_notifications.delay(broadcast_id)
+
         response_data = {
             'app_id': settings.AGORA_APP_ID,
             'token': token,
@@ -74,27 +77,6 @@ def generate_agora_token(request):
             'expires_in': expiration_time_in_seconds,
             'role': role
         }
-
-        # Auto-start recording for host if live stream
-        if is_host or is_co_host or is_speaker:
-
-            # Check if session exists
-            if RecordingSession.objects.filter(broadcast_id=broadcast_id).exists():
-                # TODO: Check status, maybe delete and start a new session if not recording
-                pass
-            else:
-                recording_result = _record(broadcast, user_id)
-                if recording_result.get('success'):
-                    response_data['recording'] = {
-                        'resourceId': recording_result['resourceId'],
-                        'sid': recording_result['sid'],
-                        'status': 'started'
-                    }
-                else:
-                    response_data['recording_error'] = recording_result.get('error')
-
-        if broadcast.type == Broadcast.Type.LIVESTREAM and broadcast.host_id == user_id:
-            create_live_stream_notifications.delay(broadcast_id)
 
         return Response(response_data)
 
@@ -105,9 +87,6 @@ def generate_agora_token(request):
 def get_agora_headers():
     customer_id = settings.AGORA_CUSTOMER_ID
     customer_secret = settings.AGORA_CUSTOMER_SECRET
-
-    if not customer_id or not customer_secret:
-        raise ValueError("AGORA_CUSTOMER_ID or AGORA_CUSTOMER_SECRET is missing in settings")
 
     credentials = f"{customer_id}:{customer_secret}"
     auth = base64.b64encode(credentials.encode('utf-8')).decode('utf-8')
@@ -130,18 +109,21 @@ def start_recording(request):
         if not broadcast_id:
             return Response({'broadcast_id': 'This field is required'}, status=400)
 
-        broadcast = Broadcast.objects.get(pk=broadcast_id)
+        broadcast = get_object_or_404(Broadcast.objects.all(), pk=broadcast_id)
 
         is_host = broadcast.host_id == user_id
         is_co_host = broadcast.co_hosts.filter(id=user_id).exists()
+        is_speaker = broadcast.speakers.filter(id=user_id).exists()
 
-        if not is_host and not is_co_host:
-            return Response('Only host can start recording', status=403)
+        if is_host or is_co_host or is_speaker:
+            # Check if session exists
+            if RecordingSession.objects.filter(broadcast_id=broadcast_id).exists():
+                # TODO: Check status, maybe delete and start a new session if not recording
+                return Response({}, status=200)
+            else:
+                result = _record(broadcast, user_id=user_id)
+                return Response(result, status=200)
 
-        return _record(broadcast, user_id=user_id)
-
-    except Broadcast.DoesNotExist:
-        return Response('Broadcast not found', status=404)
     except requests.exceptions.RequestException as e:
         return Response({'error': f'Agora API error: {str(e)}'}, status=502)
     except Exception as e:
@@ -166,13 +148,17 @@ def _record(broadcast, user_id):
     try:
         is_livestream = broadcast.type == Broadcast.Type.LIVESTREAM
 
+        # Configure based on type
         if is_livestream:
-            stream_types = 2  # Audio + Video
+            channel_type = 1
+            stream_types = 2
             file_types = ["hls", "mp4"]
         else:
-            # Meeting / other → Audio only
-            stream_types = 0  # Audio only
-            file_types = ["hls", "mp4"]  # MP4 will contain audio only
+            channel_type = 0
+            stream_types = 0
+            file_types = ["hls"]  # Better for pure audio
+
+        unique_prefix = str(uuid.uuid4())[:12]
 
         # 1. Acquire
         acquire_payload = {
@@ -188,10 +174,6 @@ def _record(broadcast, user_id):
         acquire_resp.raise_for_status()
         resource_id = acquire_resp.json()['resourceId']
 
-        folder = "recordings"
-        unique_prefix = str(uuid.uuid4())[:12]
-        file_name_prefix = [folder, str(user_id), unique_prefix]
-
         # 2. Start Composite with Cloudflare R2
         start_payload = {
             "cname": channel,
@@ -204,15 +186,17 @@ def _record(broadcast, user_id):
                     "bucket": settings.AWS_STORAGE_BUCKET_NAME,
                     "accessKey": settings.AWS_ACCESS_KEY_ID,
                     "secretKey": settings.AWS_SECRET_ACCESS_KEY,
-                    "fileNamePrefix": file_name_prefix,
+                    "fileNamePrefix": ["recordings", str(broadcast.host_id), unique_prefix],
                     "extensionParams": {
-                        "endpoint": settings.AWS_S3_ENDPOINT_URL
+                        "endpoint": settings.AWS_S3_ENDPOINT_URL.rstrip('/')
                     }
                 },
                 "recordingConfig": {
-                    "channelType": 1,  # Live Broadcast
-                    "streamTypes": stream_types,  # Audio + Video
+                    "channelType": channel_type,
+                    "streamTypes": stream_types,
                     "maxIdleTime": 300,
+                    "subscribeUidGroup": 0,
+                    "subscribeAudioUids": ["#allstream#"],
                 },
                 "recordingFileConfig": {
                     "avFileType": file_types
@@ -220,6 +204,8 @@ def _record(broadcast, user_id):
                 # Optional: Add transcodingConfig for custom layout
             }
         }
+
+        logger.info(f"Starting recording with payload: {start_payload}")
 
         start_resp = requests.post(
             f"https://api.sd-rtn.com/v1/apps/{settings.AGORA_APP_ID}/cloud_recording/resourceid/{resource_id}/mode/mix/start",
@@ -230,85 +216,19 @@ def _record(broadcast, user_id):
         result = start_resp.json()
 
         # Save session
-        session = RecordingSession.objects.create(
+        RecordingSession.objects.create(
             broadcast=broadcast,
             resource_id=resource_id,
             sid=result['sid'],
         )
 
-        query_url = f"https://api.sd-rtn.com/v1/apps/{settings.AGORA_APP_ID}/cloud_recording/resourceid/{session.resource_id}/sid/{session.sid}/mode/mix/query"
-
-        query_resp = requests.get(query_url, headers=get_agora_headers())
-        query_resp.raise_for_status()
-        agora_data = query_resp.json()
-        logger.info(f"Query result: {agora_data}")
+        logger.info(f"Recording started successfully - SID: {result['sid']}")
 
         return {'success': True, 'resourceId': resource_id, 'sid': result['sid']}
 
     except Exception as e:
         logger.error(f"Exception: {e}")
         return {'success': False, 'error': str(e)}
-
-
-@csrf_exempt
-@api_view(["GET"])
-@permission_classes([permissions.IsAuthenticated])
-def check_recording_status(request):
-    broadcast_id = request.query_params.get('broadcast_id') or request.data.get('broadcast_id')
-
-    if not broadcast_id:
-        return Response({'error': 'broadcast_id is required'}, status=400)
-
-    try:
-        session = RecordingSession.objects.get(
-            broadcast_id=broadcast_id,
-            stopped_at__isnull=True  # Only active sessions
-        )
-    except RecordingSession.DoesNotExist:
-        return Response({
-            'is_recording': False,
-            'message': 'No active recording found for this broadcast'
-        })
-
-    # Query Agora
-    try:
-        query_url = f"https://api.sd-rtn.com/v1/apps/{settings.AGORA_APP_ID}/cloud_recording/resourceid/{session.resource_id}/sid/{session.sid}/mode/mix/query"
-
-        query_resp = requests.get(query_url, headers=get_agora_headers())
-        query_resp.raise_for_status()
-        agora_data = query_resp.json()
-
-        # Update local record with latest info
-        session.file_list = agora_data.get('fileList', [])
-        if agora_data.get('status') == 'stopped':  # or check serverResponse
-            session.stopped_at = timezone.now()
-            session.status = 'stopped'
-        session.save()
-
-        return Response({
-            'is_recording': True,
-            'status': agora_data.get('status', 'unknown'),
-            'resourceId': session.resource_id,
-            'sid': session.sid,
-            'mode': session.mode,
-            'is_audio_only': session.is_audio_only,
-            'fileList': agora_data.get('fileList', []),
-            'serverResponse': agora_data.get('serverResponse', {})
-        })
-
-    except requests.exceptions.RequestException as e:
-        # Still return local info if Agora query fails temporarily
-        return Response({
-            'is_recording': True,
-            'status': 'query_failed',
-            'error': str(e),
-            'local_status': session.status,
-            'resourceId': session.resource_id,
-            'sid': session.sid
-        }, status=502)
-
-    except Exception as e:
-        return Response({'error': str(e)}, status=500)
 
 
 @api_view(["POST"])
@@ -324,7 +244,7 @@ def stop_recording(request):
 
         stop_payload = {
             "cname": str(broadcast_id),
-            "uid": session.recorder_uid,
+            "uid": "0",
             "clientRequest": {}
         }
 
@@ -341,9 +261,12 @@ def stop_recording(request):
         session.file_list = result.get('fileList', [])
         session.save()
 
+        logger.info(f"Recording stopped. Files received: {len(session.file_list)}")
+
         return Response(result)
 
     except RecordingSession.DoesNotExist:
         return Response({'error': 'No active recording'}, status=404)
     except Exception as e:
+        logger.critical(f"❌ Stop Recording: {e}", exc_info=True)
         return Response({'error': str(e)}, status=500)

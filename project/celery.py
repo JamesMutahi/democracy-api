@@ -31,4 +31,9 @@ app.conf.beat_schedule = {
         'task': 'apps.broadcast.tasks.cleanup_broadcast_participants',
         'schedule': crontab(hour=3, minute=0),  # Every day at 3:00 AM
     },
+    'check-recording-status-every-1-min': {
+        'task': 'apps.broadcast.tasks.check_recording_status',
+        'schedule': crontab(minute='*/1'),  # Every 5 minutes
+        # 'schedule': timedelta(minutes=1),       # Alternative
+    },
 }
