@@ -136,31 +136,21 @@ class BroadcastSerializer(serializers.ModelSerializer):
             return None
 
     def get_recording_url(self, obj):
-        """Returns presigned URL for the main recording file"""
+        """Return presigned URL to the .m3u8 file (preferred for HLS)"""
         try:
-            if not obj.session.file_list or not obj.session.stopped_at:
+            if not obj.session.file_list:
                 return None
+            # Priority: Find .m3u8 file
+            return self._get_presigned_url(obj.session.file_list)
 
-            # Try to get the best file (prefer .mp4, fallback to .m3u8)
-            main_file = None
-            for f in obj.file_list:
-                filename = f.get('fileName', '')
-                if filename.endswith('.mp4'):
-                    main_file = filename
-                    break
-                elif filename.endswith(('.m3u8', '.ts')):
-                    main_file = filename
-
-            if not main_file:
-                return None
-
-            return self._generate_presigned_url(obj, main_file)
         except ObjectDoesNotExist:
             return None
 
     @staticmethod
-    def _generate_presigned_url(obj, key):
-        """Helper to generate presigned URL"""
+    def _get_presigned_url(key):
+        """Generate presigned URL"""
+        if not key:
+            return None
         try:
             return s3_client.generate_presigned_url(
                 'get_object',
@@ -168,10 +158,10 @@ class BroadcastSerializer(serializers.ModelSerializer):
                     'Bucket': settings.AWS_STORAGE_BUCKET_NAME,
                     'Key': key
                 },
-                ExpiresIn=3600  # 1 hour
+                ExpiresIn=3600 * 6  # 6 hours (good for HLS playback)
             )
         except Exception as e:
-            logger.error(f"Presigned URL failed for {key}: {e}")
+            logger.error(f"Presigned URL error for {key}: {e}")
             return None
 
     @staticmethod

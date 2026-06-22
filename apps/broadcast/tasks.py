@@ -55,7 +55,7 @@ def cleanup_user_from_all_broadcasts(user_id: int):
         logger.error(f"Failed to cleanup user {user_id}: {e}", exc_info=True)
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+@shared_task(bind=True, max_retries=1)
 def check_recording_status(self):
     import requests
     from django.utils import timezone
@@ -72,23 +72,16 @@ def check_recording_status(self):
 
             query_resp = requests.get(query_url, headers=get_agora_headers())
             query_resp.raise_for_status()
-            agora_data = query_resp.json()
+            result = query_resp.json()
+
+            logger.info(result)
 
             # Update local record with latest info
-            session.file_list = agora_data.get('fileList', [])
-            if agora_data.get('status') == 'stopped':  # or check serverResponse
+            session.file_list = result['serverResponse']['fileList']
+            if result.get('status') == 'stopped':  # or check serverResponse
                 session.stopped_at = timezone.now()
                 session.status = RecordingSession.Status.STOPPED
             session.save()
-
-            logger.info({
-                'is_recording': True,
-                'status': agora_data.get('status', 'unknown'),
-                'resourceId': session.resource_id,
-                'sid': session.sid,
-                'fileList': agora_data.get('fileList', []),
-                'serverResponse': agora_data.get('serverResponse', {})
-            })
 
         except Exception as exc:
             logger.error(f"❌ Check recording status task failed: {exc}", exc_info=True)

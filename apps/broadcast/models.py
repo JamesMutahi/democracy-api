@@ -54,7 +54,7 @@ class RecordingSession(BaseModel):
     resource_id = models.CharField(max_length=255)
     sid = models.CharField(max_length=255)
     stopped_at = models.DateTimeField(null=True, blank=True)
-    file_list = models.JSONField(null=True, blank=True)
+    file_list = models.CharField(max_length=255, null=True, blank=True)
     status = models.CharField(max_length=50, choices=Status.choices, default=Status.IN_PROGRESS)
 
     class Meta:

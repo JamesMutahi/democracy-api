@@ -407,6 +407,7 @@ class BroadcastConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retri
             request.broadcast.speakers.remove(request.user)
         request.is_approved = is_approved
         request.save()
+        BroadcastParticipantService.signal_broadcast(request.broadcast)
         return {"user_id": request.user.id, "is_approved": is_approved, "decided_by": self.scope['user'].id}
 
     @action()

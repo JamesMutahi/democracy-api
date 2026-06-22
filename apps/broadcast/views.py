@@ -186,7 +186,7 @@ def _record(broadcast, user_id):
                     "bucket": settings.AWS_STORAGE_BUCKET_NAME,
                     "accessKey": settings.AWS_ACCESS_KEY_ID,
                     "secretKey": settings.AWS_SECRET_ACCESS_KEY,
-                    "fileNamePrefix": ["recordings", str(broadcast.host_id), unique_prefix],
+                    "fileNamePrefix": ["recordings", str(user_id), str(broadcast.pk), unique_prefix],
                     "extensionParams": {
                         "endpoint": settings.AWS_S3_ENDPOINT_URL.rstrip('/')
                     }
@@ -194,7 +194,7 @@ def _record(broadcast, user_id):
                 "recordingConfig": {
                     "channelType": channel_type,
                     "streamTypes": stream_types,
-                    "maxIdleTime": 300,
+                    "maxIdleTime": 600,
                     "subscribeUidGroup": 0,
                     "subscribeAudioUids": ["#allstream#"],
                 },
@@ -253,15 +253,14 @@ def stop_recording(request):
             headers=get_agora_headers(),
             json=stop_payload
         )
+
         stop_resp.raise_for_status()
         result = stop_resp.json()
 
         session.stopped_at = timezone.now()
         session.status = 'stopped'
-        session.file_list = result.get('fileList', [])
+        session.file_list = result['serverResponse']['fileList']
         session.save()
-
-        logger.info(f"Recording stopped. Files received: {len(session.file_list)}")
 
         return Response(result)
 
