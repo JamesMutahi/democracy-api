@@ -1,4 +1,3 @@
-import logging
 from datetime import timedelta
 
 from django.conf import settings
@@ -13,10 +12,8 @@ from apps.broadcast.services import BroadcastParticipantService
 from apps.geo.models import County, Constituency, Ward
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
 from apps.users.serializers import UserSerializer
-from apps.utils.presigned_url import s3_client
 
 User = get_user_model()
-logger = logging.getLogger(__name__)
 
 
 class SpeakerRequestSerializer(serializers.ModelSerializer):
@@ -126,6 +123,10 @@ class BroadcastSerializer(serializers.ModelSerializer):
         if obj.end_time:
             if obj.end_time < timezone.now():
                 has_ended = True
+        try:
+            has_ended = obj.session.stopped_at < timezone.now()
+        except ObjectDoesNotExist:
+            pass
         return has_ended
 
     @staticmethod
@@ -135,33 +136,22 @@ class BroadcastSerializer(serializers.ModelSerializer):
         except ObjectDoesNotExist:
             return None
 
+    @staticmethod
+    def _get_public_url(key):
+        if not key:
+            return None
+        base_url = settings.STATIC_URL
+        return f"{base_url}{key}"
+
     def get_recording_url(self, obj):
-        """Return presigned URL to the .m3u8 file (preferred for HLS)"""
+        """Return URL to the .m3u8 file (preferred for HLS)"""
         try:
             if not obj.session.file_list:
                 return None
             # Priority: Find .m3u8 file
-            return self._get_presigned_url(obj.session.file_list)
+            return self._get_public_url(obj.session.file_list)
 
         except ObjectDoesNotExist:
-            return None
-
-    @staticmethod
-    def _get_presigned_url(key):
-        """Generate presigned URL"""
-        if not key:
-            return None
-        try:
-            return s3_client.generate_presigned_url(
-                'get_object',
-                Params={
-                    'Bucket': settings.AWS_STORAGE_BUCKET_NAME,
-                    'Key': key
-                },
-                ExpiresIn=3600 * 6  # 6 hours (good for HLS playback)
-            )
-        except Exception as e:
-            logger.error(f"Presigned URL error for {key}: {e}")
             return None
 
     @staticmethod
