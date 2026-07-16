@@ -1,3 +1,4 @@
+from django.core.cache import cache
 from django.db.models import QuerySet
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
@@ -28,4 +29,15 @@ class ConstitutionConsumer(ListModelMixin, RetrieveModelMixin, GenericAsyncAPICo
     @action()
     @rate_limit(limit=40, period=60)
     async def list(self, page_size=None, **kwargs):
-        return await super().list(**kwargs)
+        cache_key = "constitution"
+
+        cached = cache.get(cache_key)
+
+        if cached is not None:
+            return cached
+
+        data = await super().list(**kwargs)
+
+        cache.set(cache_key, data, timeout=60 * 60 * 24 * 30)
+
+        return data

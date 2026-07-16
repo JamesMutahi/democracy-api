@@ -194,7 +194,7 @@ def _record(broadcast, user_id):
                 "recordingConfig": {
                     "channelType": channel_type,
                     "streamTypes": stream_types,
-                    "maxIdleTime": 600,
+                    "maxIdleTime": 900,
                     "subscribeUidGroup": 0,
                     "subscribeAudioUids": ["#allstream#"],
                 },
@@ -236,11 +236,20 @@ def _record(broadcast, user_id):
 def stop_recording(request):
     broadcast_id = request.data.get('broadcast_id')
 
+    if not broadcast_id:
+        return Response({'broadcast_id': 'This field is required'}, status=400)
+
     try:
         session = RecordingSession.objects.get(
             broadcast_id=broadcast_id,
             stopped_at__isnull=True
         )
+
+        broadcast = session.broadcast
+        broadcast.end_time = timezone.now()
+        broadcast.save()
+        from django.db.models.signals import post_save
+        post_save.send(sender=Broadcast, instance=broadcast, created=False)
 
         stop_payload = {
             "cname": str(broadcast_id),
@@ -253,6 +262,8 @@ def stop_recording(request):
             headers=get_agora_headers(),
             json=stop_payload
         )
+        logger.info(f"stop_resp: {stop_resp.status_code}")
+        logger.info(f"stop_resp: {stop_resp.text}")
 
         stop_resp.raise_for_status()
         result = stop_resp.json()

@@ -114,6 +114,7 @@ SITE_ID = 1
 CORS_ALLOWED_ORIGINS = config('ORIGINS', cast=Csv())
 CSRF_TRUSTED_ORIGINS = config('ORIGINS', cast=Csv())
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_SSL_REDIRECT = True
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

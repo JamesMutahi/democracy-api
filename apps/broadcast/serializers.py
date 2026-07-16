@@ -123,10 +123,6 @@ class BroadcastSerializer(serializers.ModelSerializer):
         if obj.end_time:
             if obj.end_time < timezone.now():
                 has_ended = True
-        try:
-            has_ended = obj.session.stopped_at < timezone.now()
-        except ObjectDoesNotExist:
-            pass
         return has_ended
 
     @staticmethod
@@ -137,20 +133,12 @@ class BroadcastSerializer(serializers.ModelSerializer):
             return None
 
     @staticmethod
-    def _get_public_url(key):
-        if not key:
-            return None
-        base_url = settings.STATIC_URL
-        return f"{base_url}{key}"
-
-    def get_recording_url(self, obj):
+    def get_recording_url(obj):
         """Return URL to the .m3u8 file (preferred for HLS)"""
         try:
             if not obj.session.file_list:
                 return None
-            # Priority: Find .m3u8 file
-            return self._get_public_url(obj.session.file_list)
-
+            return f"{settings.STATIC_URL}{obj.session.file_list}"
         except ObjectDoesNotExist:
             return None
 
