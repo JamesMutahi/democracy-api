@@ -1,3 +1,4 @@
+import re
 import uuid
 
 from django.conf import settings
@@ -290,17 +291,15 @@ class PostSerializer(serializers.ModelSerializer):
             validated_data['repost_of'] = validated_data.pop('repost_of_id')
 
         # Tagged users
-        tags = validated_data.pop('tags', None)
-        if tags:
-            users = []
-            for tag in tags:
-                if tag['id'].isdigit():
-                    user_qs = User.objects.filter(id=tag['id'], username=tag['text'])
-                    if user_qs.exists():
-                        user = user_qs.first()
-                        if not self.context['scope']['user'] in user.blocked.all():
-                            users.append(user_qs.first())
-            validated_data['tagged_users'] = users
+        tagged_users = set(re.findall(r'@(\w+)', validated_data.get('body', '')))
+        users = []
+        for username in tagged_users:
+            user_qs = User.objects.filter(username=username)
+            if user_qs.exists():
+                user = user_qs.first()
+                if not self.context['scope']['user'] in user.blocked.all():
+                    users.append(user_qs.first())
+        validated_data['tagged_users'] = users
 
         # Extract object if link is present in post body
         linked_object = extract_linked_object(text=validated_data['body'])
@@ -325,13 +324,8 @@ class PostSerializer(serializers.ModelSerializer):
         post = super().create(validated_data)
 
         # Hashtags
-        if tags:
-            hashtags = []
-            for tag in tags:
-                if f'#{tag["id"]}' in validated_data['body']:
-                    hashtags.append(tag['id'])
-            if hashtags:
-                post.hashtags.add(*hashtags)
+        hashtags = set(re.findall(r'#(\w+)', validated_data.get('body', '')))
+        post.hashtags.add(*hashtags)
 
         # Assets
         for asset in assets:
