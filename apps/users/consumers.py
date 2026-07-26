@@ -8,7 +8,7 @@ from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.broadcast.models import Broadcast
 from apps.broadcast.services import BroadcastParticipantService
@@ -25,7 +25,7 @@ User = get_user_model()
 class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     serializer_class = UserSerializer
     queryset = User.objects.all()
-    lookup_field = "pk"
+    lookup_field = "username"
     page_size = 20
 
     async def connect(self):
@@ -130,7 +130,7 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     @interaction_rate_limit
     async def mute(self, pk: int, **kwargs):
         if pk == self.scope['user'].id:
-            return await self.reply(errors=["You cannot mute yourself"], status=400, action='mute')
+            raise ValidationError("You cannot mute yourself")
 
         result = await self.toggle_mute(pk=pk)
         return result, 200
@@ -152,7 +152,7 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     @interaction_rate_limit
     async def block(self, pk: int, **kwargs):
         if pk == self.scope['user'].id:
-            return await self.reply(errors=["You cannot block yourself"], status=400, action='block')
+            raise ValidationError("You cannot block yourself")
 
         result = await self.toggle_block(pk=pk)
         return result, 200
@@ -177,7 +177,7 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     @interaction_rate_limit
     async def follow(self, pk: int, **kwargs):
         if pk == self.scope['user'].id:
-            return await self.reply(errors=["You cannot follow yourself"], status=400, action='follow')
+            raise ValidationError("You cannot follow yourself")
 
         result = await self.toggle_follow(pk=pk)
         return result, 200
@@ -204,7 +204,7 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     @interaction_rate_limit
     async def toggle_notifications(self, pk: int, **kwargs):
         if pk == self.scope['user'].id:
-            return await self.reply(errors=["Cannot change notification for yourself"], status=400, action='notify')
+            raise ValidationError("Cannot change notification for yourself")
 
         data = await self.toggle_notify(pk=pk)
         return data, 200

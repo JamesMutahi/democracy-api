@@ -289,7 +289,7 @@ class BroadcastConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retri
 
         target_user_id = data.get('user_id')
         if not target_user_id:
-            return await self.reply(action='mute_speaker', errors=['user_id is required'], status=400)
+            raise ValidationError("user_id is required")
 
         await database_sync_to_async(
             BroadcastParticipantService.set_mute_status
