@@ -8,7 +8,7 @@ from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError, NotFound
 
 from apps.broadcast.models import Broadcast
 from apps.broadcast.services import BroadcastParticipantService
@@ -25,7 +25,7 @@ User = get_user_model()
 class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     serializer_class = UserSerializer
     queryset = User.objects.all()
-    lookup_field = "username"
+    lookup_field = "pk"
     page_size = 20
 
     async def connect(self):
@@ -103,12 +103,19 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     # ====================== Subscription ======================
     @action()
     @interaction_rate_limit
-    async def retrieve(self, request_id: str, **kwargs):
-        response, status = await super().retrieve(**kwargs)
-        pk = response.get("id")
-        if pk:
-            await self.user_activity.subscribe(pk=pk, request_id=request_id)
-        return response, status
+    async def retrieve(self, request_id: str, username: str, **kwargs):
+        data = await self.get_user_by_username(username=username)
+        await self.user_activity.subscribe(pk=data['id'], request_id=request_id)
+        return data, 200
+
+    @database_sync_to_async
+    def get_user_by_username(self, username: str):
+        try:
+            user = User.objects.get(username=username)
+            data = UserSerializer(user, context={'scope': self.scope}).data
+            return data
+        except User.DoesNotExist:
+            raise NotFound("User not found")
 
     @action()
     @interaction_rate_limit
@@ -285,15 +292,16 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     @action()
     @rate_limit(limit=40, period=60)
-    async def broadcast_participants(self, request_id: str, pk: int, page: int = 1, page_size=None, last_user: int = None,
-                                   **kwargs):
+    async def broadcast_participants(self, request_id: str, pk: int, page: int = 1, page_size=None,
+                                     last_user: int = None,
+                                     **kwargs):
         data = await self.get_broadcast_participants(pk, page, page_size or self.page_size, last_user)
         return data, 200
 
     @action()
     @rate_limit(limit=40, period=60)
     async def broadcast_listeners(self, request_id: str, pk: int, page: int = 1, page_size=None, last_user: int = None,
-                                **kwargs):
+                                  **kwargs):
         data = await self.get_broadcast_listeners(pk, page, page_size or self.page_size, last_user)
         return data, 200
 
