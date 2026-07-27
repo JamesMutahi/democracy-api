@@ -226,19 +226,8 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
                 )
                 ballot = option.ballot
 
-                voting_time = timezone.now()
-
-                # Start time check
-                if voting_time < ballot.start_time:
-                    raise PermissionDenied('Voting has not started yet')
-
-                # End time check
-                if ballot.end_time < voting_time:
-                    raise PermissionDenied('Voting has ended')
-
-                # Regional permission check
-                if not self._user_can_vote_in_ballot(user, ballot):
-                    raise PermissionDenied('You are not a registered voter in the region')
+                # Permission check
+                self._user_can_vote_in_ballot(user, ballot)
 
                 # === Remove user from ALL other options in this ballot ===
                 # This is the efficient way (avoids .update() on m2m)
@@ -259,16 +248,28 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         except Option.DoesNotExist:
             raise NotFound("Option not found")
 
-    def _user_can_vote_in_ballot(self, user, ballot: Ballot) -> bool:
+    @staticmethod
+    def _user_can_vote_in_ballot(user, ballot: Ballot):
+        voting_time = timezone.now()
+
+        # Start time check
+        if voting_time < ballot.start_time:
+            raise PermissionDenied('Voting has not started yet')
+
+        # End time check
+        if ballot.end_time < voting_time:
+            raise PermissionDenied('Voting has ended')
+
+        # Region check
         if not ballot.county:
             return True  # National
 
         if ballot.county != user.county:
-            return False
+            raise PermissionDenied(f'You are not a registered voter in {ballot.county.name} county')
         if ballot.constituency and ballot.constituency != user.constituency:
-            return False
+            raise PermissionDenied(f'You are not a registered voter in {ballot.constituency.name} constituency')
         if ballot.ward and ballot.ward != user.ward:
-            return False
+            raise PermissionDenied(f'You are not a registered voter in {ballot.ward.name} ward')
         return True
 
     @action()
@@ -285,6 +286,9 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
             ballot = Ballot.objects.prefetch_related('options__votes').get(pk=ballot_pk, is_active=True)
         except Ballot.DoesNotExist:
             raise NotFound('Ballot not found or inactive')
+
+        # Permission check
+        self._user_can_vote_in_ballot(user, ballot)
 
         # Check if user has already voted (efficient .exists())
         has_voted = ballot.options.filter(votes=user).exists()
