@@ -253,6 +253,13 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
                 'published_at'
             )
 
+        elif action == 'quotes':
+            return queryset.filter(
+                repost_of=kwargs.get('pk'),
+                repost_type=Post.RepostType.QUOTE,
+                status='published'
+            ).order_by('-published_at')
+
         elif action == 'reply_to':
             return queryset.order_by('-published_at')
 
@@ -328,7 +335,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
             )
 
         elif action == 'liked_posts':
-            return queryset.filter(likes__id=kwargs.get('user'))
+            return queryset.filter(likes=user)
 
         elif action == 'user_replies':
             return queryset.filter(author=kwargs.get('user')).exclude(reply_to=None)
@@ -406,6 +413,13 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         kwargs['author_pk'] = await self.get_author_pk(kwargs['pk'])
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.paginate_posts(posts, page_size=page_size, serializer_class=ThreadSerializer, **kwargs)
+        return data, 200
+
+    @action()
+    @rate_limit(limit=40, period=60)
+    async def quotes(self, page_size=None, **kwargs):
+        posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
         return data, 200
 
     @action()

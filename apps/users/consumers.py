@@ -13,6 +13,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError, NotFoun
 from apps.broadcast.models import Broadcast
 from apps.broadcast.services import BroadcastParticipantService
 from apps.petition.models import Petition
+from apps.posts.models import Post
 from apps.recommendations.follow_recommender import FollowRecommender
 from apps.users.models import ProfileVisit
 from apps.users.serializers import UserSerializer
@@ -292,6 +293,12 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     @action()
     @rate_limit(limit=40, period=60)
+    async def reposts(self, request_id: str, pk: int, page: int = 1, page_size=None, last_user: int = None, **kwargs):
+        data = await self.get_reposts(pk, page, page_size or self.page_size, last_user)
+        return data, 200
+
+    @action()
+    @rate_limit(limit=40, period=60)
     async def broadcast_participants(self, request_id: str, pk: int, page: int = 1, page_size=None,
                                      last_user: int = None,
                                      **kwargs):
@@ -333,6 +340,14 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     def get_petition_supporters(self, pk: int, page: int, page_size: int, last_user: int = None):
         petition = Petition.objects.get(pk=pk)
         users = petition.supporters.all()
+        return self.users_paginator(users, page, page_size, last_user)
+
+    @database_sync_to_async
+    def get_reposts(self, pk: int, page: int, page_size: int, last_user: int = None):
+        users = User.objects.filter(
+            posts__repost_of=pk,
+            posts__repost_type=Post.RepostType.REPOST
+        ).distinct()
         return self.users_paginator(users, page, page_size, last_user)
 
     @database_sync_to_async
