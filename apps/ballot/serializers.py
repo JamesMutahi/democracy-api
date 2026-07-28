@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework import serializers
 
 from apps.ballot.models import Ballot, Option, Reason
@@ -36,6 +37,8 @@ class BallotSerializer(serializers.ModelSerializer):
     county = CountySerializer(read_only=True)
     constituency = ConstituencySerializer(read_only=True)
     ward = WardSerializer(read_only=True)
+    has_started = serializers.SerializerMethodField(read_only=True)
+    has_ended = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Ballot
@@ -48,12 +51,22 @@ class BallotSerializer(serializers.ModelSerializer):
             'ward',
             'start_time',
             'end_time',
+            'has_started',
+            'has_ended',
             'is_active',
             'total_votes',
             'voted_option',
             'options',
             'reason',
         ]
+
+    @staticmethod
+    def get_has_started(obj):
+        return timezone.now() > obj.start_time
+
+    @staticmethod
+    def get_has_ended(obj):
+        return obj.end_time < timezone.now()
 
     @staticmethod
     def get_total_votes(obj):
