@@ -168,6 +168,7 @@ class PostSerializer(serializers.ModelSerializer):
             'hashtags',
             'views',
             'is_muted',
+            'is_pinned',
             'replies',
             'reposts',
             'is_reposted',

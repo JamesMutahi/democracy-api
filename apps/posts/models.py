@@ -61,6 +61,7 @@ class Post(BaseModel):
     views = models.PositiveIntegerField(default=0)
     clicks = models.ManyToManyField(User, blank=True, through='PostClick', related_name='clicked_posts')
     is_muted = models.BooleanField(_('muted'), default=False)  # For muting conversations/threads
+    is_pinned = models.BooleanField(_('pinned'), default=False)
     search_vector = SearchVectorField(null=True, blank=True)
     # For community notes
     upvotes = models.ManyToManyField(User, blank=True, related_name='upvotes')

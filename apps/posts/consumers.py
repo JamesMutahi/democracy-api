@@ -312,7 +312,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
                 upvotes_count=Count('upvotes'),
                 downvotes_count=Count('downvotes'),
                 total_votes=Count('upvotes', distinct=True) - Count('downvotes', distinct=True)
-            ).order_by('-total_votes', '-upvotes_count', 'downvotes_count', 'created_at')
+            ).order_by('-total_votes', '-upvotes_count', 'downvotes_count', '-published_at')
 
         elif action == 'mute':
             return queryset.filter(author=user)
@@ -329,10 +329,11 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         elif action == 'user_posts':
             return queryset.filter(
                 author=kwargs.get('user'),
-                reply_to=None,
                 community_note_of=None,
                 status='published'
-            )
+            ).exclude(
+                ~Q(reply_to=None) & Q(is_pinned=False)
+            ).order_by('-is_pinned', '-published_at')
 
         elif action == 'liked_posts':
             return queryset.filter(likes=user)
@@ -578,6 +579,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return data, 200
 
     @database_sync_to_async
+    @transaction.atomic
     def downvote_post(self, pk: int):
         user = self.scope['user']
         post = Post.objects.get(pk=pk)
@@ -669,13 +671,22 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     @interaction_rate_limit
     def mute(self, pk: int, **kwargs):
         post = self.get_object(pk=pk)
-        if post.is_muted:
-            post.is_muted = False
-            post.save()
-        else:
-            post.is_muted = True
-            post.save()
+        post.is_muted = not post.is_muted
+        post.save()
         return {'pk': pk, 'is_muted': post.is_muted}, 200
+
+    @action()
+    @interaction_rate_limit
+    def toggle_pinned(self, pk: int, **kwargs):
+        post = self.get_object(pk=pk)
+
+        if not post.is_pinned:
+            user = self.scope['user']
+            user.posts.filter(is_pinned=True).update(is_pinned=False)
+
+        post.is_pinned = not post.is_pinned
+        post.save()
+        return {'pk': pk, 'is_pinned': post.is_pinned}, 200
 
     @action()
     @interaction_rate_limit
