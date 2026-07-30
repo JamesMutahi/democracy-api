@@ -36,7 +36,7 @@ class PageInline(GrappelliSortableHiddenMixin, NestedTabularInline):
 
 @admin.register(Survey)
 class SurveyAdmin(NestedModelAdmin):
-    list_display = ['title', 'start_time', 'end_time', 'is_active']
+    list_display = ['title', 'county', 'constituency', 'ward', 'start_time', 'end_time', 'is_active']
     inlines = [PageInline]
 
 

@@ -98,7 +98,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
         # === Core filters for list action ===
         search_term = kwargs.get('search_term')
-        is_active = kwargs.get('is_active', True)
+        is_open = kwargs.get('is_open', None)
         filter_by_region = kwargs.get('filter_by_region', True)
         sort_by = kwargs.get('sort_by', 'recent')
         start_date = kwargs.get('start_date')
@@ -111,7 +111,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         if previous_ballots:
             queryset = queryset.exclude(id__in=previous_ballots)
 
-        # 1. Search (applied early - uses icontains)
+        # Search (applied early - uses icontains)
         if search_term:
             queryset = queryset.filter(
                 Q(title__icontains=search_term) |
@@ -121,26 +121,38 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
                 Q(ward__name__icontains=search_term)
             ).distinct()
 
-        # 2. Active status filter
-        if is_active is not None:
-            queryset = queryset.filter(is_active=bool(is_active))
+        # Open status
+        if is_open is not None:
+            now = timezone.now()
+            if is_open:
+                # Open if end_time is in the future OR if there is no end_time at all
+                queryset = queryset.filter(Q(end_time__gt=now) | Q(end_time__isnull=True))
+            else:
+                # Closed if end_date is in the past (ignores null values)
+                queryset = queryset.filter(end_time__lte=now)
 
-        # 3. Regional filtering (very important - optimized)
-        if filter_by_region and (county or constituency or ward):
-            region_filters = Q()
+        # Regional filtering
+        if filter_by_region:
+            # Always allow global objects (where all region fields are null)
+            region_q = Q(county__isnull=True, constituency__isnull=True, ward__isnull=True)
+
+            # Strict inclusion rules based on what the user actually belongs to
             if county:
-                region_filters &= Q(county__isnull=True) | Q(county=county)
-            if constituency:
-                region_filters &= Q(constituency__isnull=True) | Q(constituency=constituency)
-            if ward:
-                region_filters &= Q(ward__isnull=True) | Q(ward=ward)
-            queryset = queryset.filter(region_filters)
+                region_q |= Q(county=county, constituency__isnull=True, ward__isnull=True)
 
-        # 4. Date range
+            if constituency:
+                region_q |= Q(county=county, constituency=constituency, ward__isnull=True)
+
+            if ward:
+                region_q |= Q(county=county, constituency=constituency, ward=ward)
+
+            queryset = queryset.filter(region_q)
+
+        # Date range
         if start_date and end_date:
             queryset = queryset.filter(Q(start_time__lte=end_date) & Q(end_time__gte=start_date))
 
-        # 5. Sorting (applied last)
+        # Sorting (applied last)
         if sort_by == 'recent':
             queryset = queryset.order_by('-start_time')
         elif sort_by == 'oldest':

@@ -11,5 +11,5 @@ class PetitionSupportInline(admin.TabularInline):
 
 @admin.register(Petition)
 class PetitionAdmin(admin.ModelAdmin):
-    list_display = ['title', 'created_at']
+    list_display = ['title', 'county', 'constituency', 'ward', 'created_at']
     inlines = [PetitionSupportInline]

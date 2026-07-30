@@ -114,15 +114,21 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
             if is_open is not None:
                 queryset = queryset.filter(is_open=bool(is_open))
 
-            # Regional filtering (optimized)
-            if filter_by_region and (county or constituency or ward):
-                region_q = Q()
+            # Regional filtering
+            if filter_by_region:
+                # Always allow global objects (where all region fields are null)
+                region_q = Q(county__isnull=True, constituency__isnull=True, ward__isnull=True)
+
+                # Strict inclusion rules based on what the user actually belongs to
                 if county:
-                    region_q &= Q(county__isnull=True) | Q(county=county)
+                    region_q |= Q(county=county, constituency__isnull=True, ward__isnull=True)
+
                 if constituency:
-                    region_q &= Q(constituency__isnull=True) | Q(constituency=constituency)
+                    region_q |= Q(county=county, constituency=constituency, ward__isnull=True)
+
                 if ward:
-                    region_q &= Q(ward__isnull=True) | Q(ward=ward)
+                    region_q |= Q(county=county, constituency=constituency, ward=ward)
+
                 queryset = queryset.filter(region_q)
 
             # Date range

@@ -3,6 +3,7 @@ import logging
 from channels.db import database_sync_to_async
 from django.db import transaction
 from django.db.models import QuerySet, Q
+from django.utils import timezone
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import CreateModelMixin, ListModelMixin, PatchModelMixin, RetrieveModelMixin, \
@@ -107,7 +108,7 @@ class BroadcastConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retri
         previous_broadcasts = kwargs.get('previous_broadcasts')
         action = kwargs.get('action')
         search_term = kwargs.get('search_term')
-        is_active = kwargs.get('is_active', True)
+        is_open = kwargs.get('is_open', None)
         filter_by_region = kwargs.get('filter_by_region', True)
         sort_by = kwargs.get('sort_by', 'recent')
         start_date = kwargs.get('start_date')
@@ -132,19 +133,31 @@ class BroadcastConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retri
                     Q(ward__name__icontains=search_term)
                 ).distinct()
 
-            # Active status
-            if is_active is not None:
-                queryset = queryset.filter(is_active=is_active)
+            # Open status
+            if is_open is not None:
+                now = timezone.now()
+                if is_open:
+                    # Open if end_time is in the future OR if there is no end_time at all
+                    queryset = queryset.filter(Q(end_time__gt=now) | Q(end_time__isnull=True))
+                else:
+                    # Closed if end_date is in the past (ignores null values correctly)
+                    queryset = queryset.filter(end_time__lte=now)
 
             # Regional filtering
-            if filter_by_region and (county or constituency or ward):
-                region_q = Q()
+            if filter_by_region:
+                # Always allow global objects (where all region fields are null)
+                region_q = Q(county__isnull=True, constituency__isnull=True, ward__isnull=True)
+
+                # Strict inclusion rules based on what the user actually belongs to
                 if county:
-                    region_q &= Q(county__isnull=True) | Q(county=county)
+                    region_q |= Q(county=county, constituency__isnull=True, ward__isnull=True)
+
                 if constituency:
-                    region_q &= Q(constituency__isnull=True) | Q(constituency=constituency)
+                    region_q |= Q(county=county, constituency=constituency, ward__isnull=True)
+
                 if ward:
-                    region_q &= Q(ward__isnull=True) | Q(ward=ward)
+                    region_q |= Q(county=county, constituency=constituency, ward=ward)
+
                 queryset = queryset.filter(region_q)
 
             # Date range

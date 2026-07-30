@@ -25,6 +25,6 @@ class OptionInline(GrappelliSortableHiddenMixin, admin.TabularInline):
 
 @admin.register(Ballot)
 class BallotAdmin(admin.ModelAdmin):
-    list_display = ['title', 'is_active', 'start_time', 'end_time']
+    list_display = ['title', 'county', 'constituency', 'ward', 'is_active', 'start_time', 'end_time']
     inlines = [OptionInline, ReasonInline]
     readonly_fields = ['created_at', 'updated_at']

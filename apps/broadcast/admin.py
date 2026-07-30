@@ -17,6 +17,6 @@ class SpeakerRequestInline(admin.TabularInline):
 
 @admin.register(Broadcast)
 class BroadcastAdmin(admin.ModelAdmin):
-    list_display = ['title', 'type', 'created_at']
+    list_display = ['title', 'type', 'county', 'constituency', 'ward', 'created_at']
     filter_horizontal = ['co_hosts', 'speakers']
     inlines = [SpeakerRequestInline, CommentInline]
