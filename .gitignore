@@ -267,3 +267,4 @@ staticfiles/
 
 geo.json
 geojson_loader.py
+serviceAccountKey.json

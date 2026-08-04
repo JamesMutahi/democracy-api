@@ -3,10 +3,12 @@ from celery import shared_task
 from channels.layers import get_channel_layer
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from fcm_django.models import FCMDevice
+from firebase_admin.messaging import Message as fireMessage, Notification as fireNotification
 
 from apps.ballot.models import Ballot
-from apps.chat.models import Message
 from apps.broadcast.models import Broadcast
+from apps.chat.models import Message
 from apps.notification.models import Notification
 from apps.notification.serializers import NotificationSerializer
 from apps.petition.models import Petition
@@ -15,6 +17,16 @@ from apps.survey.models import Survey
 
 User = get_user_model()
 channel_layer = get_channel_layer()
+
+
+def send_push_to_user(user, title, body, data=None):
+    devices = FCMDevice.objects.filter(user=user, active=True)
+    devices.send_message(
+        fireMessage(
+            notification=fireNotification(title=title, body=body),
+            data=data or {},
+        )
+    )
 
 
 def send_notification_create(notification: Notification):
@@ -33,8 +45,8 @@ def send_notification_create(notification: Notification):
         "data": serializer.data,
         "response_status": 201,
     }
-
     async_to_sync(channel_layer.group_send)(group_name, message)
+
 
 def send_notification_update(notification: Notification):
     """ Sends update event """
@@ -54,6 +66,7 @@ def send_notification_update(notification: Notification):
     }
 
     async_to_sync(channel_layer.group_send)(group_name, message)
+
 
 @shared_task
 def send_notification_delete(notification_id: int, recipient_id: int):
@@ -92,6 +105,7 @@ def create_ballot_notifications_on_create(ballot_id):
                 ballot=ballot,
             )
             send_notification_create(notification)
+            send_push_to_user(user=user, title=notification.text, body=notification.ballot.title)
 
 
 @shared_task
@@ -112,6 +126,7 @@ def create_survey_notifications_on_create(survey_id):
                 survey=survey,
             )
             send_notification_create(notification)
+            send_push_to_user(user=user, title=notification.text, body=notification.survey.title)
 
 
 @shared_task
@@ -134,6 +149,7 @@ def create_petition_notifications_on_create(petition_id):
             petition=petition,
         )
         send_notification_create(notification)
+        send_push_to_user(user=user, title=notification.text, body=notification.petition.title)
 
 
 @shared_task
@@ -158,6 +174,7 @@ def create_broadcast_notifications_on_create(broadcast_id):
             broadcast=broadcast,
         )
         send_notification_create(notification)
+        send_push_to_user(user=user, title=notification.text, body=notification.broadcast.title)
 
 
 @shared_task
@@ -182,6 +199,7 @@ def create_live_stream_notifications(broadcast_id):
             broadcast=broadcast,
         )
         send_notification_create(notification)
+        send_push_to_user(user=user, title=notification.text, body=notification.broadcast.title)
 
 
 @shared_task
@@ -199,6 +217,7 @@ def create_message_notifications_on_create(message_id):
                 message=message,
             )
             send_notification_create(notification)
+            send_push_to_user(user=user, title=notification.text, body=notification.message.text)
 
 
 @shared_task
@@ -218,6 +237,7 @@ def create_post_notifications_on_create(post_id):
                 post=post,
             )
             send_notification_create(notification)
+            send_push_to_user(user=user, title=notification.text, body=notification.post.body)
 
     # Repost notification
     if post.repost_of:
@@ -231,6 +251,7 @@ def create_post_notifications_on_create(post_id):
                     post=post,
                 )
                 send_notification_create(notification)
+                send_push_to_user(user=post.author, title=notification.text, body=notification.post.body)
 
     # Reply notification
     if post.reply_to:
@@ -244,6 +265,7 @@ def create_post_notifications_on_create(post_id):
                     post=post,
                 )
                 send_notification_create(notification)
+                send_push_to_user(user=post.author, title=notification.text, body=notification.post.body)
 
     # Tagged users
     if post.tagged_users.exists():
@@ -258,6 +280,7 @@ def create_post_notifications_on_create(post_id):
                         post=post,
                     )
                     send_notification_create(notification)
+                    send_push_to_user(user=user, title=notification.text, body=notification.post.body)
 
 
 @shared_task
@@ -266,6 +289,9 @@ def notify_on_follow(user_id, recipient_id):
 
     if not recipient.preferences.allow_follow_notifications:
         return
+
+    user = User.objects.get(id=user_id)
+    send_push_to_user(user=recipient, title='New follower', body=f'{user.name} @{user.username}')
 
     with transaction.atomic():
         # Lock the row to prevent duplicate notifications from simultaneous follows
@@ -306,6 +332,9 @@ def notify_on_like(user_id, post_id):
 
     if user_id == post.author_id or post.is_muted or not post.author.preferences.allow_like_notifications:
         return
+
+    user = User.objects.get(id=user_id)
+    send_push_to_user(user=user, title='Post', body=f'{user.name} @{user.username} liked your post')
 
     with transaction.atomic():
         # Prevent race conditions: lock the notification row if it exists
@@ -353,6 +382,9 @@ def notify_on_support(user_id, petition_id):
     if user_id == petition.author_id or not petition.author.preferences.allow_petition_supporter_notifications:
         return
 
+    user = User.objects.get(id=user_id)
+    send_push_to_user(user=user, title='Petition', body=f'{user.name} @{user.username} supported your petition')
+
     with transaction.atomic():
         # Prevent race conditions: lock the notification row if it exists
         n_qs = Notification.objects.select_for_update().filter(
@@ -391,6 +423,7 @@ def delete_notification_on_support_removal(user_id, petition_id):
             else:
                 notification.users.remove(user)
 
+
 @shared_task
 def delete_notification_on_marked_as_read(chat_id, user_id):
     Notification.objects.filter(chat=chat_id).exclude(message__author=user_id).delete()
@@ -418,6 +451,7 @@ def notify_on_petition_status_change(petition_id: int, is_open: bool):
             petition=petition,
         )
         send_notification_create(notification)
+        send_push_to_user(user=user, title='Petition', body=notification.text)
 
 
 @shared_task

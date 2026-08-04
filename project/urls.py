@@ -19,9 +19,14 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include
 from django_channels_jwt.views import AsgiValidateTokenView
+from fcm_django.api.rest_framework import FCMDeviceAuthorizedViewSet
+from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView, TokenBlacklistView
 
 from apps.recommendations.admin import recommendation_admin
+
+router = DefaultRouter()
+router.register("devices", FCMDeviceAuthorizedViewSet)
 
 urlpatterns = [
     path('grappelli/', include('grappelli.urls')),
@@ -37,6 +42,7 @@ urlpatterns = [
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/logout/', TokenBlacklistView.as_view(), name='token_blacklist'),
     path('ticket/', AsgiValidateTokenView.as_view()),
+    path("api/", include(router.urls)),
 ]
 
 if settings.DEBUG:

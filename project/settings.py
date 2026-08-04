@@ -88,6 +88,7 @@ INSTALLED_APPS = [
     'rest_framework_gis',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
+    'fcm_django',
     'corsheaders',
     'django_filters',
     'nested_admin',
@@ -247,6 +248,19 @@ CACHES = {
 REDIS_URL = "redis://redis:6379"
 REDIS_POOL_MAX_CONNECTIONS = 100
 
+# Firebase Admin
+import firebase_admin
+from firebase_admin import credentials
+
+cred = credentials.Certificate("serviceAccountKey.json")
+firebase_admin.initialize_app(cred)
+
+FCM_DJANGO_SETTINGS = {
+    "DEFAULT_FIREBASE_APP": None,
+    "ONE_DEVICE_PER_USER": False,
+    "DELETE_INACTIVE_DEVICES": True,
+}
+
 # Celery Configuration Options
 CELERY_TIMEZONE = 'Africa/Nairobi'
 CELERY_TASK_TRACK_STARTED = True
@@ -287,9 +301,9 @@ STORAGES = {
     "default": {
         "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
         "OPTIONS": {
-            "location": "media",                # Files go into /media/ folder in R2
-            "querystring_auth": False,          # Set to True for private, expiring URLs
-            "file_overwrite": False,            # Prevents users from overwriting existing uploads
+            "location": "media",  # Files go into /media/ folder in R2
+            "querystring_auth": False,  # Set to True for private, expiring URLs
+            "file_overwrite": False,  # Prevents users from overwriting existing uploads
         },
     },
     "staticfiles": {
