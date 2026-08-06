@@ -317,9 +317,8 @@ STORAGES = {
     },
 }
 
-
 # Recommendation System Settings
-RECOMMENDATION_CONFIG = {
+POST_RECOMMENDER_CONFIG = {
     "CACHE": {
         "KEY_PREFIX": "user_recs_",
         "TIMEOUT": 60 * 30,
@@ -356,9 +355,6 @@ RECOMMENDATION_CONFIG = {
         "MIN_FREQUENCY": 3,
         "MIN_WORD_LENGTH": 4,
         "CACHE_TIMEOUT": 600,
-
-        # Optional if you move to trending_vector later
-        "USE_TRENDING_VECTOR": False,
 
         "STOP_WORDS": [
             "the", "and", "or", "but", "in", "on", "at", "to", "for",
@@ -481,6 +477,67 @@ RECOMMENDATION_CONFIG = {
 
     "NOTE_QUALITY": {
         "MIN_HELPFUL_SCORE": 0.7,
+    },
+}
+
+FOLLOW_RECOMMENDER_CONFIG = {
+    "CACHE": {
+        "KEY_PREFIX": "user_follow_recs_",
+        "TIMEOUT": 60 * 60,  # 1 hour
+    },
+
+    "DEFAULT_LIMIT": 15,
+    "SCORED_LIMIT": 80,
+    "DIVERSITY_FACTOR": 0.10,
+
+    # Final follow recommendation weights.
+    # These should sum to 1.0.
+    "WEIGHTS": {
+        "location": 0.25,
+        "mutual": 0.30,
+        "profile_visit": 0.15,
+        "engagement": 0.10,
+        "recency": 0.15,
+        "activity": 0.05,
+    },
+
+    "LOCATION_SCORES": {
+        "WARD": 1.0,
+        "CONSTITUENCY": 0.85,
+        "COUNTY": 0.65,
+        "DEFAULT": 0.45,
+        "NO_LOCATION": 0.50,
+    },
+
+    "MUTUAL_SCORE_TIERS": [
+        {"MIN_MUTUALS": 5, "SCORE": 1.0},
+        {"MIN_MUTUALS": 3, "SCORE": 0.85},
+        {"MIN_MUTUALS": 1, "SCORE": 0.65},
+    ],
+
+    "PROFILE_VISIT": {
+        "SCORE": 0.85,
+    },
+
+    "RECENCY": {
+        "ACTIVE_DAYS": 7,
+        "ACTIVE_SCORE": 0.8,
+        "SEMI_ACTIVE_DAYS": 30,
+        "SEMI_ACTIVE_SCORE": 0.5,
+        "DEFAULT_SCORE": 0.2,
+    },
+
+    # Engagement is normalized/capped so it cannot dominate the score.
+    "ENGAGEMENT": {
+        "LIKE_WEIGHT": 0.6,
+        "CLICK_WEIGHT": 0.4,
+        "CAP": 1.0,
+    },
+
+    # Activity is normalized/capped.
+    # Example: 20 published posts => activity score of 1.0.
+    "ACTIVITY": {
+        "PUBLISHED_POST_CAP": 20,
     },
 }
 

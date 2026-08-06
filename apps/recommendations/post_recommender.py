@@ -69,7 +69,7 @@ class PostRecommender:
     def __init__(self, user: User):
         self.user = user
         self.random_seed = None
-        self.config = getattr(settings, "RECOMMENDATION_CONFIG", {})
+        self.config = settings.POST_RECOMMENDER_CONFIG
 
     # ====================== CONFIG HELPERS ======================
 

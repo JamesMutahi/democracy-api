@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.db import models
 from django.utils import timezone
@@ -81,6 +83,8 @@ class FollowRecommendationCache(models.Model):
         db_table = "FollowRecommendationCache"
         verbose_name = "Follow Recommendation Cache"
 
-    def is_stale(self, max_age_minutes=60):
-        age = timezone.now() - self.generated_at
-        return age.total_seconds() > (max_age_minutes * 60)
+    def is_stale(self):
+        return timezone.now() - self.generated_at > timedelta(hours=1)
+
+    def __str__(self):
+        return f"FollowRecommendationCache(user_id={self.user_id})"
