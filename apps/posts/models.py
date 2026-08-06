@@ -63,6 +63,7 @@ class Post(BaseModel):
     is_muted = models.BooleanField(_('muted'), default=False)  # For muting conversations/threads
     is_pinned = models.BooleanField(_('pinned'), default=False)
     search_vector = SearchVectorField(null=True, blank=True)
+    trending_vector = SearchVectorField(null=True, blank=True)
     # For community notes
     upvotes = models.ManyToManyField(User, blank=True, related_name='upvotes')
     downvotes = models.ManyToManyField(User, blank=True, related_name='downvotes')
@@ -78,6 +79,7 @@ class Post(BaseModel):
         db_table = 'Post'
         indexes = [
             GinIndex(fields=['search_vector']),
+            GinIndex(fields=['trending_vector']),
         ]
 
     def __str__(self):
@@ -109,7 +111,8 @@ class Post(BaseModel):
         super().save(*args, **kwargs)
         # Update vector after initial save
         Post.objects.filter(pk=self.pk).update(
-            search_vector=SearchVector('body', config='english')
+            search_vector=SearchVector('body', config='english'),
+            trending_vector=SearchVector('body', config='simple'),
         )
 
     def delete(self, *args, **kwargs):

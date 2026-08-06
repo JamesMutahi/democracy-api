@@ -39,6 +39,9 @@ class PostRecommendationCache(models.Model):
     generated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        indexes = [
+            models.Index(fields=['user', 'generated_at']),
+        ]
         db_table = "PostRecommendationCache"
         verbose_name = "Post Recommendation Cache"
 

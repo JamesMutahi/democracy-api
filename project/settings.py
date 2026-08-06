@@ -317,6 +317,173 @@ STORAGES = {
     },
 }
 
+
+# Recommendation System Settings
+RECOMMENDATION_CONFIG = {
+    "CACHE": {
+        "KEY_PREFIX": "user_recs_",
+        "TIMEOUT": 60 * 30,
+        "TRENDING_TIMEOUT": 600,
+    },
+
+    "RECOMMENDATIONS": {
+        "DEFAULT_LIMIT": 20,
+        "SCORED_LIMIT": 50,
+        "DIVERSITY_FACTOR": 0.08,
+    },
+
+    "TRENDING_POSTS": {
+        "DEFAULT_LIMIT": 20,
+        "WINDOW_DAYS": 365,
+        "WEIGHTS": {
+            "likes": 3.0,
+            "bookmarks": 3.0,
+            "clicks": 2.0,
+            "views": 1.0,
+            "reposts": 5.0,
+        },
+    },
+
+    "TRENDING_HASHTAGS": {
+        "DEFAULT_LIMIT": 10,
+        "WINDOW_DAYS": 7,
+        "CACHE_TIMEOUT": 600,
+    },
+
+    "TRENDING_WORDS": {
+        "DEFAULT_LIMIT": 15,
+        "WINDOW_DAYS": 7,
+        "MIN_FREQUENCY": 3,
+        "MIN_WORD_LENGTH": 4,
+        "CACHE_TIMEOUT": 600,
+
+        # Optional if you move to trending_vector later
+        "USE_TRENDING_VECTOR": False,
+
+        "STOP_WORDS": [
+            "the", "and", "or", "but", "in", "on", "at", "to", "for",
+            "of", "with", "by", "from", "up", "about", "into", "over",
+            "after", "this", "that", "these", "those", "is", "are",
+            "was", "were", "be", "been", "being", "have", "has", "had",
+            "do", "does", "did", "will", "would", "shall", "should",
+            "can", "could", "may", "might", "must", "a", "an", "i",
+            "you", "he", "she", "it", "we", "they", "me", "him", "her",
+            "us", "them", "my", "your", "his", "its", "our", "their",
+            "not", "no", "yes", "if", "then", "else", "when", "where",
+            "how", "what", "who", "which", "why", "all", "any", "both",
+            "each", "few", "more", "most", "other", "some", "such",
+            "than", "too", "very", "just", "now", "so", "as", "like",
+            "get", "got", "make", "made", "one", "two", "three", "also",
+            "because", "however", "although", "still", "even", "back",
+            "well", "say",
+        ],
+
+        "EXCLUDED_WORDS": [
+            "http",
+            "https",
+            "www",
+            "com",
+            "net",
+            "org",
+            "gov",
+            "edu",
+            "io",
+            "co",
+            "uk",
+            "ca",
+            "au",
+            "de",
+            "fr",
+            "png",
+            "jpg",
+            "jpeg",
+            "gif",
+            "pdf",
+            "html",
+            "php",
+            "asp",
+            "email",
+            "mailto",
+            "utm",
+            "fbclid",
+            "gclid",
+        ],
+    },
+
+    "TRENDING_TOPICS": {
+        "DEFAULT_LIMIT": 30,
+        "WINDOW_DAYS": 7,
+    },
+
+    # Final recommendation score weights
+    "SCORING_WEIGHTS": {
+        "location": 0.25,
+        "content_type": 0.18,
+        "media": 0.12,
+        "following": 0.15,
+        "profile_visit": 0.10,
+        "click": 0.08,
+        "engagement": 0.07,
+        "freshness": 0.10,
+        "similarity": 0.05,
+        "note_quality": 0.02,
+    },
+
+    # Engagement score used inside main recommendations
+    "ENGAGEMENT_WEIGHTS": {
+        "likes": 2.0,
+        "bookmarks": 2.0,
+        "views": 0.5,
+        "reposts": 3.0,
+    },
+
+    "LOCATION_SCORES": {
+        "WARD": 1.0,
+        "CONSTITUENCY": 0.85,
+        "COUNTY": 0.65,
+        "DEFAULT": 0.45,
+        "NO_LOCATION": 0.5,
+    },
+
+    "CONTENT_TYPE_SCORES": {
+        "BALLOT": 0.95,
+        "PETITION": 0.85,
+        "BROADCAST": 0.80,
+        "SURVEY": 0.75,
+        "SECTION": 0.70,
+        "DEFAULT": 0.40,
+    },
+
+    "MEDIA_SCORES": {
+        "VIDEO": 0.95,
+        "IMAGE": 0.85,
+        "ANY_ASSET": 0.70,
+        "DEFAULT": 0.35,
+    },
+
+    "FRESHNESS": {
+        "RECENT_HOURS": 2,
+        "DAY_HOURS": 24,
+        "WEEK_HOURS": 168,
+        "RECENT_SCORE": 1.0,
+        "DAY_SCORE": 0.8,
+        "WEEK_SCORE": 0.5,
+        "OLD_SCORE": 0.2,
+    },
+
+    "SIMILARITY_SCORES": {
+        "BALLOT": 0.75,
+        "SURVEY": 0.75,
+        "PETITION": 0.70,
+        "BROADCAST": 0.80,
+        "DEFAULT": 0.30,
+    },
+
+    "NOTE_QUALITY": {
+        "MIN_HELPFUL_SCORE": 0.7,
+    },
+}
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -337,6 +504,11 @@ LOGGING = {
         'apps.broadcast': {
             'handlers': ['console'],
             'level': 'DEBUG',
+            'propagate': True,
+        },
+        'apps.recommendations': {
+            'handlers': ['console'],
+            'level': 'INFO',
             'propagate': True,
         },
         'django.channels': {
