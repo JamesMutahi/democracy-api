@@ -251,7 +251,7 @@ def create_post_notifications_on_create(post_id):
                     post=post,
                 )
                 send_notification_create(notification)
-                send_push_to_user(user=post.author, title=notification.text, body=notification.post.body)
+                send_push_to_user(user=post.repost_of.author, title=notification.text, body=notification.post.body)
 
     # Reply notification
     if post.reply_to:
@@ -265,7 +265,7 @@ def create_post_notifications_on_create(post_id):
                     post=post,
                 )
                 send_notification_create(notification)
-                send_push_to_user(user=post.author, title=notification.text, body=notification.post.body)
+                send_push_to_user(user=post.reply_to.author, title=notification.text, body=notification.post.body)
 
     # Tagged users
     if post.tagged_users.exists():
@@ -334,7 +334,7 @@ def notify_on_like(user_id, post_id):
         return
 
     user = User.objects.get(id=user_id)
-    send_push_to_user(user=user, title='Post', body=f'{user.name} @{user.username} liked your post')
+    send_push_to_user(user=post.author, title='Post', body=f'{user.name} @{user.username} liked your post')
 
     with transaction.atomic():
         # Prevent race conditions: lock the notification row if it exists
@@ -383,7 +383,7 @@ def notify_on_support(user_id, petition_id):
         return
 
     user = User.objects.get(id=user_id)
-    send_push_to_user(user=user, title='Petition', body=f'{user.name} @{user.username} supported your petition')
+    send_push_to_user(user=petition.author, title='Petition', body=f'{user.name} @{user.username} supported your petition')
 
     with transaction.atomic():
         # Prevent race conditions: lock the notification row if it exists
