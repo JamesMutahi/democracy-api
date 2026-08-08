@@ -55,7 +55,7 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
                 "response_status": 204,
             })
         else:
-            # create (and future update actions)
+            # create and update actions
             await self.send_json(event)
 
     # ====================== FILTER & ACTIONS ======================
