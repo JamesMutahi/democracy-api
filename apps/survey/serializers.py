@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
 from apps.survey.models import Survey, Question, Choice, Response, TextAnswer, ChoiceAnswer, Page
+from apps.utils.serializer_user import get_current_user
 
 
 class ChoiceSerializer(serializers.ModelSerializer):
@@ -92,7 +93,7 @@ class ResponseSerializer(serializers.ModelSerializer):
         extra_kwargs = {'id': {'read_only': True}, 'survey': {'write_only': True}, }
 
     def create(self, validated_data):
-        validated_data['user'] = self.context['scope']['user']
+        validated_data['user'] = get_current_user(self.context)
         text_answers = validated_data.pop('text_answers')
         choice_answers = validated_data.pop('choice_answers')
         response_qs = Response.objects.filter(survey=validated_data['survey'], user=validated_data['user'])
@@ -132,7 +133,8 @@ class SurveySerializer(serializers.ModelSerializer):
         ]
 
     def get_response(self, instance: Survey):
-        response_qs = Response.objects.filter(survey=instance, user=self.context['scope']['user'])
+        user = get_current_user(self.context)
+        response_qs = Response.objects.filter(survey=instance, user=user)
         if response_qs.exists():
             return ResponseSerializer(response_qs.first(), context=self.context).data
         return None

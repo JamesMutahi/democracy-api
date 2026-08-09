@@ -5,6 +5,7 @@ from apps.geo.models import County, Constituency, Ward
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
 from apps.petition.models import Petition
 from apps.users.serializers import UserSerializer
+from apps.utils.serializer_user import get_current_user
 
 User = get_user_model()
 
@@ -79,10 +80,11 @@ class PetitionSerializer(serializers.ModelSerializer):
         return recent_supporters
 
     def get_is_supported(self, instance: Petition):
-        is_supported = instance.supporters.contains(self.context['scope']['user'])
+        user = get_current_user(self.context)
+        is_supported = instance.supporters.contains(user)
         return is_supported
 
     def create(self, validated_data):
-        validated_data['author'] = self.context['scope']['user']
+        validated_data['author'] = get_current_user(self.context)
         validated_data['is_open'] = True
         return super().create(validated_data)

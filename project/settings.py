@@ -101,7 +101,7 @@ INSTALLED_APPS = [
 if MODE == 'dev' and DEBUG:
     DATA_UPLOAD_MAX_NUMBER_FIELDS = None
 
-AUTH_USER_MODEL = 'users.CustomUser'
+AUTH_USER_MODEL = 'users.User'
 
 # Grappelli configs
 GRAPPELLI_ADMIN_TITLE = 'Democracy'

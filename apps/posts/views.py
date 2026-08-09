@@ -23,11 +23,6 @@ class PostCreateView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated, NotBlockedPermission]
     serializer_class = PostSerializer
 
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context["scope"] = {"user": self.request.user}
-        return context
-
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -120,8 +115,3 @@ class PostUpdateView(generics.UpdateAPIView):
     permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
     serializer_class = PostSerializer
     queryset = Post.objects.filter(status="draft")
-
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context["scope"] = {"user": self.request.user}
-        return context

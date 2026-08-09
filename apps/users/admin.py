@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin
 
 from apps.notification.models import Preferences
 from apps.users.forms import CustomUserChangeForm, CustomUserCreationForm
-from apps.users.models import CustomUser
+from apps.users.models import User
 
 
 class PreferencesInline(admin.TabularInline):
@@ -15,7 +15,7 @@ class CustomUserAdmin(UserAdmin):
     inlines = [PreferencesInline]
     add_form = CustomUserCreationForm
     form = CustomUserChangeForm
-    model = CustomUser
+    model = User
 
     list_display = ('id', 'name', 'username', 'email', 'last_login', 'county', 'constituency', 'ward', 'is_active')
     list_filter = ['is_active']
@@ -37,4 +37,4 @@ class CustomUserAdmin(UserAdmin):
     filter_horizontal = ['following', 'blocked', 'muted']
 
 
-admin.site.register(CustomUser, CustomUserAdmin)
+admin.site.register(User, CustomUserAdmin)

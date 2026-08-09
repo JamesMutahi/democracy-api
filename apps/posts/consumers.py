@@ -4,8 +4,9 @@ from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from django.contrib.postgres.search import TrigramSimilarity, SearchQuery, SearchRank, SearchHeadline
 from django.core.cache import cache
-from django.db import transaction
-from django.db.models import QuerySet, Case, When, Count, Q, F, Value
+from django.core.exceptions import ValidationError
+from django.db import transaction, connection, DEFAULT_DB_ALIAS
+from django.db.models import QuerySet, Case, When, Count, Q, F, Value, OuterRef, Subquery, IntegerField, TextField
 from django.db.models.functions import Coalesce
 from django.db.models.signals import post_save
 from django.utils import timezone
@@ -13,7 +14,6 @@ from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin, DeleteModelMixin
 from djangochannelsrestframework.observer import model_observer
-from djangochannelsrestframework.pagination import WebsocketLimitOffsetPagination
 from rest_framework.exceptions import PermissionDenied, NotFound
 from rest_framework.generics import get_object_or_404
 from taggit.models import Tag
@@ -28,17 +28,10 @@ from apps.utils.throttles import rate_limit, interaction_rate_limit
 User = get_user_model()
 
 
-class PostListPagination(WebsocketLimitOffsetPagination):
-    page_size = 10
-    page_size_query_param = 'page_size'
-    max_page_size = 20
-
-
 class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer):
     queryset = Post.objects.filter(is_active=True)
     serializer_class = PostSerializer
     lookup_field = "pk"
-    pagination_class = PostListPagination
     page_size = 10
 
     async def connect(self):
@@ -50,49 +43,49 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     # ====================== Observers ======================
     @model_observer(Post)
     async def post_activity(self, message, **kwargs):
-        if message['action'] != 'delete':
-            message['data'] = await self.get_post_serializer_data(pk=message['data']['pk'])
         await self.send_json(message)
 
-    @database_sync_to_async
-    def get_post_serializer_data(self, pk: int):
-        post = Post.objects.select_related('author').prefetch_related('likes', 'bookmarks').get(pk=pk)
-        return PostSerializer(post, context={'scope': self.scope}).data
-
     @post_activity.groups_for_signal
-    def post_activity_groups(self, instance: Post, **kwargs):
+    def post_activity_signal_groups(self, instance: Post, **kwargs):
         yield f'post__{instance.pk}'
 
     @post_activity.groups_for_consumer
-    def post_activity_groups(self, pk=None, **kwargs):
+    def post_activity_consumer_groups(self, pk=None, **kwargs):
         if pk is not None:
             yield f'post__{pk}'
 
     @post_activity.serializer
     def post_activity_serializer(self, instance: Post, action, **kwargs):
-        # TODO: Too many database hits in model observer. Pass more fields to data in dict. Test with redis
         return {
-            'data': {'pk': instance.pk},
+            'data': get_activity_data(instance),
             'action': action.value,
             'pk': instance.pk,
-            'response_status': 201 if action.value == 'create' else 204 if action.value == 'delete' else 200
+            'response_status': (
+                201 if action.value == "create"
+                else 204 if action.value == "delete"
+                else 200
+            ),
         }
 
     @model_observer(PostLike)
     async def like_activity(self, message, **kwargs):
-        # When a post like object changes, we send update for the parent post
-        post_pk = message['data'].get('post') if isinstance(message['data'], dict) else message['data']
-        if post_pk:
-            message['data'] = await self.get_post_serializer_data(pk=post_pk)
-            message['action'] = 'update'
         await self.send_json(message)
+
+    @like_activity.groups_for_signal
+    def like_activity_signal_groups(self, instance: PostLike, **kwargs):
+        yield f"post__{instance.post.id}"
+
+    @like_activity.groups_for_consumer
+    def like_activity_consumer_groups(self, pk=None, **kwargs):
+        if pk is not None:
+            yield f"post__{pk}"
 
     @like_activity.serializer
     def like_activity_serializer(self, instance: PostLike, action, **kwargs):
         return {
-            'data': instance.post.pk,
+            'data': get_activity_data(instance.post),
             'action': 'update',
-            'pk': instance.pk,
+            'pk': instance.post.pk,
             'response_status': 200,
         }
 
@@ -102,21 +95,162 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         await super().disconnect(code)
 
     # ====================== Filter ======================
+    @staticmethod
+    def _apply_body_search(queryset: QuerySet, search_term: str):
+        search_query = SearchQuery(
+            search_term,
+            config="english",
+            search_type="websearch",
+        )
+
+        queryset = queryset.annotate(
+            rank=SearchRank("search_vector", search_query),
+            similarity=TrigramSimilarity("body", search_term),
+            highlighted_body=SearchHeadline(
+                "body",
+                search_query,
+                start_sel="<mark>",
+                stop_sel="</mark>",
+                max_words=50,
+                min_words=20,
+            ),
+        ).filter(
+            Q(search_vector=search_query) | Q(similarity__gt=0.1)
+        )
+
+        ordering = ["-rank", "-similarity", "-published_at", "-id"]
+        return queryset, ordering
+
+    @staticmethod
+    def _apply_full_text_search(queryset: QuerySet, search_term: str):
+        search_query = SearchQuery(
+            search_term,
+            config="english",
+            search_type="websearch",
+        )
+
+        queryset = queryset.annotate(
+            rank=SearchRank("search_vector", search_query),
+            body_similarity=TrigramSimilarity("body", search_term),
+            author_username_sim=TrigramSimilarity("author__username", search_term),
+            author_name_sim=TrigramSimilarity(
+                Coalesce("author__name", Value("", output_field=TextField())),
+                search_term,
+            ),
+            highlighted_body=SearchHeadline(
+                "body",
+                search_query,
+                start_sel="<mark>",
+                stop_sel="</mark>",
+                max_words=50,
+                min_words=20,
+            ),
+        ).filter(
+            Q(search_vector=search_query)
+            | Q(body_similarity__gt=0.1)
+            | Q(author_username_sim__gt=0.25)
+            | Q(author_name_sim__gt=0.25)
+        )
+
+        ordering = [
+            "-author_username_sim",
+            "-author_name_sim",
+            "-rank",
+            "-body_similarity",
+            "-published_at",
+            "-id",
+        ]
+
+        return queryset, ordering
+
+    @staticmethod
+    def _vote_count_subquery(field_name: str):
+        """
+        Builds a subquery count for M2M vote fields.
+
+        Falls back gracefully if the through model cannot be introspected.
+        """
+        try:
+            field = Post._meta.get_field(field_name)
+            through = field.remote_field.through
+
+            post_field_name = None
+            for through_field in through._meta.fields:
+                related_model = getattr(through_field, "related_model", None)
+                if related_model is Post:
+                    post_field_name = through_field.name
+                    break
+
+            if not post_field_name:
+                post_field_name = "post"
+
+            return (
+                through.objects.filter(**{post_field_name: OuterRef("pk")})
+                .values(post_field_name)
+                .annotate(count=Count("*"))
+                .values("count")[:1]
+            )
+        except Exception:
+            return None
+
+    def _annotate_vote_counts(self, queryset: QuerySet):
+        up_subquery = self._vote_count_subquery("upvotes")
+        down_subquery = self._vote_count_subquery("downvotes")
+
+        annotations = {}
+
+        if up_subquery is not None:
+            annotations["upvotes_count"] = Coalesce(
+                Subquery(up_subquery, output_field=IntegerField()),
+                0,
+            )
+        else:
+            annotations["upvotes_count"] = Value(0, output_field=IntegerField())
+
+        if down_subquery is not None:
+            annotations["downvotes_count"] = Coalesce(
+                Subquery(down_subquery, output_field=IntegerField()),
+                0,
+            )
+        else:
+            annotations["downvotes_count"] = Value(0, output_field=IntegerField())
+
+        queryset = queryset.annotate(**annotations)
+        queryset = queryset.annotate(
+            total_votes=F("upvotes_count") - F("downvotes_count")
+        )
+
+        return queryset
+
+    @staticmethod
+    def clean_previous_posts(previous_posts):
+        if not isinstance(previous_posts, list):
+            return []
+
+        cleaned = []
+        for pk in previous_posts[:1000]:
+            try:
+                cleaned.append(int(pk))
+            except (TypeError, ValueError):
+                continue
+
+        return cleaned
+
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
         user = self.scope['user']
-        action = kwargs.get('action')
-        previous_posts = kwargs.get('previous_posts')
+        action_ = kwargs.get('action')
+        previous_posts = self.clean_previous_posts(kwargs.get("previous_posts"))
 
         # Pagination exclusion
         if previous_posts:
             queryset = queryset.exclude(id__in=previous_posts)
 
         # === Early common filters (applied to almost all actions) ===
-        if action not in ['delete', 'patch', 'drafts']:
+        if action_ not in ['delete', 'patch', 'drafts']:
             queryset = queryset.filter(is_deleted=False)
 
-        if action == 'list':
+        if action_ == 'list':
             queryset = queryset.filter(
                 community_note_of=None,
                 status='published'
@@ -134,84 +268,32 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
                     from_match = re.match(r'from:(\w+)', search_term_lower)
                     if from_match:
                         username = from_match.group(1)
-                        queryset = queryset.filter(author__username__iexact=username)
-                        return queryset.order_by('-published_at')
+                        queryset = queryset.filter(author__username__iexact=username).order_by('-published_at', '-id')
 
                     # Handle @username + optional search terms
-                    if search_term_lower.startswith('@'):
+                    elif search_term_lower.startswith('@'):
                         parts = search_term_lower.split(maxsplit=1)
                         username_part = parts[0].lstrip('@')
                         keyword_part = parts[1] if len(parts) > 1 else None
 
                         # Filter posts by author (partial match)
-                        user_filter = Q(author__username__istartswith=username_part) | \
-                                      Q(author__name__istartswith=username_part)
-
-                        queryset = queryset.filter(user_filter)
+                        if username_part:
+                            user_filter = Q(author__username__istartswith=username_part) | \
+                                          Q(author__name__istartswith=username_part)
+                            queryset = queryset.filter(user_filter)
 
                         # If there are additional keywords, search in post body
                         if keyword_part:
-                            search_query = SearchQuery(
-                                keyword_part,
-                                config='english',
-                                search_type='websearch'
-                            )
-                            queryset = queryset.annotate(
-                                rank=SearchRank('search_vector', search_query),
-                                similarity=TrigramSimilarity('body', keyword_part),
-                                highlighted_body=SearchHeadline(
-                                    'body',
-                                    search_query,
-                                    start_sel='<mark>',
-                                    stop_sel='</mark>',
-                                    max_words=50,
-                                    min_words=20
-                                )
-                            ).filter(
-                                Q(search_vector=search_query) | Q(similarity__gt=0.1)
-                            ).order_by('-rank', '-similarity', '-published_at')
+                            queryset, _ = self._apply_body_search(queryset, search_term)
                         else:
                             # Just @username → show recent posts from that user
-                            queryset = queryset.order_by('-published_at')
-
-                        return queryset
+                            queryset = queryset.order_by('-published_at', '-id')
 
                     # General search: Body + Author Name + Username
-                    search_query = SearchQuery(
-                        search_term,
-                        config='english',
-                        search_type='websearch'
-                    )
-
-                    queryset = queryset.annotate(
-                        rank=SearchRank('search_vector', search_query),
-                        body_similarity=TrigramSimilarity('body', search_term),
-                        author_username_sim=TrigramSimilarity('author__username', search_term),
-                        author_name_sim=TrigramSimilarity(
-                            Coalesce('author__name', Value('')), search_term
-                        ),
-                        highlighted_body=SearchHeadline(
-                            'body',
-                            search_query,
-                            start_sel='<mark>',
-                            stop_sel='</mark>',
-                            max_words=50,
-                            min_words=20
-                        )
-                    ).filter(
-                        Q(search_vector=search_query) |
-                        Q(body_similarity__gt=0.1) |
-                        Q(author_username_sim__gt=0.25) |
-                        Q(author_name_sim__gt=0.25)
-                    ).order_by(
-                        '-author_username_sim',  # Prioritize matching users
-                        '-author_name_sim',
-                        '-rank',
-                        '-body_similarity',
-                        '-published_at'
-                    )
+                    else:
+                        queryset, _ = self._apply_full_text_search(queryset, search_term)
             else:
-                queryset = queryset.order_by('-published_at')
+                queryset = queryset.order_by('-published_at', '-id')
 
             # Date range filter (if provided)
             start_date = kwargs.get('start_date')
@@ -221,27 +303,27 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
             sort_by = kwargs.get('sort_by')
             if sort_by == 'recent':
-                queryset = queryset.order_by('-published_at')
+                queryset = queryset.order_by('-published_at', '-id')
 
             return queryset
 
-        elif action == 'for_you':
+        elif action_ == 'for_you':
             return queryset.filter(
                 reply_to=None,
                 community_note_of=None,
                 status='published'
-            ).order_by('-published_at')
+            ).order_by('-published_at', '-id')
 
-        elif action == 'following':
+        elif action_ == 'following':
             return queryset.filter(
                 author__followers=user,
                 reply_to=None,
                 community_note_of=None,
                 status='published'
-            ).order_by('-published_at')
+            ).order_by('-published_at', '-id')
 
-        elif action == 'replies':
-            # Use Case/When only for this action
+        elif action_ == 'replies':
+            # Use Case/When only for this action_
             return queryset.filter(
                 reply_to=kwargs.get('pk'),
                 status='published'
@@ -250,104 +332,85 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
                     When(author=kwargs.get('author_pk'), then=0),
                     default=1,
                 ),
-                'published_at'
+                'published_at', 'id'
             )
 
-        elif action == 'quotes':
+        elif action_ == 'quotes':
             return queryset.filter(
                 repost_of=kwargs.get('pk'),
                 repost_type=Post.RepostType.QUOTE,
                 status='published'
-            ).order_by('-published_at')
+            ).order_by('-published_at', '-id')
 
-        elif action == 'reply_to':
-            return queryset.order_by('-published_at')
+        elif action_ == 'reply_to':
+            return queryset.order_by('-published_at', '-id')
 
-        elif action == 'community_notes':
+        elif action_ == 'community_notes':
             queryset = queryset.filter(community_note_of=kwargs.get('pk'))
 
-            search_term = kwargs.get('search_term')
-            if search_term:
-                search_query = SearchQuery(
-                    search_term,
-                    config='english',
-                    search_type='websearch'
-                )
-                queryset = queryset.annotate(
-                    rank=SearchRank('search_vector', search_query),
-                    body_similarity=TrigramSimilarity('body', search_term),
-                    author_username_sim=TrigramSimilarity('author__username', search_term),
-                    author_name_sim=TrigramSimilarity(
-                        Coalesce('author__name', Value('')), search_term
-                    ),
-                    highlighted_body=SearchHeadline(
-                        'body',
-                        search_query,
-                        start_sel='<mark>',
-                        stop_sel='</mark>',
-                        max_words=50,
-                        min_words=20
-                    )
-                ).filter(
-                    Q(search_vector=search_query) |
-                    Q(body_similarity__gt=0.1) |
-                    Q(author_username_sim__gt=0.25) |
-                    Q(author_name_sim__gt=0.25)
-                ).order_by(
-                    '-author_username_sim',  # Prioritize matching users
-                    '-author_name_sim',
-                    '-rank',
-                    '-body_similarity',
-                    '-published_at'
-                )
+            search_term = (kwargs.get("search_term") or "").strip()
+            has_search = bool(search_term)
 
-            sort_by = kwargs.get('sort_by')
-            if sort_by == 'recent':
-                return queryset.order_by('-created_at')
-            elif sort_by == 'oldest':
-                return queryset.order_by('created_at')
+            if has_search:
+                queryset, _ = self._apply_full_text_search(queryset, search_term)
 
-            # Vote-based sorting (most expensive annotation - only here)
-            return queryset.annotate(
-                upvotes_count=Count('upvotes'),
-                downvotes_count=Count('downvotes'),
-                total_votes=Count('upvotes', distinct=True) - Count('downvotes', distinct=True)
-            ).order_by('-total_votes', '-upvotes_count', 'downvotes_count', '-published_at')
+            sort_by = kwargs.get("sort_by")
 
-        elif action == 'mute':
+            if sort_by == "recent":
+                return queryset.order_by("-created_at", "-id")
+
+            if sort_by == "oldest":
+                return queryset.order_by("created_at", "id")
+
+            queryset = self._annotate_vote_counts(queryset)
+
+            ordering = [
+                "-total_votes",
+                "-upvotes_count",
+                "downvotes_count",
+                "-published_at",
+                "-id",
+            ]
+
+            if has_search:
+                ordering.insert(1, "-rank")
+
+            return queryset.order_by(*ordering)
+
+        elif action_ == 'mute':
             return queryset.filter(author=user)
 
-        elif action == 'delete':
+        elif action_ == 'delete':
             return queryset.filter(author=user)
 
-        elif action == 'patch':
+        elif action_ == 'patch':
             return queryset.filter(author=user, status='draft')
 
-        elif action == 'bookmarks':
+        elif action_ == 'bookmarks':
             return queryset.filter(bookmarks=user)
 
-        elif action == 'user_posts':
+        elif action_ == 'user_posts':
             return queryset.filter(
                 author=kwargs.get('user'),
                 community_note_of=None,
                 status='published'
             ).exclude(
                 ~Q(reply_to=None) & Q(is_pinned=False)
-            ).order_by('-is_pinned', '-published_at')
+            ).order_by('-is_pinned', '-published_at', '-id')
 
-        elif action == 'liked_posts':
+        elif action_ == 'liked_posts':
             return queryset.filter(likes=user)
 
-        elif action == 'user_replies':
+        elif action_ == 'user_replies':
             return queryset.filter(author=kwargs.get('user')).exclude(reply_to=None)
 
-        elif action == 'drafts':
+        elif action_ == 'drafts':
             return queryset.filter(author=user, status='draft')
 
-        elif action == 'user_community_notes':
+        elif action_ == 'user_community_notes':
             return queryset.filter(author=kwargs.get('user')).exclude(community_note_of=None)
 
-        return queryset.order_by('-published_at')
+        return queryset.order_by('-published_at', '-id')
 
     # ====================== Pagination Helper ======================
     @database_sync_to_async
@@ -370,16 +433,16 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     # ====================== Main Actions ======================
     @action()
     @rate_limit(limit=40, period=60)
-    async def list(self, page_size=None, **kwargs):
+    async def list(self, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
+        data = await self.paginate_posts(posts, **kwargs)
         return data, 200
 
     @action()
     @rate_limit(limit=25, period=60)
-    async def for_you(self, page_size=None, **kwargs):
+    async def for_you(self, **kwargs):
         posts = await self.get_for_you(**kwargs)
-        data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
+        data = await self.paginate_posts(posts, **kwargs)
         return data, 200
 
     @database_sync_to_async
@@ -390,16 +453,16 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return posts
 
     @action()
-    async def following(self, page_size=None, **kwargs):
+    async def following(self, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
+        data = await self.paginate_posts(posts, **kwargs)
         return data, 200
 
     @action()
     @rate_limit(limit=20, period=60)
-    async def trending(self, page_size=None, **kwargs):
+    async def trending(self, **kwargs):
         posts = await self.get_trending(**kwargs)
-        data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
+        data = await self.paginate_posts(posts, **kwargs)
         return data, 200
 
     @database_sync_to_async
@@ -410,65 +473,65 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     @action()
     @rate_limit(limit=40, period=60)
-    async def replies(self, page_size=None, **kwargs):
+    async def replies(self, **kwargs):
         kwargs['author_pk'] = await self.get_author_pk(kwargs['pk'])
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.paginate_posts(posts, page_size=page_size, serializer_class=ThreadSerializer, **kwargs)
+        data = await self.paginate_posts(posts, serializer_class=ThreadSerializer, **kwargs)
         return data, 200
 
     @action()
     @rate_limit(limit=40, period=60)
-    async def quotes(self, page_size=None, **kwargs):
+    async def quotes(self, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
+        data = await self.paginate_posts(posts, **kwargs)
         return data, 200
 
     @action()
     @rate_limit(limit=40, period=60)
-    async def community_notes(self, request_id: str, page_size=None, **kwargs):
+    async def community_notes(self, request_id: str, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
+        data = await self.paginate_posts(posts, **kwargs)
         return data, 200
 
     @action()
     @rate_limit(limit=40, period=60)
-    async def bookmarks(self, request_id: str, page_size=None, **kwargs):
+    async def bookmarks(self, request_id: str, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
+        data = await self.paginate_posts(posts, **kwargs)
         return data, 200
 
     @action()
     @rate_limit(limit=40, period=60)
-    async def liked_posts(self, request_id: str, page_size=None, **kwargs):
+    async def liked_posts(self, request_id: str, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
+        data = await self.paginate_posts(posts, **kwargs)
         return data, 200
 
     @action()
     @rate_limit(limit=40, period=60)
-    async def user_posts(self, request_id: str, page_size=None, **kwargs):
+    async def user_posts(self, request_id: str, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.paginate_posts(posts, page_size=page_size, serializer_class=ThreadSerializer, **kwargs)
+        data = await self.paginate_posts(posts, serializer_class=ThreadSerializer, **kwargs)
         return data, 200
 
     @action()
     @rate_limit(limit=40, period=60)
-    async def user_replies(self, request_id: str, page_size=None, **kwargs):
+    async def user_replies(self, request_id: str, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
+        data = await self.paginate_posts(posts, **kwargs)
         return data, 200
 
     @action()
-    async def drafts(self, request_id: str, page_size=None, **kwargs):
+    async def drafts(self, request_id: str, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
+        data = await self.paginate_posts(posts, **kwargs)
         return data, 200
 
     @action()
     @rate_limit(limit=40, period=60)
-    async def user_community_notes(self, request_id: str, page_size=None, **kwargs):
+    async def user_community_notes(self, request_id: str, **kwargs):
         posts = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
-        data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
+        data = await self.paginate_posts(posts, **kwargs)
         return data, 200
 
     # ====================== Other Actions ======================
@@ -496,32 +559,50 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     @database_sync_to_async
     def get_author_pk(self, post_pk: int):
-        return Post.objects.values_list('author__pk', flat=True).get(pk=post_pk)
+        try:
+            Post.objects.values_list('author__pk', flat=True).get(pk=post_pk)
+        except Post.DoesNotExist:
+            raise NotFound('Post not found')
 
     # ====================== Interaction Actions ======================
     @action()
     @interaction_rate_limit
-    def like(self, pk: int, **kwargs):
-        post = self.get_object(pk=pk)
-        data = self.record_like(post=post)
+    async def like(self, pk: int, **kwargs):
+        data = await self.record_like(pk=pk)
         return data, 200
 
-    @transaction.atomic
-    def record_like(self, post: Post):
+    @database_sync_to_async
+    def record_like(self, pk: int):
         """Record a like with timestamp"""
         user = self.scope['user']
 
-        if user in post.author.blocked.all():
-            raise PermissionDenied("You have been blocked by this user.")
+        with transaction.atomic():
+            try:
+                post = (
+                    Post.objects.select_for_update()
+                    .get(pk=pk, is_active=True)
+                )
+            except Post.DoesNotExist:
+                raise NotFound("Post does not exist.")
 
-        if post.likes.filter(pk=user.pk).exists():
-            post.likes.remove(user)
-            is_liked = False
-        else:
-            post.likes.add(user)
-            is_liked = True
+            if post.author.blocked.filter(pk=user.pk).exists():
+                raise PermissionDenied("You have been blocked by this user.")
+
+            deleted_count, _ = post.likes.through.objects.filter(
+                post_id=post.pk,
+                user_id=user.pk,
+            ).delete()
+
+            if deleted_count:
+                is_liked = False
+            else:
+                post.bookmarks.add(user)
+                is_liked = True
+
+            likes = post.likes.count()
+
         self._signal_post_update(post)
-        return {'pk': post.pk, 'is_liked': is_liked, 'likes': post.likes.count()}
+        return {'pk': post.pk, 'is_liked': is_liked, 'likes': likes}
 
     @action()
     @interaction_rate_limit
@@ -532,19 +613,34 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     @database_sync_to_async
     def bookmark_post(self, pk: int):
         user = self.scope['user']
-        post = Post.objects.get(pk=pk)
 
-        if user in post.author.blocked.all():
-            raise PermissionDenied("You have been blocked by this user.")
+        with transaction.atomic():
+            try:
+                post = (
+                    Post.objects.select_for_update()
+                    .get(pk=pk, is_active=True)
+                )
+            except Post.DoesNotExist:
+                raise NotFound("Post does not exist.")
 
-        if post.bookmarks.filter(pk=user.pk).exists():
-            post.bookmarks.remove(user)
-            is_bookmarked = False
-        else:
-            post.bookmarks.add(user)
-            is_bookmarked = True
+            if post.author.blocked.filter(pk=user.pk).exists():
+                raise PermissionDenied("You have been blocked by this user.")
+
+            deleted_count, _ = post.bookmarks.through.objects.filter(
+                post_id=post.pk,
+                user_id=user.pk,
+            ).delete()
+
+            if deleted_count:
+                is_bookmarked = False
+            else:
+                post.bookmarks.add(user)
+                is_bookmarked = True
+
+            bookmarks = post.bookmarks.count()
+
         self._signal_post_update(post)
-        return {'pk': pk, 'is_bookmarked': is_bookmarked, 'bookmarks': post.bookmarks.count()}
+        return {'pk': pk, 'is_bookmarked': is_bookmarked, 'bookmarks': bookmarks}
 
     @action()
     @interaction_rate_limit
@@ -555,21 +651,47 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     @database_sync_to_async
     def upvote_post(self, pk: int):
         user = self.scope['user']
-        post = Post.objects.get(pk=pk)
-        post.downvotes.remove(user)
-        if post.upvotes.filter(pk=user.pk).exists():
-            post.upvotes.remove(user)
-            is_upvoted = False
-        else:
-            post.upvotes.add(user)
-            is_upvoted = True
+
+        with transaction.atomic():
+            try:
+                post = (
+                    Post.objects.select_for_update()
+                    .get(pk=pk, is_active=True)
+                )
+            except Post.DoesNotExist:
+                raise NotFound("Post does not exist.")
+
+            if post.author.blocked.filter(pk=user.pk).exists():
+                raise PermissionDenied("You have been blocked by this user.")
+
+            # Remove any existing downvote.
+            post.downvotes.through.objects.filter(
+                post_id=post.pk,
+                user_id=user.pk,
+            ).delete()
+
+            # Toggle upvote.
+            deleted_count, _ = post.upvotes.through.objects.filter(
+                post_id=post.pk,
+                user_id=user.pk,
+            ).delete()
+
+            if deleted_count:
+                is_upvoted = False
+            else:
+                post.upvotes.add(user)
+                is_upvoted = True
+
+            upvotes = post.upvotes.count()
+            downvotes = post.downvotes.count()
+
         self._signal_post_update(post)
         return {
             'pk': pk,
             'is_upvoted': is_upvoted,
-            'upvotes': post.upvotes.count(),
+            'upvotes': upvotes,
             'is_downvoted': False,
-            'downvotes': post.downvotes.count()
+            'downvotes': downvotes
         }
 
     @action()
@@ -579,24 +701,48 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return data, 200
 
     @database_sync_to_async
-    @transaction.atomic
     def downvote_post(self, pk: int):
         user = self.scope['user']
-        post = Post.objects.get(pk=pk)
-        post.upvotes.remove(user)
-        if post.downvotes.filter(pk=user.pk).exists():
-            post.downvotes.remove(user)
-            is_downvoted = False
-        else:
-            post.downvotes.add(user)
-            is_downvoted = True
+        with transaction.atomic():
+            try:
+                post = (
+                    Post.objects.select_for_update()
+                    .get(pk=pk, is_active=True)
+                )
+            except Post.DoesNotExist:
+                raise NotFound("Post does not exist.")
+
+            if post.author.blocked.filter(pk=user.pk).exists():
+                raise PermissionDenied("You have been blocked by this user.")
+
+            # Remove any existing upvote.
+            post.upvotes.through.objects.filter(
+                post_id=post.pk,
+                user_id=user.pk,
+            ).delete()
+
+            # Toggle upvote.
+            deleted_count, _ = post.downvotes.through.objects.filter(
+                post_id=post.pk,
+                user_id=user.pk,
+            ).delete()
+
+            if deleted_count:
+                is_downvoted = False
+            else:
+                post.downvotes.add(user)
+                is_downvoted = True
+
+            upvotes = post.upvotes.count()
+            downvotes = post.downvotes.count()
+
         self._signal_post_update(post)
         return {
             'pk': pk,
             'is_upvoted': False,
-            'upvotes': post.upvotes.count(),
+            'upvotes': upvotes,
             'is_downvoted': is_downvoted,
-            'downvotes': post.downvotes.count()
+            'downvotes': downvotes
         }
 
     @action()
@@ -616,9 +762,10 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         if not repost_qs.exists():
             raise NotFound("Not found")
 
-        repost = repost_qs.first()
-        repost_pk = repost.pk
-        repost.delete()
+        with transaction.atomic():
+            repost = repost_qs.first()
+            repost_pk = repost.pk
+            repost.delete()
         post_save.send(sender=Post, instance=post, created=False)
         return {
             'pk': post.pk,
@@ -628,27 +775,35 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     @action()
     @interaction_rate_limit
-    def add_view(self, pk: int, **kwargs):
-        user = self.scope['user']
+    async def add_view(self, pk: int, **kwargs):
+        data = await self._add_view(pk)
+        return data, 200
 
-        # Quick rate limit check to reduce unnecessary task calls
+    @database_sync_to_async
+    def _add_view(self, pk: int):
+        user = self.scope["user"]
         cache_key = f"interaction_rate:{user.id}:{pk}:view"
-        if cache.get(cache_key):
-            # Still increment the view count, but skip recording duplicate interaction
-            Post.objects.filter(pk=pk).update(views=F('views') + 1)
-            return {'pk': pk, 'status': 'view counted'}, 200
 
-        # Atomic increment -> no race conditions
-        Post.objects.filter(pk=pk).update(views=F('views') + 1)
+        should_record_interaction = cache.add(cache_key, 1, timeout=3600)
 
-        # Record interaction
-        record_interaction.delay(
-            user_id=user.id,
-            post_id=pk,
-            interaction_type='view'
-        )
+        updated = Post.objects.filter(
+            pk=pk,
+            is_active=True,
+            is_deleted=False,
+            status="published",
+        ).update(views=F("views") + 1)
 
-        return {'pk': pk}, 200
+        if not updated:
+            raise NotFound("Post not found.")
+
+        if should_record_interaction:
+            record_interaction.delay(
+                user_id=user.id,
+                post_id=pk,
+                interaction_type="view",
+            )
+
+        return {"pk": pk}
 
     @action()
     @interaction_rate_limit
@@ -670,7 +825,11 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     @action()
     @interaction_rate_limit
     def mute(self, pk: int, **kwargs):
-        post = self.get_object(pk=pk)
+        post = get_object_or_404(
+            Post.objects.filter(is_active=True),
+            pk=pk,
+            author=self.scope["user"],
+        )
         post.is_muted = not post.is_muted
         post.save()
         return {'pk': pk, 'is_muted': post.is_muted}, 200
@@ -678,14 +837,19 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     @action()
     @interaction_rate_limit
     def toggle_pinned(self, pk: int, **kwargs):
-        post = self.get_object(pk=pk)
+        with transaction.atomic():
+            post = get_object_or_404(
+                Post.objects.filter(is_active=True),
+                pk=pk,
+                author=self.scope["user"],
+            )
 
-        if not post.is_pinned:
-            user = self.scope['user']
-            user.posts.filter(is_pinned=True).update(is_pinned=False)
+            if not post.is_pinned:
+                user = self.scope['user']
+                user.posts.filter(is_pinned=True).update(is_pinned=False)
 
-        post.is_pinned = not post.is_pinned
-        post.save()
+            post.is_pinned = not post.is_pinned
+            post.save()
         return {'pk': pk, 'is_pinned': post.is_pinned}, 200
 
     @action()
@@ -700,6 +864,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     @interaction_rate_limit
     async def unsubscribe(self, pk: int, request_id: str, **kwargs):
         await self.post_activity.unsubscribe(pk=pk, request_id=request_id)
+        await self.like_activity.unsubscribe(pk=pk, request_id=request_id)
         return {}, 200
 
     @action()
@@ -717,7 +882,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         from django.core.cache import cache
         import hashlib
 
-        cache_key = f"hashtag_search:{hashlib.md5(query.encode()).hexdigest()[:12]}"
+        cache_key = f"hashtag_search:{hashlib.sha256(query.encode()).hexdigest()[:12]}"
 
         # Return cached result if available
         cached = cache.get(cache_key)
@@ -762,29 +927,57 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     @action()
     @rate_limit(limit=40, period=60)
-    async def hashtag_feed(self, hashtag: str, page_size=None, **kwargs):
+    async def hashtag_feed(self, hashtag: str, **kwargs):
         posts = await self.get_hashtag_posts(hashtag, **kwargs)
-        data = await self.paginate_posts(posts, page_size=page_size, **kwargs)
+        data = await self.paginate_posts(posts, **kwargs)
         return data, 200
 
     @database_sync_to_async
     def get_hashtag_posts(self, hashtag: str, **kwargs):
-        tag = hashtag.strip('#').lower()
-        return self.queryset.filter(hashtags__name__iexact=tag).order_by('-published_at')
+        tag = hashtag.strip("#").lower()
+        previous_posts = self.clean_previous_posts(kwargs.get("previous_posts"))
+
+        queryset = (
+            self.queryset
+            .filter(
+                is_deleted=False,
+                status="published",
+                community_note_of=None,
+                hashtags__name__iexact=tag,
+            )
+            .exclude(id__in=previous_posts)
+            .order_by("-published_at", "-id")
+        )
+
+        return queryset.distinct()
 
     @staticmethod
     def _signal_post_update(post: Post):
-        post_save.send(sender=Post, instance=post, created=False)
+        def _send_signal():
+            post_save.send(
+                sender=Post,
+                instance=post,
+                created=False,
+                raw=False,
+                using=post._state.db or DEFAULT_DB_ALIAS,
+                update_fields=None,
+            )
+
+        transaction.on_commit(_send_signal)
 
     # ====================== AUTOCOMPLETE ======================
     @action()
     def save_searched_term(self, search_term, **kwargs):
-        if len(search_term) > 0:
-            SearchHistory.objects.update_or_create(
-                user=self.scope['user'],
-                search_term=search_term,
-                defaults={'updated_at': timezone.now()}
-            )
+        search_term = (search_term or "").strip()
+        if not search_term:
+            raise ValidationError('No search term provided.')
+        if len(search_term) > 100:
+            raise ValidationError('Search term is too long')
+        SearchHistory.objects.update_or_create(
+            user=self.scope['user'],
+            search_term=search_term,
+            defaults={'updated_at': timezone.now()}
+        )
         self._invalidate_search_history_cache()
         return search_term, 200
 
@@ -807,8 +1000,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     @action()
     def delete_searched_profile(self, user_id: int, **kwargs):
-        profile = get_object_or_404(User.objects.all(), pk=user_id)
-        SearchHistory.objects.filter(user=self.scope['user'], profile=profile).delete()
+        SearchHistory.objects.filter(user=self.scope["user"], profile_id=user_id).delete()
         self._invalidate_search_history_cache()
         return {}, 200
 
@@ -830,7 +1022,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
             results = await self.get_cached_search_history(limit)
             return results[:limit], 200
 
-        results = await self.get_cached_autocomplete(query.strip().lower(), limit)
+        results = await self.get_cached_autocomplete(query.strip().lower())
         return results, 200
 
     @database_sync_to_async
@@ -869,7 +1061,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         return results[:limit]
 
     @database_sync_to_async
-    def get_cached_autocomplete(self, query: str, limit: int = 10):
+    def get_cached_autocomplete(self, query: str):
         from django.core.cache import cache
         import hashlib
 
@@ -881,7 +1073,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         if cached:
             return cached
 
-        results = self._get_autocomplete_results(query, limit)
+        results = self._get_autocomplete_results(query, 10)
 
         # Cache for 3 minutes (autocomplete can be aggressive)
         cache.set(cache_key, results, timeout=180)
@@ -906,7 +1098,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
         # 2. Users
         users = User.objects.filter(
-            Q(username__istartswith=query) | Q(name__istartswith=query)
+            Q(username__icontains=query) | Q(name__icontains=query)
         ).only('id', 'username', 'name', 'image')[:6]
 
         for user in users:
@@ -927,44 +1119,88 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     @staticmethod
     def _get_word_autocomplete(query: str, limit: int = 5):
-        """Word autocomplete using ts_stat"""
-        from django.db import connection
+        escaped_query = (
+            query.replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        )
+
+        body_column = connection.ops.quote_name("body")
+
+        sql = f"""
+            SELECT DISTINCT word, ndoc AS count
+            FROM ts_stat($$
+                SELECT to_tsvector('english', coalesce({body_column}, ''))
+                FROM "Post"
+                WHERE status = 'published'
+                  AND is_active = true
+                  AND is_deleted = false
+                  AND published_at >= NOW() - INTERVAL '30 days'
+            $$)
+            WHERE word LIKE %s
+              AND length(word) >= 4
+            ORDER BY ndoc DESC
+            LIMIT %s;
+        """
 
         with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT DISTINCT word, ndoc as count
-                FROM ts_stat($$
-                    SELECT to_tsvector('english', body)
-                    FROM "Post" 
-                    WHERE status = 'published' 
-                    AND is_active = true 
-                    AND is_deleted = false
-                    AND published_at >= NOW() - INTERVAL '30 days'
-                $$)
-                WHERE word LIKE %s
-                  AND length(word) >= 4
-                ORDER BY ndoc DESC
-                LIMIT %s;
-            """, [f"{query}%", limit])
-
-            results = cursor.fetchall()
+            cursor.execute(sql, [f"{escaped_query}%", limit])
+            rows = cursor.fetchall()
 
         return [
             {
                 "type": "word",
                 "text": word,
-                "count": count
+                "count": count,
             }
-            for word, count in results
+            for word, count in rows
         ]
 
 
+def get_activity_data(post: Post):
+    return {
+        "pk": post.pk,
+        "likes": post.likes.count(),
+        "bookmarks": post.bookmarks.count(),
+        "upvotes": post.upvotes.count(),
+        "downvotes": post.downvotes.count(),
+        "replies": post.replies.filter(is_active=True, status='published').count(),
+        "reposts": post.get_reposts_count(),
+        "views": post.views,
+        "is_deleted": post.is_deleted,
+        "is_active": post.is_active,
+        "community_note": post.get_top_note(),
+    },
+
+
 def get_reply_to(post: Post, posts):
-    """Recursive helper to get reply chain and community notes"""
-    if post.reply_to:
-        posts.append(post.reply_to)
-        get_reply_to(post.reply_to, posts=posts)
-    if post.community_note_of:
-        posts.append(post.community_note_of)
-        get_reply_to(post.community_note_of, posts=posts)
+    """
+    Iterative replacement for the old recursive helper.
+
+    Prevents:
+    - infinite recursion on cycles
+    - recursion-limit failures on long chains
+    - duplicate posts in the chain
+    """
+    seen = {post.pk}
+    stack = [post]
+
+    while stack:
+        current = stack.pop()
+
+        # Preserve useful order: reply chain first, then community note branch.
+        parents = []
+        if getattr(current, "community_note_of_id", None) and current.community_note_of:
+            parents.append(current.community_note_of)
+        if getattr(current, "reply_to_id", None) and current.reply_to:
+            parents.append(current.reply_to)
+
+        for parent in parents:
+            if parent.pk in seen:
+                continue
+
+            seen.add(parent.pk)
+            posts.append(parent)
+            stack.append(parent)
+
     return posts

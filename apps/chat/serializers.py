@@ -22,6 +22,7 @@ from apps.survey.serializers import SurveySerializer
 from apps.users.serializers import UserSerializer
 from apps.utils.link_extractor import extract_linked_object
 from apps.utils.presigned_url import s3_client
+from apps.utils.serializer_user import get_current_user
 
 User = get_user_model()
 
@@ -142,7 +143,7 @@ class MessageSerializer(serializers.ModelSerializer):
         ]
 
     def create(self, validated_data):
-        validated_data['author'] = self.context['scope']['user']
+        validated_data['author'] = get_current_user(self.context)
 
         # Extract object if link is present in message text
         linked_object = extract_linked_object(text=validated_data['text'])
@@ -196,16 +197,18 @@ class ChatSerializer(serializers.ModelSerializer):
             return None
 
     def get_unread_messages(self, instance: Chat):
-        return instance.messages.filter(is_read=False).exclude(author=self.context['scope']['user']).count()
+        user = get_current_user(self.context)
+        return instance.messages.filter(is_read=False).exclude(author=user).count()
 
     @staticmethod
     def get_is_self_chat(obj: Chat):
         return obj.users.count() == 1
 
     def create(self, validated_data):
+        current_user = get_current_user(self.context)
         user = User.objects.get(id=validated_data.pop('user'))
-        validated_data['users'] = [self.context['scope']['user'], user]
-        chat = get_or_create_direct_chat(self.context['scope']['user'], user)
+        validated_data['users'] = [current_user, user]
+        chat = get_or_create_direct_chat(current_user, user)
         return chat
 
 

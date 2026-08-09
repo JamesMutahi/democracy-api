@@ -1,8 +1,10 @@
 import re
 import uuid
+from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models.signals import post_save
 from django.utils import timezone
 from rest_framework import serializers
@@ -10,10 +12,10 @@ from taggit.serializers import TagListSerializerField
 
 from apps.ballot.models import Ballot
 from apps.ballot.serializers import BallotSerializer
-from apps.constitution.models import Section
-from apps.constitution.serializers import SectionSerializer
 from apps.broadcast.models import Broadcast
 from apps.broadcast.serializers import BroadcastSerializer
+from apps.constitution.models import Section
+from apps.constitution.serializers import SectionSerializer
 from apps.petition.models import Petition
 from apps.petition.serializers import PetitionSerializer
 from apps.posts.models import Post, Report, PostLike, Asset
@@ -22,6 +24,7 @@ from apps.survey.serializers import SurveySerializer
 from apps.users.serializers import UserSerializer
 from apps.utils.link_extractor import extract_linked_object
 from apps.utils.presigned_url import s3_client
+from apps.utils.serializer_user import get_current_user
 
 User = get_user_model()
 
@@ -51,32 +54,34 @@ class AssetSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_url(obj):
-        if not obj.file_key:
+        if not obj.file_key or not obj.is_completed:
             return None
 
-        # Generates a temporary GET link
-        return s3_client.generate_presigned_url(
-            'get_object',
-            Params={
-                'Bucket': settings.AWS_STORAGE_BUCKET_NAME,
-                'Key': obj.file_key
-            },
-            ExpiresIn=3600
-        )
+        try:
+            return s3_client.generate_presigned_url(
+                'get_object',
+                Params={
+                    'Bucket': settings.AWS_STORAGE_BUCKET_NAME,
+                    'Key': obj.file_key,
+                },
+                ExpiresIn=3600,
+            )
+        except Exception:
+            return None
 
 
 class PostSerializer(serializers.ModelSerializer):
     author = UserSerializer(read_only=True)
     published_at = serializers.DateTimeField(default=timezone.now, read_only=True)
     body = serializers.SerializerMethodField()
-    likes = serializers.SerializerMethodField(read_only=True)
-    is_liked = serializers.SerializerMethodField(read_only=True)
-    bookmarks = serializers.SerializerMethodField(read_only=True)
-    is_bookmarked = serializers.SerializerMethodField(read_only=True)
-    replies = serializers.SerializerMethodField(read_only=True)
-    reposts = serializers.SerializerMethodField(read_only=True)
-    is_reposted = serializers.SerializerMethodField(read_only=True)
-    is_quoted = serializers.SerializerMethodField(read_only=True)
+    likes = serializers.SerializerMethodField()
+    is_liked = serializers.SerializerMethodField()
+    bookmarks = serializers.SerializerMethodField()
+    is_bookmarked = serializers.SerializerMethodField()
+    replies = serializers.SerializerMethodField()
+    reposts = serializers.SerializerMethodField()
+    is_reposted = serializers.SerializerMethodField()
+    is_quoted = serializers.SerializerMethodField()
     ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
     petition = PetitionSerializer(read_only=True)
@@ -146,7 +151,7 @@ class PostSerializer(serializers.ModelSerializer):
     is_downvoted = serializers.SerializerMethodField(read_only=True)
     upvotes = serializers.SerializerMethodField(read_only=True)
     downvotes = serializers.SerializerMethodField(read_only=True)
-    assets = AssetSerializer(many=True, default=[])
+    assets = AssetSerializer(many=True, default=list)
 
     class Meta:
         model = Post
@@ -225,7 +230,7 @@ class PostSerializer(serializers.ModelSerializer):
         return count
 
     def get_is_liked(self, post):
-        is_liked = PostLike.objects.filter(user=self.context['scope']['user'], post=post).exists()
+        is_liked = PostLike.objects.filter(user=get_current_user(self.context), post=post).exists()
         return is_liked
 
     @staticmethod
@@ -234,7 +239,8 @@ class PostSerializer(serializers.ModelSerializer):
         return count
 
     def get_is_bookmarked(self, obj):
-        is_bookmarked = obj.bookmarks.contains(self.context['scope']['user'])
+        user = get_current_user(self.context)
+        is_bookmarked = obj.bookmarks.filter(pk=user.pk).exists()
         return is_bookmarked
 
     @staticmethod
@@ -247,12 +253,12 @@ class PostSerializer(serializers.ModelSerializer):
         return obj.get_reposts_count()
 
     def get_is_reposted(self, obj):
-        is_reposted = obj.reposts.filter(is_active=True, author=self.context['scope']['user'],
+        is_reposted = obj.reposts.filter(is_active=True, author=get_current_user(self.context),
                                          repost_type=Post.RepostType.REPOST).exists()
         return is_reposted
 
     def get_is_quoted(self, obj):
-        is_quoted = obj.reposts.filter(is_active=True, author=self.context['scope']['user'],
+        is_quoted = obj.reposts.filter(is_active=True, author=get_current_user(self.context),
                                        repost_type=Post.RepostType.QUOTE).exists()
         return is_quoted
 
@@ -261,11 +267,13 @@ class PostSerializer(serializers.ModelSerializer):
         return obj.get_top_note()
 
     def get_is_upvoted(self, obj):
-        is_upvoted = obj.upvotes.contains(self.context['scope']['user'])
+        user = get_current_user(self.context)
+        is_upvoted = obj.upvotes.filter(pk=user.pk).exists()
         return is_upvoted
 
     def get_is_downvoted(self, obj):
-        is_downvoted = obj.downvotes.contains(self.context['scope']['user'])
+        user = get_current_user(self.context)
+        is_downvoted = obj.downvotes.filter(pk=user.pk).exists()
         return is_downvoted
 
     @staticmethod
@@ -282,24 +290,20 @@ class PostSerializer(serializers.ModelSerializer):
             count = obj.downvotes.count()
         return count
 
+    @transaction.atomic
     def create(self, validated_data):
-        validated_data['author'] = self.context['scope']['user']
+        current_user = get_current_user(self.context)
+        validated_data['author'] = current_user
         if validated_data.get('repost_of_id'):
             # Author can only have one repost of a post without body or relevant fields
-            if validated_data['repost_type'] == Post.RepostType.REPOST:
-                validated_data['repost_of_id'].reposts.filter(author=self.context['scope']['user'],
+            if validated_data.get('repost_type') == Post.RepostType.REPOST:
+                validated_data['repost_of_id'].reposts.filter(author=current_user,
                                                               repost_type=Post.RepostType.REPOST).delete()
             validated_data['repost_of'] = validated_data.pop('repost_of_id')
 
         # Tagged users
-        tagged_users = set(re.findall(r'@(\w+)', validated_data.get('body', '')))
-        users = []
-        for username in tagged_users:
-            user_qs = User.objects.filter(username=username)
-            if user_qs.exists():
-                user = user_qs.first()
-                if not self.context['scope']['user'] in user.blocked.all():
-                    users.append(user_qs.first())
+        usernames = set(re.findall(r'@([\w.-]+)', validated_data.get('body', '')))
+        users = User.objects.filter(username__in=usernames).exclude(blocked=current_user)
         validated_data['tagged_users'] = users
 
         # Extract object if link is present in post body
@@ -331,8 +335,18 @@ class PostSerializer(serializers.ModelSerializer):
         # Assets
         for asset in assets:
             # Create a unique key for S3 to avoid collisions
-            file_extension = asset['name'].split('.')[-1]
-            unique_key = f"uploads/{post.author.id}/posts/{uuid.uuid4()}.{file_extension}"
+            name = asset.get('name') or ''
+            extension = Path(name).suffix.lstrip('.').lower()
+            ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'gif', 'mp4', 'pdf'}
+
+            if extension not in ALLOWED_EXTENSIONS:
+                raise serializers.ValidationError("Unsupported file type.")
+
+            if extension:
+                unique_key = f"uploads/{post.author_id}/posts/{uuid.uuid4()}.{extension}"
+            else:
+                unique_key = f"uploads/{post.author_id}/posts/{uuid.uuid4()}"
+
             Asset.objects.create(post=post, file_key=unique_key, **asset)
 
         if post.reply_to:
@@ -355,7 +369,16 @@ class ReportSerializer(serializers.ModelSerializer):
         )
 
     def create(self, validated_data):
-        validated_data['user'] = self.context['scope']['user']
+        user = get_current_user(self.context)
+        validated_data['user'] = user
+
+        if Report.objects.filter(
+                user=user,
+                post=validated_data['post'],
+                issue=validated_data['issue'],
+        ).exists():
+            raise serializers.ValidationError("You have already reported this post.")
+
         return super().create(validated_data)
 
 
@@ -374,15 +397,25 @@ class ThreadSerializer(PostSerializer):
         fields = PostSerializer.Meta.fields + ('thread',)
 
 
-def get_reply_thread(post: Post, author: User):
-    """Recursive helper to get thread chain in list"""
-    posts = []
-    qs = post.replies.filter(author=author)
-    if qs.exists():
-        post = qs.first()
-        posts.append(post)
-        posts.extend(get_reply_thread(post, post.author))
-    if len(posts) > 0:
-        post = posts[-1]
-        posts.extend(get_reply_thread(post, post.reply_to.author))
-    return posts
+def get_reply_thread(post: Post, author: User, depth: int = 0, visited=None):
+    if visited is None:
+        visited = set()
+
+    if depth > 20:
+        return []
+
+    if post.pk in visited:
+        return []
+
+    visited.add(post.pk)
+
+    child = post.replies.filter(
+        author=author,
+        is_active=True,
+        status='published',
+    ).order_by('published_at', 'id').first()
+
+    if not child:
+        return []
+
+    return [child] + get_reply_thread(child, child.author, depth + 1, visited)

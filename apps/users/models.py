@@ -25,7 +25,7 @@ class UploadImageTo:
         return 'apps.users.models.UploadImageTo', [self.name], {}
 
 
-class CustomUser(AbstractBaseUser, PermissionsMixin):
+class User(AbstractBaseUser, PermissionsMixin):
     username = models.CharField(_('username'), max_length=30, unique=True)
     name = models.CharField(_('name'), max_length=50)
     id_number = models.IntegerField(_('ID number'), unique=True, null=True, blank=True)
@@ -69,8 +69,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
 class ProfileVisit(models.Model):
     """Through model for User.visits with timestamp"""
-    visitor = models.ForeignKey('CustomUser', on_delete=models.CASCADE, related_name='visits_made')
-    visited = models.ForeignKey('CustomUser', on_delete=models.CASCADE, related_name='visitors')
+    visitor = models.ForeignKey('User', on_delete=models.CASCADE, related_name='visits_made')
+    visited = models.ForeignKey('User', on_delete=models.CASCADE, related_name='visitors')
     visited_at = models.DateTimeField(default=timezone.now, db_index=True)
 
     class Meta:

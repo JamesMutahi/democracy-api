@@ -198,6 +198,12 @@ class Report(BaseModel):
     issue = models.CharField(max_length=255)
 
     class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'post', 'issue'],
+                name='unique_report_per_user_post_issue',
+            )
+        ]
         db_table = 'Report'
 
     def __str__(self):

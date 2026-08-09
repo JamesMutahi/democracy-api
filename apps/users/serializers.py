@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
 from apps.users.models import ProfileVisit
+from apps.utils.serializer_user import get_current_user
 
 User = get_user_model()
 
@@ -56,22 +57,27 @@ class UserSerializer(serializers.ModelSerializer):
         return user.followers.count()
 
     def get_is_muted(self, user):
-        return self.context['scope']['user'].muted.contains(user)
+        user = get_current_user(self.context)
+        return user.muted.contains(user)
 
     def get_is_blocked(self, user):
-        return self.context['scope']['user'].blocked.contains(user)
+        user = get_current_user(self.context)
+        return user.blocked.contains(user)
 
     def get_has_blocked(self, user):
-        return user.blocked.contains(self.context['scope']['user'])
+        return user.blocked.contains(get_current_user(self.context))
 
     def get_is_followed(self, user):
-        return self.context['scope']['user'].following.contains(user)
+        user = get_current_user(self.context)
+        return user.following.contains(user)
 
     def get_is_notifying(self, user):
-        return self.context['scope']['user'].notifiers.contains(user)
+        user = get_current_user(self.context)
+        return user.notifiers.contains(user)
 
     def get_is_visited(self, visited):
-        is_visited = ProfileVisit.objects.filter(visitor=self.context['scope']['user'], visited=visited).exists()
+        user = get_current_user(self.context)
+        is_visited = ProfileVisit.objects.filter(visitor=user, visited=visited).exists()
         return is_visited
 
 

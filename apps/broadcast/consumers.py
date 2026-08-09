@@ -40,16 +40,17 @@ class BroadcastConsumer(CreateModelMixin, ListModelMixin, PatchModelMixin, Retri
         await self.send_json(message)
 
     @broadcast_activity.groups_for_signal
-    def broadcast_activity_groups(self, instance: Broadcast, **kwargs):
+    def broadcast_activity_signal_groups(self, instance: Broadcast, **kwargs):
         yield f'broadcast__{instance.pk}'
 
     @broadcast_activity.groups_for_consumer
-    def broadcast_activity_groups(self, pk=None, **kwargs):
+    def broadcast_activity_consumer_groups(self, pk=None, **kwargs):
         if pk is not None:
             yield f'broadcast__{pk}'
 
     @broadcast_activity.serializer
     def broadcast_activity_serializer(self, instance: Broadcast, _action, **kwargs):
+        # TODO: Too many database hits in model observer. Pass more fields to data in dict
         return {
             'data': {} if _action == 'delete' else BroadcastSerializer(instance,
                                                                      context={"scope": {"user": instance.host}}).data,

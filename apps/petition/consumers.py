@@ -39,16 +39,17 @@ class PetitionConsumer(ListModelMixin, CreateModelMixin, RetrieveModelMixin, Gen
         return PetitionSerializer(petition, context={'scope': self.scope}).data
 
     @petition_activity.groups_for_signal
-    def petition_activity_groups(self, instance: Petition, **kwargs):
+    def petition_activity_signal_groups(self, instance: Petition, **kwargs):
         yield f'petition__{instance.pk}'
 
     @petition_activity.groups_for_consumer
-    def petition_activity_groups(self, pk=None, **kwargs):
+    def petition_activity_consumer_groups(self, pk=None, **kwargs):
         if pk is not None:
             yield f'petition__{pk}'
 
     @petition_activity.serializer
     def petition_activity_serializer(self, instance: Petition, action, **kwargs):
+        # TODO: Too many database hits in model observer. Pass more fields to data in dict
         return {
             'data': instance.pk,
             'action': action.value,

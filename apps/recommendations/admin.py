@@ -114,7 +114,7 @@ class RecommendationCacheAdmin(admin.ModelAdmin):
             return "-"
         return format_html(
             '<a href="{}">{}</a>',
-            f"/admin/users/customuser/{obj.user.id}/change/",
+            f"/admin/users/user/{obj.user.id}/change/",
             obj.user.name or obj.user.username
         )
 

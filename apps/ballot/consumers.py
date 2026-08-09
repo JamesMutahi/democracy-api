@@ -49,6 +49,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     @ballot_activity.serializer
     def ballot_activity_serializer(self, instance: Ballot, action, **kwargs):
+        # TODO: Too many database hits in model observer. Pass more fields to data in dict
         return {
             'data': instance.pk,
             'action': action.value,
@@ -66,11 +67,11 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         await self.send_json(message)
 
     @option_activity.groups_for_signal
-    def option_activity_groups(self, instance: Option, **kwargs):
+    def option_activity_signal_groups(self, instance: Option, **kwargs):
         yield f'ballot__{instance.ballot.pk}'
 
     @option_activity.groups_for_consumer
-    def option_activity_groups(self, ballot=None, **kwargs):
+    def option_activity_consumer_groups(self, ballot=None, **kwargs):
         if ballot is not None:
             yield f'ballot__{ballot}'
 

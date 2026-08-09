@@ -12,6 +12,7 @@ from apps.broadcast.services import BroadcastParticipantService
 from apps.geo.models import County, Constituency, Ward
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
 from apps.users.serializers import UserSerializer
+from apps.utils.serializer_user import get_current_user
 
 User = get_user_model()
 
@@ -182,7 +183,7 @@ class BroadcastSerializer(serializers.ModelSerializer):
         return super().validate(attrs)
 
     def create(self, validated_data):
-        validated_data['host'] = self.context['scope']['user']
+        validated_data['host'] = get_current_user(self.context)
         if validated_data['start_time'] is None:
             validated_data['start_time'] = timezone.now()
         if not validated_data['type'] == Broadcast.Type.LIVESTREAM:

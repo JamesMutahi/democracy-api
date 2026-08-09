@@ -50,16 +50,17 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         return UserSerializer(user, context={'scope': self.scope}).data
 
     @user_activity.groups_for_signal
-    def user_activity_groups(self, instance: User, **kwargs):
+    def user_activity_signal_groups(self, instance: User, **kwargs):
         yield f'user__{instance.pk}'
 
     @user_activity.groups_for_consumer
-    def user_activity_groups(self, pk=None, **kwargs):
+    def user_activity_consumer_groups(self, pk=None, **kwargs):
         if pk is not None:
             yield f'user__{pk}'
 
     @user_activity.serializer
     def user_activity_serializer(self, instance: User, action, **kwargs):
+        # TODO: Too many database hits in model observer. Pass more fields to data in dict
         return {
             'data': instance.pk,
             'action': action.value,

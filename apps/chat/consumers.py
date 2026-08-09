@@ -42,16 +42,17 @@ class ChatConsumer(CreateModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer
         return serializer.data
 
     @chat_activity.groups_for_signal
-    def chat_activity_groups(self, instance: Chat, **kwargs):
+    def chat_activity_signal_groups(self, instance: Chat, **kwargs):
         yield f'chat__{instance.pk}'
 
     @chat_activity.groups_for_consumer
-    def chat_activity_groups(self, pk=None, **kwargs):
+    def chat_activity_consumer_groups(self, pk=None, **kwargs):
         if pk is not None:
             yield f'chat__{pk}'
 
     @chat_activity.serializer
     def chat_activity_serializer(self, instance: Chat, action, **kwargs):
+        # TODO: Too many database hits in model observer. Pass more fields to data in dict
         return {
             'data': instance.pk,
             'action': action.value,
