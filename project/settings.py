@@ -295,7 +295,35 @@ AGORA_APP_ID = config('AGORA_APP_ID')
 AGORA_APP_CERTIFICATE = config('AGORA_APP_CERTIFICATE')
 AGORA_CUSTOMER_ID = config('AGORA_CUSTOMER_ID')
 AGORA_CUSTOMER_SECRET = config('AGORA_CUSTOMER_SECRET')
-BROADCAST_PERIOD = config('BROADCAST_PERIOD', default=3600)  # in seconds
+BROADCAST_PERIOD = 60 * 60  # 1 hour
+BROADCAST_PARTICIPANT_TTL = 60 * 60 * 2  # 2 hours
+BROADCAST_MAX_SPEAKERS = 10
+BROADCAST_MAX_PAGE_SIZE = 100
+# Timeout for Agora API requests.
+# Tuple format: (connect timeout, read timeout)
+AGORA_API_TIMEOUT = (5, 30)
+
+# How many active recording sessions to check per task run.
+RECORDING_STATUS_BATCH_SIZE = 50
+
+# Small delay between Agora queries to avoid rate limiting.
+RECORDING_STATUS_SLEEP_SECONDS = 0.1
+
+# Mark recording sessions as error if active longer than this many hours.
+# Set to 0 to disable.
+STALE_RECORDING_SESSION_HOURS = 24
+
+
+CHAT_MAX_ASSETS_PER_MESSAGE = 10
+CHAT_MAX_UPLOAD_SIZE = 25 * 1024 * 1024  # 25 MB
+CHAT_ALLOWED_CONTENT_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "video/mp4",
+    "audio/mpeg",
+    "application/pdf",
+}
 
 STORAGES = {
     "default": {
