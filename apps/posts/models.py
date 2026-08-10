@@ -155,7 +155,11 @@ class PostLike(models.Model):
     liked_at = models.DateTimeField(default=timezone.now, db_index=True)
 
     class Meta:
-        unique_together = ('user', 'post')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'post'],
+            ),
+        ]
         ordering = ['-liked_at']
         db_table = 'PostLike'
         verbose_name = 'Post Like'
@@ -172,7 +176,11 @@ class PostClick(models.Model):
     clicked_at = models.DateTimeField(default=timezone.now, db_index=True)
 
     class Meta:
-        unique_together = ('user', 'post')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'post'],
+            ),
+        ]
         ordering = ['-clicked_at']
         db_table = 'PostClick'
         verbose_name = 'Post Click'

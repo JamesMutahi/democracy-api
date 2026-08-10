@@ -30,7 +30,6 @@ User = get_user_model()
 
 
 class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer):
-    queryset = Post.objects.filter(is_active=True)
     serializer_class = PostSerializer
     lookup_field = "pk"
     page_size = 10
@@ -1164,6 +1163,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
             for word, count in rows
         ]
 
+# ── Module-level helper for observer payloads ────────────────
 
 def get_activity_data(post: Post):
     return {

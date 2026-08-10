@@ -44,13 +44,18 @@ class Ballot(BaseModel):
 
 class Option(models.Model):
     ballot = models.ForeignKey(Ballot, on_delete=models.CASCADE, related_name='options')
-    number = models.IntegerField()
+    number = models.IntegerField() # Required by grappelli for dragging rows
     text = models.CharField(max_length=255)
     votes = models.ManyToManyField(User, blank=True, through='OptionVote', related_name='voted_options')
 
     class Meta:
         ordering = ['id']
-        unique_together = ['ballot', 'text']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['ballot', 'text'],
+                name='unique_option_text_per_ballot',
+            ),
+        ]
         indexes = [
             models.Index(fields=['ballot']),
         ]
@@ -67,7 +72,12 @@ class OptionVote(models.Model):
     voted_at = models.DateTimeField(default=timezone.now, db_index=True)
 
     class Meta:
-        unique_together = ('user', 'option')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'option'],
+                name='unique_vote_per_user_per_option',
+            ),
+        ]
         ordering = ['-voted_at']
         db_table = 'OptionVote'
         verbose_name = 'Option Vote'
@@ -78,12 +88,17 @@ class OptionVote(models.Model):
 
 
 class Reason(BaseModel):
-    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reasons')
     ballot = models.ForeignKey(Ballot, on_delete=models.CASCADE, related_name='reasons')
     text = models.TextField()
 
     class Meta:
-        unique_together = ('ballot', 'user')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['ballot', 'user'],
+                name='unique_reason_per_user_per_ballot',
+            ),
+        ]
         indexes = [
             models.Index(fields=['ballot', 'user']),
         ]

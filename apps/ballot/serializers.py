@@ -1,7 +1,7 @@
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.ballot.models import Ballot, Option, Reason
+from apps.ballot.models import Ballot, Option, Reason, OptionVote
 from apps.geo.serializers import CountySerializer, WardSerializer, ConstituencySerializer
 from apps.utils.serializer_user import get_current_user
 
@@ -13,15 +13,13 @@ class OptionSerializer(serializers.ModelSerializer):
         model = Option
         fields = [
             'id',
-            'ballot',
             'text',
             'votes',
         ]
 
     @staticmethod
     def get_votes(obj):
-        count = obj.votes.count()
-        return count
+        return getattr(obj, 'vote_count', obj.votes.count())
 
 
 class ReasonSerializer(serializers.ModelSerializer):
@@ -71,21 +69,17 @@ class BallotSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_total_votes(obj):
-        count = 0
-        for option in obj.options.all():
-            count += option.votes.count()
-        return count
+        return obj.total_votes
 
     def get_voted_option(self, obj):
-        voted_option = None
-        for option in obj.options.all():
-            if option.votes.contains(get_current_user(self.context)):
-                voted_option = option.id
-        return voted_option
+        user = get_current_user(self.context)
+        vote = OptionVote.objects.filter(
+            user=user, option__ballot=obj
+        ).select_related(
+            'option'
+        ).first()
+        return vote.option_id if vote else None
 
     def get_reason(self, obj):
-        reason_qs = Reason.objects.filter(ballot=obj, user=get_current_user(self.context))
-        if reason_qs.exists():
-            reason = reason_qs.first()
-            return ReasonSerializer(reason, context=self.context).data
-        return None
+        reason = Reason.objects.filter(ballot=obj, user=get_current_user(self.context)).first()
+        return ReasonSerializer(reason, context=self.context).data if reason else None

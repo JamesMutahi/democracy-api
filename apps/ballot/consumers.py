@@ -1,6 +1,5 @@
 from channels.db import database_sync_to_async
-from django.db.models import QuerySet, Q
-from django.db.models.signals import post_save
+from django.db.models import QuerySet, Q, Prefetch, Count
 from django.utils import timezone
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
@@ -8,18 +7,37 @@ from djangochannelsrestframework.mixins import RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
 from rest_framework.exceptions import PermissionDenied, NotFound, ValidationError
 
-from apps.ballot.models import Ballot, Option, Reason
-from apps.ballot.serializers import BallotSerializer
+from apps.ballot.models import Ballot, Option, Reason, OptionVote
+from apps.ballot.serializers import BallotSerializer, OptionSerializer
+from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
 from apps.utils.list_paginator import list_paginator
 from apps.utils.throttles import rate_limit, interaction_rate_limit
 
 
 class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     serializer_class = BallotSerializer
-    queryset = Ballot.objects.all()
     lookup_field = "pk"
     page_size = 20
 
+    # ── base queryset with annotations ──────────────────────────
+    queryset = (
+        Ballot.objects
+        .filter(is_active=True)
+        .annotate(total_votes=Count('options__votes_through', distinct=True))  # ← Count, not Sum
+        .prefetch_related(
+            Prefetch(
+                'options',
+                queryset=Option.objects.annotate(vote_count=Count('votes')),
+            ),
+            Prefetch(
+                'options__votes_through',
+                queryset=OptionVote.objects.select_related('user'),
+            ),
+        )
+        .select_related('county', 'constituency', 'ward')
+    )
+
+    # ── connection ──────────────────────────────────────────────
     async def connect(self):
         if self.scope['user'].is_authenticated:
             await self.accept()
@@ -29,29 +47,21 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     # ====================== Observers ======================
     @model_observer(Ballot)
     async def ballot_activity(self, message, **kwargs):
-        if message['action'] != 'delete':
-            message['data'] = await self.get_ballot_serializer_data(pk=message['data'])
         await self.send_json(message)
 
-    @database_sync_to_async
-    def get_ballot_serializer_data(self, pk: int):
-        ballot = Ballot.objects.select_related('county', 'constituency', 'ward').get(pk=pk)
-        return BallotSerializer(ballot, context={'scope': self.scope}).data
-
     @ballot_activity.groups_for_signal
-    def ballot_activity_groups(self, instance: Ballot, **kwargs):
+    def ballot_activity_signal_groups(self, instance: Ballot, **kwargs):
         yield f'ballot__{instance.pk}'
 
     @ballot_activity.groups_for_consumer
-    def ballot_activity_groups(self, pk=None, **kwargs):
+    def ballot_activity_consumer_groups(self, pk=None, **kwargs):
         if pk is not None:
             yield f'ballot__{pk}'
 
     @ballot_activity.serializer
     def ballot_activity_serializer(self, instance: Ballot, action, **kwargs):
-        # TODO: Too many database hits in model observer. Pass more fields to data in dict
         return {
-            'data': instance.pk,
+            'data': get_activity_data(instance),
             'action': action.value,
             'pk': instance.pk,
             'response_status': 201 if action.value == 'create' else 204 if action.value == 'delete' else 200
@@ -59,16 +69,11 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     @model_observer(Option, many_to_many=True)
     async def option_activity(self, message, **kwargs):
-        # When an option changes, send update for the parent ballot
-        ballot_pk = message['data']
-        if ballot_pk:
-            message['data'] = await self.get_ballot_serializer_data(pk=ballot_pk)
-            message['action'] = 'update'
         await self.send_json(message)
 
     @option_activity.groups_for_signal
     def option_activity_signal_groups(self, instance: Option, **kwargs):
-        yield f'ballot__{instance.ballot.pk}'
+        yield f'ballot__{instance.ballot_id}'
 
     @option_activity.groups_for_consumer
     def option_activity_consumer_groups(self, ballot=None, **kwargs):
@@ -78,9 +83,9 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     @option_activity.serializer
     def option_activity_serializer(self, instance: Option, action, **kwargs):
         return {
-            'data': instance.ballot.pk,
+            'data': get_activity_data(instance.ballot),
             'action': 'update',
-            'pk': instance.pk,
+            'pk': instance.ballot.pk,
             'response_status': 200,
         }
 
@@ -92,9 +97,9 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     # ====================== Filter ======================
     def filter_queryset(self, queryset: QuerySet, **kwargs):
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
-        action = kwargs.get('action')
+        action_ = kwargs.get('action')
 
-        if action != 'list':
+        if action_ != 'list':
             return queryset
 
         # === Core filters for list action ===
@@ -127,7 +132,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
             now = timezone.now()
             if is_open:
                 # Open if end_time is in the future OR if there is no end_time at all
-                queryset = queryset.filter(Q(end_time__gt=now) | Q(end_time__isnull=True))
+                queryset = queryset.filter(Q(end_time__gt=now))
             else:
                 # Closed if end_date is in the past (ignores null values)
                 queryset = queryset.filter(end_time__lte=now)
@@ -225,39 +230,40 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     @database_sync_to_async
     def perform_vote(self, option_pk: int):
-        """Atomic vote: remove from other options + add to new one"""
         from django.db import transaction
 
         user = self.scope['user']
-
         try:
             with transaction.atomic():
-                # Fetch option + ballot efficiently
-                option = Option.objects.select_related('ballot').get(
-                    pk=option_pk,
-                    ballot__is_active=True
+                option = (
+                    Option.objects
+                    .select_related('ballot')
+                    .select_for_update()
+                    .get(pk=option_pk, ballot__is_active=True)
                 )
                 ballot = option.ballot
-
-                # Permission check
                 self._user_can_vote_in_ballot(user, ballot)
 
-                # === Remove user from ALL other options in this ballot ===
-                # This is the efficient way (avoids .update() on m2m)
-                ballot.options.filter(votes=user).exclude(pk=option.pk).update()
+                # Single DELETE for all other votes in this ballot
+                OptionVote.objects.filter(
+                    user=user, option__ballot=ballot
+                ).exclude(option=option).delete()
 
-                # Clear previous votes
-                for other_option in ballot.options.filter(votes=user).exclude(pk=option.pk):
-                    other_option.votes.remove(user)
-
-                # Clear any existing reason
+                # Clear any previous reason
                 Reason.objects.filter(ballot=ballot, user=user).delete()
 
-                # Add vote to the chosen option
-                option.votes.add(user)
+                # Cast the new vote (idempotent via unique_together)
+                OptionVote.objects.get_or_create(user=user, option=option)
 
-                post_save.send(sender=Ballot, instance=ballot, created=False)
+                # Return fresh data
+                ballot = (
+                    Ballot.objects
+                    .select_related('county', 'constituency', 'ward')
+                    .prefetch_related('options__votes')
+                    .get(pk=ballot.pk)
+                )
                 return BallotSerializer(ballot, context={'scope': self.scope}).data
+
         except Option.DoesNotExist:
             raise NotFound("Option not found")
 
@@ -270,7 +276,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
             raise PermissionDenied('Voting has not started yet')
 
         # End time check
-        if ballot.end_time < voting_time:
+        if ballot.end_time and ballot.end_time < voting_time:
             raise PermissionDenied('Voting has ended')
 
         # Region check
@@ -288,7 +294,8 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     @action()
     @interaction_rate_limit
     async def add_reason(self, pk: int, text: str, **kwargs):
-        result = await self.perform_add_reason(ballot_pk=pk, text=text)
+        ballots = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        result = await self.perform_add_reason(ballots=ballots, ballot_pk=pk, text=text)
         return result, 200
 
     @database_sync_to_async
@@ -296,27 +303,70 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         user = self.scope['user']
 
         try:
-            ballot = Ballot.objects.prefetch_related('options__votes').get(pk=ballot_pk, is_active=True)
+            ballot = (
+                Ballot.objects
+                .annotate(total_votes=Count('options__votes_through', distinct=True))
+                .prefetch_related(
+                    Prefetch(
+                        'options',
+                        queryset=Option.objects.annotate(vote_count=Count('votes')),
+                    ),
+                )
+                .select_related('county', 'constituency', 'ward')
+                .get(pk=ballot_pk, is_active=True)
+            )
         except Ballot.DoesNotExist:
             raise NotFound('Ballot not found or inactive')
 
-        # Permission check
         self._user_can_vote_in_ballot(user, ballot)
 
-        # Check if user has already voted (efficient .exists())
-        has_voted = ballot.options.filter(votes=user).exists()
+        has_voted = OptionVote.objects.filter(
+            user=user, option__ballot=ballot,
+        ).exists()
         if not has_voted:
             raise ValidationError('Please cast your vote first')
 
         if len(text) == 0:
             Reason.objects.filter(ballot=ballot, user=user).delete()
         else:
-            # Update or create reason in one query
             Reason.objects.update_or_create(
                 ballot=ballot,
                 user=user,
-                defaults={'text': text}
+                defaults={'text': text},
             )
 
-        # Return fresh ballot data
+        # Re-fetch to pick up the new/updated reason + fresh vote counts
+        ballot = (
+            Ballot.objects
+            .annotate(total_votes=Count('options__votes_through', distinct=True))
+            .prefetch_related(
+                Prefetch(
+                    'options',
+                    queryset=Option.objects.annotate(vote_count=Count('votes')),
+                ),
+            )
+            .select_related('county', 'constituency', 'ward')
+            .get(pk=ballot.pk)
+        )
         return BallotSerializer(ballot, context={'scope': self.scope}).data
+
+
+# ── Module-level helper for observer payloads ────────────────
+
+def get_activity_data(ballot: Ballot) -> dict:
+    now = timezone.now()
+    return {
+        'id': ballot.pk,
+        'title': ballot.title,
+        'description': ballot.description,
+        'county': CountySerializer(ballot.county).data if ballot.county else None,
+        'constituency': ConstituencySerializer(ballot.constituency).data if ballot.constituency else None,
+        'ward': WardSerializer(ballot.ward).data if ballot.ward else None,
+        'start_time': ballot.start_time,
+        'end_time': ballot.end_time,
+        'has_started': now > ballot.start_time,
+        'has_ended': ballot.end_time < now,
+        'total_votes': ballot.total_votes,
+        'options': OptionSerializer(ballot.options.all(), many=True).data,
+        'is_active': ballot.is_active,
+    }
