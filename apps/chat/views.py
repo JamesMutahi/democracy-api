@@ -79,11 +79,6 @@ class MessageCreateView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated, ChatAccessPermission]
     serializer_class = MessageSerializer
 
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context["scope"] = {"user": self.request.user}
-        return context
-
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -223,11 +218,6 @@ class MessageDetailView(generics.RetrieveUpdateDestroyAPIView):
         Message.objects.select_related("chat", "author")
         .prefetch_related("assets")
     )
-
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context["scope"] = {"user": self.request.user}
-        return context
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
