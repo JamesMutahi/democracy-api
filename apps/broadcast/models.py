@@ -18,10 +18,12 @@ class BaseModel(models.Model):
         abstract = True
 
 
+class BroadcastType(models.TextChoices):
+    MEETING = "meeting", "Meeting"
+    LIVESTREAM = "livestream", "Livestream"
+
 class Broadcast(BaseModel):
-    class Type(models.TextChoices):
-        MEETING = 'meeting', 'Meeting'
-        LIVESTREAM = 'livestream', 'Livestream'
+    Type = BroadcastType
 
     host = models.ForeignKey(User, on_delete=models.CASCADE, related_name='broadcasts')
     co_hosts = models.ManyToManyField(User, related_name='host_in', blank=True)
@@ -53,8 +55,29 @@ class Broadcast(BaseModel):
 
         constraints = [
             models.CheckConstraint(
-                check=Q(end_time__isnull=True) | Q(end_time__gt=F("start_time")),
+                condition=Q(end_time__isnull=True) | Q(end_time__gt=F("start_time")),
                 name="broadcast_end_time_after_start_time",
+                violation_error_message="The end time must be after the start time.",
+            ),
+            # Type validation at the database level
+            models.CheckConstraint(
+                condition=Q(type__in=BroadcastType.values),
+                name="broadcast_type_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(ward__isnull=True) | Q(constituency__isnull=False),
+                name="broadcast_ward_requires_constituency",
+                violation_error_message="A ward requires a constituency.",
+            ),
+            models.CheckConstraint(
+                condition=Q(ward__isnull=True) | Q(county__isnull=False),
+                name="broadcast_ward_requires_county",
+                violation_error_message="A ward requires a county.",
+            ),
+            models.CheckConstraint(
+                condition=Q(constituency__isnull=True) | Q(county__isnull=False),
+                name="broadcast_constituency_requires_county",
+                violation_error_message="A constituency requires a county.",
             ),
         ]
 

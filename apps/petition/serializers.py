@@ -71,7 +71,8 @@ class PetitionSerializer(serializers.ModelSerializer):
             "views": {"read_only": True},
         }
 
-    def get_supporters(self, instance: Petition) -> int:
+    @staticmethod
+    def get_supporters(instance: Petition) -> int:
         """
         Prefer annotated supporters_count if present.
         This avoids an extra COUNT query per petition in list views.
@@ -108,12 +109,6 @@ class PetitionSerializer(serializers.ModelSerializer):
 
         user = get_current_user(self.context)
 
-        if not instance.pk:
-            return False
-
-        if not user or not getattr(user, "is_authenticated", False):
-            return False
-
         return instance.supporters.filter(pk=user.pk).exists()
 
     def validate(self, attrs):
@@ -132,36 +127,28 @@ class PetitionSerializer(serializers.ModelSerializer):
         ward = attrs.get("ward", getattr(self.instance, "ward", None))
 
         if ward and not constituency:
-            raise serializers.ValidationError(
-                {
+            raise serializers.ValidationError({
                     "ward": "Constituency is required when a ward is provided.",
-                }
-            )
+                })
 
         if constituency and not county:
-            raise serializers.ValidationError(
-                {
+            raise serializers.ValidationError({
                     "constituency": "County is required when a constituency is provided.",
-                }
-            )
+                })
 
         if county and constituency:
             constituency_county_id = getattr(constituency, "county_id", None)
             if constituency_county_id and constituency_county_id != county.pk:
-                raise serializers.ValidationError(
-                    {
+                raise serializers.ValidationError({
                         "constituency": "Constituency must belong to the selected county.",
-                    }
-                )
+                    })
 
         if constituency and ward:
             ward_constituency_id = getattr(ward, "constituency_id", None)
             if ward_constituency_id and ward_constituency_id != constituency.pk:
-                raise serializers.ValidationError(
-                    {
+                raise serializers.ValidationError({
                         "ward": "Ward must belong to the selected constituency.",
-                    }
-                )
+                    })
 
         return attrs
 

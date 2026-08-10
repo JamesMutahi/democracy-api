@@ -305,12 +305,7 @@ class BroadcastSerializer(BroadcastBaseSerializer):
                 "ward": "Ward does not belong to the selected constituency."
             })
 
-        user = None
-
-        try:
-            user = get_current_user(self.context)
-        except Exception:
-            user = None
+        user = get_current_user(self.context)
 
         if user and not getattr(user, "is_staff", False):
             if self.instance is None:

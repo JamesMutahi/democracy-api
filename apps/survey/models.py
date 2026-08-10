@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
 from apps.geo.models import County, Constituency, Ward
@@ -39,6 +40,23 @@ class Survey(BaseModel):
             models.Index(fields=['county']),
             models.Index(fields=['constituency']),
             models.Index(fields=['ward']),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(ward__isnull=True) | Q(constituency__isnull=False),
+                name="survey_ward_requires_constituency",
+                violation_error_message="A ward requires a constituency.",
+            ),
+            models.CheckConstraint(
+                condition=Q(ward__isnull=True) | Q(county__isnull=False),
+                name="survey_ward_requires_county",
+                violation_error_message="A ward requires a county.",
+            ),
+            models.CheckConstraint(
+                condition=Q(constituency__isnull=True) | Q(county__isnull=False),
+                name="survey_constituency_requires_county",
+                violation_error_message="A constituency requires a county.",
+            ),
         ]
 
     def __str__(self):

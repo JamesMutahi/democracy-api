@@ -136,22 +136,19 @@ class Petition(BaseModel):
 
         constraints = [
             models.CheckConstraint(
-                check=~(
-                    Q(ward__isnull=False) & Q(constituency__isnull=True)
-                ),
+                condition=Q(ward__isnull=True) | Q(constituency__isnull=False),
                 name="petition_ward_requires_constituency",
+                violation_error_message="A ward requires a constituency.",
             ),
             models.CheckConstraint(
-                check=~(
-                    Q(ward__isnull=False) & Q(county__isnull=True)
-                ),
+                condition=Q(ward__isnull=True) | Q(county__isnull=False),
                 name="petition_ward_requires_county",
+                violation_error_message="A ward requires a county.",
             ),
             models.CheckConstraint(
-                check=~(
-                    Q(constituency__isnull=False) & Q(county__isnull=True)
-                ),
+                condition=Q(constituency__isnull=True) | Q(county__isnull=False),
                 name="petition_constituency_requires_county",
+                violation_error_message="A constituency requires a county.",
             ),
         ]
 

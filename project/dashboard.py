@@ -10,7 +10,7 @@ class CustomIndexDashboard(Dashboard):
             column=1,
             collapsible=True,
             models=(
-                'apps.users.models.CustomUser', 'apps.posts.models.Post', 'apps.posts.models.Report',
+                'apps.users.models.User', 'apps.posts.models.Post', 'apps.posts.models.Report',
                 'apps.chat.models.Chat', 'apps.notification.models.Notification',
                 'apps.notification.models.Preferences',),
         ))

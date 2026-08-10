@@ -1,3 +1,5 @@
+import logging
+
 from botocore.exceptions import ClientError
 from django.conf import settings
 from django.db import transaction
@@ -12,6 +14,7 @@ from apps.posts.querysets import annotate_post_metrics
 from apps.posts.serializers import PostSerializer, PostIdSerializer, AssetUploadCompleteSerializer
 from apps.utils.presigned_url import generate_presigned_url, s3_client
 
+logger = logging.getLogger(__name__)
 
 class PostCreateView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -34,8 +37,8 @@ class PostCreateView(generics.CreateAPIView):
                 # Generate the upload link for this specific file
                 link = generate_presigned_url(asset.file_key, asset.content_type)
                 upload_data.append({"asset_id": asset.id, "name": asset.name, "url": link})
-        except Exception:
-            # Ideally log this exception.
+        except Exception as e:
+            logger.info(f"Post create error: {e}")
             return Response(
                 {"detail": "Could not create post or generate upload URLs."},
                 status=status.HTTP_502_BAD_GATEWAY,

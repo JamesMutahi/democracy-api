@@ -1,8 +1,8 @@
 from rest_framework import serializers
 
 from apps.ballot.serializers import BallotSerializer
-from apps.chat.serializers import ChatSerializer, MessageSerializer
 from apps.broadcast.serializers import BroadcastSerializer
+from apps.chat.serializers import ChatSerializer, MessageSerializer
 from apps.notification.models import Notification, Preferences
 from apps.petition.serializers import PetitionSerializer
 from apps.posts.serializers import PostSerializer
@@ -39,6 +39,7 @@ class NotificationSerializer(serializers.ModelSerializer):
             'message',
             'created_at',
         ]
+        read_only_fields = fields
 
 
 class PreferencesSerializer(serializers.ModelSerializer):
@@ -55,3 +56,4 @@ class PreferencesSerializer(serializers.ModelSerializer):
             'allow_petition_notifications',
             'allow_petition_supporter_notifications',
         ]
+        read_only_fields = ["id"]

@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q, F
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -32,14 +33,31 @@ class Ballot(BaseModel):
     class Meta:
         db_table = 'Ballot'
         ordering = ['-start_time']
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(end_time__gt=F("start_time")),
+                name="ballot_end_time_after_start_time",
+                violation_error_message="The end time must be after the start time.",
+            ),
+            models.CheckConstraint(
+                condition=Q(ward__isnull=True) | Q(constituency__isnull=False),
+                name="ballot_ward_requires_constituency",
+                violation_error_message="A ward requires a constituency.",
+            ),
+            models.CheckConstraint(
+                condition=Q(ward__isnull=True) | Q(county__isnull=False),
+                name="ballot_ward_requires_county",
+                violation_error_message="A ward requires a county.",
+            ),
+            models.CheckConstraint(
+                condition=Q(constituency__isnull=True) | Q(county__isnull=False),
+                name="ballot_constituency_requires_county",
+                violation_error_message="A constituency requires a county.",
+            ),
+        ]
 
     def __str__(self):
         return self.title
-
-    def clean(self):
-        super().clean()
-        if self.end_time < self.start_time:
-            raise ValidationError("End time cannot be before start time.")
 
 
 class Option(models.Model):

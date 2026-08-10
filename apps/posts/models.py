@@ -158,6 +158,7 @@ class PostLike(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=['user', 'post'],
+                name="unique_post_like_user_post",
             ),
         ]
         ordering = ['-liked_at']
@@ -179,6 +180,7 @@ class PostClick(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=['user', 'post'],
+                name="unique_post_click_user_post",
             ),
         ]
         ordering = ['-clicked_at']

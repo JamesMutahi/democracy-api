@@ -145,7 +145,6 @@ def _mark_stale_recording_sessions() -> int:
 # ====================== CLEANUP TASKS ======================
 
 @shared_task(
-    name="broadcast.cleanup_broadcast_participants",
     bind=True,
     max_retries=3,
     default_retry_delay=60,
@@ -198,7 +197,6 @@ def cleanup_broadcast_participants(self):
 
 
 @shared_task(
-    name="broadcast.cleanup_user_from_all_broadcasts",
     bind=True,
     max_retries=2,
     default_retry_delay=30,
@@ -241,7 +239,6 @@ def cleanup_user_from_all_broadcasts(self, user_id):
 # ====================== RECORDING STATUS TASK ======================
 
 @shared_task(
-    name="broadcast.check_recording_status",
     bind=True,
     max_retries=2,
     default_retry_delay=60,

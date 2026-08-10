@@ -75,7 +75,7 @@ def annotate_post_metrics(queryset, user):
         liked_count=Count(
             "likes",
             filter=Q(
-                likes__user=user,
+                likes=user,
             ),
             distinct=True,
         ),

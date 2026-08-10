@@ -229,7 +229,7 @@ class PostSerializer(serializers.ModelSerializer):
         return obj.likes_count
 
     @staticmethod
-    def get_is_liked(self, obj):
+    def get_is_liked(obj):
         return obj.is_liked
 
     @staticmethod
@@ -237,7 +237,7 @@ class PostSerializer(serializers.ModelSerializer):
         return obj.bookmarks_count
 
     @staticmethod
-    def get_is_bookmarked(self, obj):
+    def get_is_bookmarked(obj):
         return obj.is_bookmarked
 
     @staticmethod
@@ -246,22 +246,22 @@ class PostSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_reposts(obj):
-        return getattr(obj, "reposts_count", obj.get_reposts_count())
+        return obj.reposts_count
 
     @staticmethod
-    def get_is_reposted(self, obj):
+    def get_is_reposted(obj):
         return obj.is_reposted
 
     @staticmethod
-    def get_is_quoted(self, obj):
+    def get_is_quoted(obj):
         return obj.is_quoted
 
     @staticmethod
-    def get_is_upvoted(self, obj):
+    def get_is_upvoted(obj):
         return obj.is_upvoted
 
     @staticmethod
-    def get_is_downvoted(self, obj):
+    def get_is_downvoted(obj):
         return obj.is_downvoted
 
     @staticmethod
@@ -275,6 +275,10 @@ class PostSerializer(serializers.ModelSerializer):
         if not obj.community_note_of:
             return 0
         return obj.downvotes_count
+
+    @staticmethod
+    def get_community_note(obj: Post):
+        return obj.get_top_note()
 
     @transaction.atomic
     def create(self, validated_data):
