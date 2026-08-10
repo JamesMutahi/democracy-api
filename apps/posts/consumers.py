@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.postgres.search import TrigramSimilarity, SearchQuery, SearchRank, SearchHeadline
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
-from django.db import transaction, connection, DEFAULT_DB_ALIAS
+from django.db import transaction, connection
 from django.db.models import QuerySet, Case, When, Count, Q, F, Value, OuterRef, Subquery, IntegerField, TextField
 from django.db.models.functions import Coalesce
 from django.db.models.signals import post_save
@@ -19,6 +19,7 @@ from rest_framework.generics import get_object_or_404
 from taggit.models import Tag
 
 from apps.posts.models import Post, PostLike, PostClick, SearchHistory
+from apps.posts.querysets import annotate_post_metrics
 from apps.posts.serializers import PostSerializer, ReportSerializer, ThreadSerializer
 from apps.recommendations.post_recommender import PostRecommender
 from apps.recommendations.tasks import record_interaction
@@ -95,6 +96,12 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         await super().disconnect(code)
 
     # ====================== Filter ======================
+    def get_queryset(self, **kwargs):
+        qs = Post.objects.all()
+        qs = qs.filter(is_active=True, status="published")
+        qs = annotate_post_metrics(qs, self.scope['user'])
+        return qs.order_by("-published_at")
+
     @staticmethod
     def _apply_body_search(queryset: QuerySet, search_term: str):
         search_query = SearchQuery(
@@ -579,7 +586,8 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         with transaction.atomic():
             try:
                 post = (
-                    Post.objects.select_for_update()
+                    Post.objects.select_related("author")
+                    .select_for_update()
                     .get(pk=pk, is_active=True)
                 )
             except Post.DoesNotExist:
@@ -617,7 +625,8 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         with transaction.atomic():
             try:
                 post = (
-                    Post.objects.select_for_update()
+                    Post.objects.select_related("author")
+                    .select_for_update()
                     .get(pk=pk, is_active=True)
                 )
             except Post.DoesNotExist:
@@ -655,7 +664,8 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         with transaction.atomic():
             try:
                 post = (
-                    Post.objects.select_for_update()
+                    Post.objects.select_related("author")
+                    .select_for_update()
                     .get(pk=pk, is_active=True)
                 )
             except Post.DoesNotExist:
@@ -706,7 +716,8 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         with transaction.atomic():
             try:
                 post = (
-                    Post.objects.select_for_update()
+                    Post.objects.select_related("author")
+                    .select_for_update()
                     .get(pk=pk, is_active=True)
                 )
             except Post.DoesNotExist:
@@ -958,9 +969,6 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
                 sender=Post,
                 instance=post,
                 created=False,
-                raw=False,
-                using=post._state.db or DEFAULT_DB_ALIAS,
-                update_fields=None,
             )
 
         transaction.on_commit(_send_signal)

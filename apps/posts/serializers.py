@@ -18,7 +18,7 @@ from apps.constitution.models import Section
 from apps.constitution.serializers import SectionSerializer
 from apps.petition.models import Petition
 from apps.petition.serializers import PetitionSerializer
-from apps.posts.models import Post, Report, PostLike, Asset
+from apps.posts.models import Post, Report, Asset
 from apps.survey.models import Survey
 from apps.survey.serializers import SurveySerializer
 from apps.users.serializers import UserSerializer
@@ -226,74 +226,71 @@ class PostSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_likes(obj):
-        count = obj.likes.count()
-        return count
+        return obj.likes_count
 
-    def get_is_liked(self, post):
-        is_liked = PostLike.objects.filter(user=get_current_user(self.context), post=post).exists()
-        return is_liked
+    @staticmethod
+    def get_is_liked(self, obj):
+        return obj.is_liked
 
     @staticmethod
     def get_bookmarks(obj):
-        count = obj.bookmarks.count()
-        return count
+        return obj.bookmarks_count
 
+    @staticmethod
     def get_is_bookmarked(self, obj):
-        user = get_current_user(self.context)
-        is_bookmarked = obj.bookmarks.filter(pk=user.pk).exists()
-        return is_bookmarked
+        return obj.is_bookmarked
 
     @staticmethod
     def get_replies(obj):
-        count = obj.replies.filter(is_active=True, status='published').count()
-        return count
+        return obj.replies_count
 
     @staticmethod
     def get_reposts(obj):
-        return obj.get_reposts_count()
-
-    def get_is_reposted(self, obj):
-        is_reposted = obj.reposts.filter(is_active=True, author=get_current_user(self.context),
-                                         repost_type=Post.RepostType.REPOST).exists()
-        return is_reposted
-
-    def get_is_quoted(self, obj):
-        is_quoted = obj.reposts.filter(is_active=True, author=get_current_user(self.context),
-                                       repost_type=Post.RepostType.QUOTE).exists()
-        return is_quoted
+        return getattr(obj, "reposts_count", obj.get_reposts_count())
 
     @staticmethod
-    def get_community_note(obj: Post):
-        return obj.get_top_note()
+    def get_is_reposted(self, obj):
+        return obj.is_reposted
 
+    @staticmethod
+    def get_is_quoted(self, obj):
+        return obj.is_quoted
+
+    @staticmethod
     def get_is_upvoted(self, obj):
-        user = get_current_user(self.context)
-        is_upvoted = obj.upvotes.filter(pk=user.pk).exists()
-        return is_upvoted
+        return obj.is_upvoted
 
+    @staticmethod
     def get_is_downvoted(self, obj):
-        user = get_current_user(self.context)
-        is_downvoted = obj.downvotes.filter(pk=user.pk).exists()
-        return is_downvoted
+        return obj.is_downvoted
 
     @staticmethod
     def get_upvotes(obj):
-        count = 0
-        if obj.community_note_of:
-            count = obj.upvotes.count()
-        return count
+        if not obj.community_note_of:
+            return 0
+        return obj.upvotes_count
 
     @staticmethod
     def get_downvotes(obj):
-        count = 0
-        if obj.community_note_of:
-            count = obj.downvotes.count()
-        return count
+        if not obj.community_note_of:
+            return 0
+        return obj.downvotes_count
 
     @transaction.atomic
     def create(self, validated_data):
         current_user = get_current_user(self.context)
         validated_data['author'] = current_user
+
+        repost_of = validated_data.get('repost_of')
+        if repost_of:
+            if repost_of.author.blocked.filter(id=current_user.id).exists():
+                raise serializers.ValidationError("You have been blocked by this user.")
+
+        reply_to = validated_data.get('reply_to')
+        if reply_to:
+            if reply_to.author.blocked.filter(id=current_user.id).exists():
+                raise serializers.ValidationError("You have been blocked by this user.")
+
         if validated_data.get('repost_of_id'):
             # Author can only have one repost of a post without body or relevant fields
             if validated_data.get('repost_type') == Post.RepostType.REPOST:
@@ -419,3 +416,15 @@ def get_reply_thread(post: Post, author: User, depth: int = 0, visited=None):
         return []
 
     return [child] + get_reply_thread(child, child.author, depth + 1, visited)
+
+
+class PostIdSerializer(serializers.Serializer):
+    post_id = serializers.IntegerField()
+
+
+class AssetUploadCompleteSerializer(serializers.Serializer):
+    asset_id_list = serializers.ListField(
+        child=serializers.IntegerField(),
+        allow_empty=False,
+        max_length=20,
+    )
