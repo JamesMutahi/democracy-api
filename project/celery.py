@@ -33,7 +33,7 @@ app.conf.beat_schedule = {
     },
     'check-recording-status-every-1-min': {
         'task': 'apps.broadcast.tasks.check_recording_status',
-        'schedule': crontab(minute='*/1'),  # Every 5 minutes
+        'schedule': crontab(minute='*/1'),  # Every 1 minute
         # 'schedule': timedelta(minutes=1),       # Alternative
     },
 }

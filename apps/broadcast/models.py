@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.db import models
+from django.db.models import F, Q
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -37,8 +38,25 @@ class Broadcast(BaseModel):
     is_active = models.BooleanField(_('active'), default=True)
 
     class Meta:
-        db_table = 'Broadcast'
-        ordering = ['-start_time']
+        db_table = "Broadcast"
+        ordering = ["-start_time"]
+
+        indexes = [
+            models.Index(fields=["type", "is_active"]),
+            models.Index(fields=["start_time"]),
+            models.Index(fields=["end_time"]),
+            models.Index(fields=["host"]),
+            models.Index(fields=["county"]),
+            models.Index(fields=["constituency"]),
+            models.Index(fields=["ward"]),
+        ]
+
+        constraints = [
+            models.CheckConstraint(
+                check=Q(end_time__isnull=True) | Q(end_time__gt=F("start_time")),
+                name="broadcast_end_time_after_start_time",
+            ),
+        ]
 
     def __str__(self):
         return self.title
@@ -50,16 +68,33 @@ class RecordingSession(BaseModel):
         STOPPED = 'stopped', 'Stopped'
         ERROR = 'error', 'Error'
 
-    broadcast = models.OneToOneField(Broadcast, on_delete=models.CASCADE, related_name='session')
+    broadcast = models.ForeignKey(
+        Broadcast,
+        on_delete=models.CASCADE,
+        related_name="recording_sessions",
+    )
+
     resource_id = models.CharField(max_length=255)
     sid = models.CharField(max_length=255)
+
     stopped_at = models.DateTimeField(null=True, blank=True)
-    file_list = models.CharField(max_length=255, null=True, blank=True)
-    status = models.CharField(max_length=50, choices=Status.choices, default=Status.IN_PROGRESS)
+
+    file_list = models.JSONField(null=True, blank=True)
+
+    status = models.CharField(
+        max_length=50,
+        choices=Status.choices,
+        default=Status.IN_PROGRESS,
+    )
 
     class Meta:
-        db_table = 'RecordingSession'
-        ordering = ['-created_at']
+        db_table = "RecordingSession"
+        ordering = ["-created_at"]
+
+        indexes = [
+            models.Index(fields=["broadcast", "stopped_at"]),
+            models.Index(fields=["status"]),
+        ]
 
 
 class SpeakerRequest(BaseModel):
@@ -70,9 +105,12 @@ class SpeakerRequest(BaseModel):
                                    related_name='speaker_request_decisions')
 
     class Meta:
-        db_table = 'SpeakerRequest'
-        unique_together = ('broadcast', 'user')
-        ordering = ['-created_at']
+        db_table = "SpeakerRequest"
+        unique_together = ("broadcast", "user")
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["broadcast", "is_approved"]),
+        ]
 
 
 class Comment(BaseModel):
@@ -81,10 +119,10 @@ class Comment(BaseModel):
     content = models.TextField()
 
     class Meta:
-        db_table = 'BroadcastComment'
-        verbose_name = 'Comment'
-        verbose_name_plural = 'Comments'
-        ordering = ['-created_at']
+        db_table = "BroadcastComment"
+        verbose_name = "Comment"
+        verbose_name_plural = "Comments"
+        ordering = ["-created_at"]
 
     def __str__(self):
         return f"Comment({self.author.username} {self.broadcast})"

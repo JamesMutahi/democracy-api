@@ -608,7 +608,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
             likes = post.likes.count()
 
-        self._signal_post_update(post)
+            self._signal_post_update(post)
         return {'pk': post.pk, 'is_liked': is_liked, 'likes': likes}
 
     @action()
@@ -647,7 +647,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
             bookmarks = post.bookmarks.count()
 
-        self._signal_post_update(post)
+            self._signal_post_update(post)
         return {'pk': pk, 'is_bookmarked': is_bookmarked, 'bookmarks': bookmarks}
 
     @action()
@@ -694,7 +694,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
             upvotes = post.upvotes.count()
             downvotes = post.downvotes.count()
 
-        self._signal_post_update(post)
+            self._signal_post_update(post)
         return {
             'pk': pk,
             'is_upvoted': is_upvoted,
@@ -776,7 +776,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
             repost = repost_qs.first()
             repost_pk = repost.pk
             repost.delete()
-        post_save.send(sender=Post, instance=post, created=False)
+            self._signal_post_update(post)
         return {
             'pk': post.pk,
             'repost_pk': repost_pk,
@@ -963,14 +963,11 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     @staticmethod
     def _signal_post_update(post: Post):
-        def _send_signal():
-            post_save.send(
-                sender=Post,
-                instance=post,
-                created=False,
+        transaction.on_commit(
+            lambda: post_save.send(
+                post_save.send(sender=Post, instance=post, created=False)
             )
-
-        transaction.on_commit(_send_signal)
+        )
 
     # ====================== AUTOCOMPLETE ======================
     @action()
@@ -1162,6 +1159,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
             }
             for word, count in rows
         ]
+
 
 # ── Module-level helper for observer payloads ────────────────
 
