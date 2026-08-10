@@ -1,62 +1,267 @@
 {% extends "admin/base_site.html" %}
 {% load humanize %}
 
-{% block content %}
-<div class="module">
-    <h1>Recommendation System Dashboard</h1>
+{% block title %}{{ title }}{% endblock %}
 
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
-        <div style="background: #f0f0f0; padding: 15px; border-radius: 8px;">
-            <h3>Total Users</h3>
-            <h2>{{ total_users|default:0 }}</h2>
-        </div>
-        <div style="background: #f0f0f0; padding: 15px; border-radius: 8px;">
-            <h3>Total Posts</h3>
-            <h2>{{ total_posts|default:0 }}</h2>
-        </div>
-        <div style="background: #f0f0f0; padding: 15px; border-radius: 8px;">
-            <h3>Active Recommendation Caches</h3>
-            <h2>{{ active_caches|default:0 }} / {{ total_caches|default:0 }}</h2>
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .recommendation-dashboard {
+        display: grid;
+        gap: 24px;
+    }
+
+    .recommendation-card {
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        padding: 16px;
+        background: #fff;
+    }
+
+    .recommendation-card h2 {
+        margin-top: 0;
+        margin-bottom: 12px;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 8px;
+    }
+
+    .recommendation-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .recommendation-table th,
+    .recommendation-table td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        vertical-align: top;
+        text-align: left;
+    }
+
+    .recommendation-table th {
+        background: #f8f8f8;
+    }
+
+    .recommendation-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+    }
+
+    .recommendation-stat {
+        border: 1px solid #eee;
+        border-radius: 6px;
+        padding: 12px;
+        background: #fafafa;
+    }
+
+    .recommendation-stat .value {
+        font-size: 22px;
+        font-weight: 700;
+    }
+
+    .recommendation-stat .label {
+        color: #666;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .muted {
+        color: #666;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="recommendation-dashboard">
+    <h1>{{ title }}</h1>
+
+    {% if cache_scan_limit %}
+    <p class="muted">
+        Dashboard aggregation scanned the most recent
+        {{ cache_scan_limit|intcomma }} recommendation caches.
+    </p>
+    {% endif %}
+
+    <div class="recommendation-card">
+        <h2>Overview</h2>
+
+        <div class="recommendation-summary">
+            <div class="recommendation-stat">
+                <div class="value">{{ total_users|default:0|intcomma }}</div>
+                <div class="label">Total Users</div>
+            </div>
+
+            <div class="recommendation-stat">
+                <div class="value">{{ total_posts|default:0|intcomma }}</div>
+                <div class="label">Total Posts</div>
+            </div>
+
+            <div class="recommendation-stat">
+                <div class="value">{{ published_posts|default:0|intcomma }}</div>
+                <div class="label">Published Posts</div>
+            </div>
+
+            <div class="recommendation-stat">
+                <div class="value">{{ total_caches|default:0|intcomma }}</div>
+                <div class="label">Recommendation Caches</div>
+            </div>
+
+            <div class="recommendation-stat">
+                <div class="value">
+                    {{ active_caches|default:0|intcomma }} / {{ total_caches|default:0|intcomma }}
+                </div>
+                <div class="label">Active Caches</div>
+            </div>
+
+            <div class="recommendation-stat">
+                <div class="value">{{ active_percentage|default:0 }}%</div>
+                <div class="label">Active Cache Percentage</div>
+            </div>
         </div>
     </div>
 
-    <h2>Most Recommended Posts (by frequency)</h2>
-    <table style="width:100%; border-collapse: collapse;">
-        <thead>
-            <tr style="background:#f8f8f8;">
-                <th style="padding:10px; text-align:left;">Rank</th>
-                <th style="padding:10px; text-align:left;">Post Preview</th>
-                <th style="padding:10px;">Author</th>
-                <th style="padding:10px;">Recommended For</th>
-                <th style="padding:10px;">Avg Score</th>
+    <div class="recommendation-card">
+        <h2>Most Recommended Posts</h2>
+
+        {% if top_recommended_posts %}
+        <table class="recommendation-table">
+            <thead>
+            <tr>
+                <th>Rank</th>
+                <th>Post Preview</th>
+                <th>Author</th>
+                <th>Recommended For</th>
+                <th>Avg Score</th>
                 <th>Media</th>
             </tr>
-        </thead>
-        <tbody>
+            </thead>
+
+            <tbody>
             {% for item in top_recommended_posts %}
-            <tr style="border-bottom:1px solid #ddd;">
-                <td style="padding:10px;">#{{ forloop.counter }}</td>
-                <td style="padding:10px; max-width:500px;">
-                    <a href="{% url 'admin:posts_post_change' item.post.id %}" target="_blank">
-                        {{ item.body_preview }}
+            <tr>
+                <td>#{{ forloop.counter }}</td>
+
+                <td>
+                    {% if item.change_url %}
+                    <a href="{{ item.change_url }}">
+                        {{ item.body_preview|default:"(empty)" }}
                     </a>
+                    {% else %}
+                    {{ item.body_preview|default:"(empty)" }}
+                    {% endif %}
                 </td>
-                <td style="padding:10px;">{{ item.author }}</td>
-                <td style="padding:10px; text-align:center; font-weight:bold;">{{ item.recommendation_count }}</td>
-                <td style="padding:10px; color:{% if item.avg_score > 0.7 %}green{% elif item.avg_score > 0.4 %}orange{% else %}red{% endif %};">
-                    {{ item.avg_score }}
+
+                <td>{{ item.author|default:"Unknown" }}</td>
+
+                <td>
+                    {{ item.recommendation_count|default:0|intcomma }}
+                    user{{ item.recommendation_count|pluralize }}
                 </td>
-                <td style="padding:10px; text-align:center;">{% if item.has_media %}Yes{% else %}No{% endif %}</td>
+
+                <td>{{ item.avg_score|floatformat:3 }}</td>
+
+                <td>
+                    {% if item.has_media %}
+                    Yes
+                    {% else %}
+                    No
+                    {% endif %}
+                </td>
             </tr>
             {% endfor %}
-        </tbody>
-    </table>
+            </tbody>
+        </table>
+        {% else %}
+        <p>No recommended posts found.</p>
+        {% endif %}
+    </div>
 
-    <h2 style="margin-top:40px;">Activity by County</h2>
-    <ul>
-        {% for stat in county_stats %}
-        <li><strong>{{ stat.user__county__name|default:"No County" }}:</strong> {{ stat.user_count }} users with caches</li>
-        {% endfor %}
-    </ul>
+    <div class="recommendation-card">
+        <h2>Top Posts by Average Score</h2>
+
+        {% if top_by_score %}
+        <table class="recommendation-table">
+            <thead>
+            <tr>
+                <th>Rank</th>
+                <th>Post Preview</th>
+                <th>Author</th>
+                <th>Avg Score</th>
+                <th>Recommended For</th>
+                <th>Media</th>
+            </tr>
+            </thead>
+
+            <tbody>
+            {% for item in top_by_score %}
+            <tr>
+                <td>#{{ forloop.counter }}</td>
+
+                <td>
+                    {% if item.change_url %}
+                    <a href="{{ item.change_url }}">
+                        {{ item.body_preview|default:"(empty)" }}
+                    </a>
+                    {% else %}
+                    {{ item.body_preview|default:"(empty)" }}
+                    {% endif %}
+                </td>
+
+                <td>{{ item.author|default:"Unknown" }}</td>
+
+                <td>{{ item.avg_score|floatformat:3 }}</td>
+
+                <td>
+                    {{ item.recommendation_count|default:0|intcomma }}
+                    user{{ item.recommendation_count|pluralize }}
+                </td>
+
+                <td>
+                    {% if item.has_media %}
+                    Yes
+                    {% else %}
+                    No
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>No high-scoring recommended posts found.</p>
+        {% endif %}
+    </div>
+
+    <div class="recommendation-card">
+        <h2>Activity by County</h2>
+
+        {% if county_stats %}
+        <table class="recommendation-table">
+            <thead>
+            <tr>
+                <th>County</th>
+                <th>Users with Caches</th>
+            </tr>
+            </thead>
+
+            <tbody>
+            {% for stat in county_stats %}
+            <tr>
+                <td>
+                    {{ stat.user__county__name|default:"No County" }}
+                </td>
+                <td>
+                    {{ stat.user_count|default:0|intcomma }}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>No county activity found.</p>
+        {% endif %}
+    </div>
 </div>
 {% endblock %}
