@@ -226,59 +226,74 @@ class PostSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_likes(obj):
-        return obj.likes_count
+        # Fallback to .count() if the annotation is missing
+        return getattr(obj, "likes_count", obj.likes.count())
 
-    @staticmethod
-    def get_is_liked(obj):
-        return obj.is_liked
+    def get_is_liked(self, obj):
+        if hasattr(obj, "is_liked"):
+            return obj.is_liked
+        user = get_current_user(self.context)
+        return obj.likes.filter(pk=user.pk).exists()
 
     @staticmethod
     def get_bookmarks(obj):
-        return obj.bookmarks_count
+        return getattr(obj, "bookmarks_count", obj.bookmarks.count())
 
-    @staticmethod
-    def get_is_bookmarked(obj):
-        return obj.is_bookmarked
+    def get_is_bookmarked(self, obj):
+        if hasattr(obj, "is_bookmarked"):
+            return obj.is_bookmarked
+        user = get_current_user(self.context)
+        return obj.bookmarks.filter(pk=user.pk).exists()
 
     @staticmethod
     def get_replies(obj):
-        return obj.replies_count
+        return getattr(obj, "replies_count", obj.replies.filter(is_active=True, status='published').count())
 
     @staticmethod
     def get_reposts(obj):
-        return obj.reposts_count
+        if hasattr(obj, "reposts_count"):
+            return obj.reposts_count
+        return obj.get_reposts_count()
 
-    @staticmethod
-    def get_is_reposted(obj):
-        return obj.is_reposted
+    def get_is_reposted(self, obj):
+        if hasattr(obj, "is_reposted"):
+            return obj.is_reposted
+        user = get_current_user(self.context)
+        return obj.reposts.filter(is_active=True, author=user, repost_type=Post.RepostType.REPOST).exists()
 
-    @staticmethod
-    def get_is_quoted(obj):
-        return obj.is_quoted
+    def get_is_quoted(self, obj):
+        if hasattr(obj, "is_quoted"):
+            return obj.is_quoted
+        user = get_current_user(self.context)
+        return obj.reposts.filter(is_active=True, author=user, repost_type=Post.RepostType.QUOTE).exists()
 
-    @staticmethod
-    def get_is_upvoted(obj):
-        return obj.is_upvoted
+    def get_is_upvoted(self, obj):
+        if hasattr(obj, "is_upvoted"):
+            return obj.is_upvoted
+        user = get_current_user(self.context)
+        return obj.upvotes.filter(pk=user.pk).exists()
 
-    @staticmethod
-    def get_is_downvoted(obj):
-        return obj.is_downvoted
+    def get_is_downvoted(self, obj):
+        if hasattr(obj, "is_downvoted"):
+            return obj.is_downvoted
+        user = get_current_user(self.context)
+        return obj.downvotes.filter(pk=user.pk).exists()
 
     @staticmethod
     def get_upvotes(obj):
         if not obj.community_note_of:
             return 0
-        return obj.upvotes_count
+        return getattr(obj, "upvotes_count", obj.upvotes.count())
 
     @staticmethod
     def get_downvotes(obj):
         if not obj.community_note_of:
             return 0
-        return obj.downvotes_count
+        return getattr(obj, "downvotes_count", obj.downvotes.count())
 
     @staticmethod
     def get_community_note(obj: Post):
-        return obj.get_top_note()
+        return getattr(obj, "top_community_note_body", obj.get_top_note())
 
     @transaction.atomic
     def create(self, validated_data):

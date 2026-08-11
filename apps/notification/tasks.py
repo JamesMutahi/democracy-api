@@ -5,6 +5,7 @@ from celery import shared_task
 from channels.layers import get_channel_layer
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
+from django.db.models import Prefetch
 from fcm_django.models import FCMDevice
 from firebase_admin.messaging import Message as fireMessage, Notification as fireNotification
 
@@ -15,6 +16,7 @@ from apps.notification.models import Notification, Preferences
 from apps.notification.serializers import NotificationSerializer
 from apps.petition.models import Petition
 from apps.posts.models import Post
+from apps.posts.querysets import annotate_post_metrics
 from apps.survey.models import Survey
 from apps.utils.firebase import get_firebase_app
 
@@ -176,6 +178,14 @@ def _group_send(group_name: str, message: dict) -> None:
 
 
 def _serialize_notification(notification: Notification) -> dict:
+    notification = Notification.objects.filter(
+        pk=notification.pk
+    ).prefetch_related(
+        Prefetch(
+            "post",
+            queryset=annotate_post_metrics(Post.objects.all(), notification.recipient),
+        )
+    ).first()
     return NotificationSerializer(
         instance=notification,
         context={"scope": {"user": notification.recipient}},

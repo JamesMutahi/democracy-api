@@ -5,7 +5,7 @@ from django.contrib.gis.db import models
 from django.contrib.postgres.indexes import GinIndex
 from django.contrib.postgres.search import SearchVectorField, SearchVector
 from django.db import transaction
-from django.db.models import ExpressionWrapper, Count, F, FloatField
+from django.db.models import ExpressionWrapper, Count, F, FloatField, IntegerField
 from django.db.models.functions import NullIf
 from django.db.models.signals import post_save
 from django.utils import timezone
@@ -86,21 +86,42 @@ class Post(BaseModel):
         return self.body
 
     def get_top_note(self):
-        top_note = self.community_notes.annotate(
-            upvotes_count=Count('upvotes'),
-            downvotes_count=Count('downvotes'),
-            total_votes=ExpressionWrapper(F('upvotes_count') + F('downvotes_count'), output_field=FloatField()),
-            helpful_score=ExpressionWrapper(
-                F('upvotes_count') * 1.0 / NullIf('total_votes', 0),
-                output_field=FloatField()
-            )).filter(total_votes__gt=0, helpful_score__gt=0.7).order_by(
-            '-helpful_score',
-            '-upvotes_count',
-            '-downvotes_count',
-            '-created_at'
-        ).first()
+        if hasattr(self, "top_community_note_body"):
+            return self.top_community_note_body or ""
+
+        top_note = (
+            self.community_notes.annotate(
+                upvotes_count=Count("upvotes", distinct=True),
+                downvotes_count=Count("downvotes", distinct=True),
+            )
+            .annotate(
+                total_votes=ExpressionWrapper(
+                    F("upvotes_count") + F("downvotes_count"),
+                    output_field=IntegerField(),
+                )
+            )
+            .annotate(
+                helpful_score=ExpressionWrapper(
+                    F("upvotes_count") * 1.0 / NullIf(F("total_votes"), 0),
+                    output_field=FloatField(),
+                )
+            )
+            .filter(
+                total_votes__gt=0,
+                helpful_score__gt=0.7,
+            )
+            .order_by(
+                "-helpful_score",
+                "-upvotes_count",
+                "-downvotes_count",
+                "-created_at",
+            )
+            .first()
+        )
+
         if not top_note:
-            return ''
+            return ""
+
         return top_note.body
 
     def get_reposts_count(self):

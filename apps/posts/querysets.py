@@ -4,20 +4,71 @@ from django.db.models import (
     Count,
     Q,
     Value,
-    When,
+    When, Subquery, TextField, ExpressionWrapper, F, FloatField, IntegerField, OuterRef,
 )
+from django.db.models.functions import Coalesce, NullIf
 
 from apps.posts.models import Post
 
 
-def annotate_post_metrics(queryset, user):
+def top_community_note_body_subquery():
+    """
+    Returns the body of the top community note for a post.
+
+    Community notes are Post objects where:
+    community_note_of = parent post
+    """
+    top_note = (
+        Post.objects.filter(
+            community_note_of=OuterRef("pk"),
+        )
+        # Recommended visibility filters.
+        # Remove any of these if your product rules differ.
+        .filter(
+            is_deleted=False,
+            is_active=True,
+            status="published",
+        )
+        .annotate(
+            note_upvotes_count=Count("upvotes", distinct=True),
+            note_downvotes_count=Count("downvotes", distinct=True),
+        )
+        .annotate(
+            total_votes=ExpressionWrapper(
+                F("note_upvotes_count") + F("note_downvotes_count"),
+                output_field=IntegerField(),
+            )
+        )
+        .annotate(
+            helpful_score=ExpressionWrapper(
+                F("note_upvotes_count") * 1.0 / NullIf(F("total_votes"), 0),
+                output_field=FloatField(),
+            )
+        )
+        .filter(
+            total_votes__gt=0,
+            helpful_score__gt=0.7,
+        )
+        .order_by(
+            "-helpful_score",
+            "-note_upvotes_count",
+            "-note_downvotes_count",
+            "-published_at",
+        )
+        .values("body")[:1]
+    )
+
+    return Coalesce(
+        Subquery(top_note, output_field=TextField()),
+        Value("", output_field=TextField()),
+    )
+
+
+def annotate_post_metrics(queryset, user, include_top_community_note=True):
     """
     Annotate post queryset with counts and user-specific flags.
     """
-    if not user or not user.is_authenticated:
-        raise ValueError("annotate_post_metrics expects an authenticated user.")
-
-    return queryset.select_related(
+    qs = queryset.select_related(
         "author",
         "ballot",
         "survey",
@@ -151,3 +202,10 @@ def annotate_post_metrics(queryset, user):
             output_field=BooleanField(),
         ),
     )
+
+    if include_top_community_note:
+        qs = qs.annotate(
+            top_community_note_body=top_community_note_body_subquery(),
+        )
+
+    return qs

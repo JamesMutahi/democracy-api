@@ -554,12 +554,13 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     @action()
     @rate_limit(limit=40, period=60)
     async def reply_to(self, request_id: str, pk: int, **kwargs):
-        data = await self.get_reply_to_posts(pk)
+        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        data = await self.get_reply_to_posts(pk, queryset)
         return data, 200
 
     @database_sync_to_async
-    def get_reply_to_posts(self, pk: int):
-        post = Post.objects.get(pk=pk)
+    def get_reply_to_posts(self, pk: int, queryset: QuerySet):
+        post = get_object_or_404(queryset, pk=pk)
         posts = get_reply_to(post, posts=[post])
         return PostSerializer(posts, many=True, context={'scope': self.scope}).data
 

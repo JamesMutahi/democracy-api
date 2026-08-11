@@ -2,7 +2,7 @@ import logging
 
 from channels.db import database_sync_to_async
 from channels.layers import get_channel_layer
-from django.db.models import QuerySet
+from django.db.models import QuerySet, Prefetch
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import ListModelMixin
@@ -10,6 +10,8 @@ from djangochannelsrestframework.mixins import ListModelMixin
 from apps.notification.models import Notification, Preferences
 from apps.notification.serializers import NotificationSerializer, PreferencesSerializer
 from apps.notification.tasks import send_notification_update
+from apps.posts.models import Post
+from apps.posts.querysets import annotate_post_metrics
 from apps.utils.throttles import interaction_rate_limit, rate_limit
 
 logger = logging.getLogger(__name__)
@@ -17,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     serializer_class = NotificationSerializer
-    queryset = Notification.objects.all()
     lookup_field = "pk"
 
     async def connect(self):
@@ -73,17 +74,10 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
 
     # ====================== QUERYSET ======================
 
-    def filter_queryset(self, queryset: QuerySet, **kwargs):
-        queryset = super().filter_queryset(queryset=queryset, **kwargs)
-
-        user = self.scope.get("user")
-        if not user or not user.is_authenticated:
-            return queryset.none()
-
-        return queryset.filter(
-            recipient=user
+    def get_queryset(self, **kwargs) -> QuerySet:
+        queryset = Notification.objects.filter(
+            recipient=self.scope.get("user")
         ).select_related(
-            "post__author",
             "ballot",
             "survey",
             "petition__author",
@@ -91,8 +85,13 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
             "chat",
             "message__author",
         ).prefetch_related(
+            Prefetch(
+                "post",
+                queryset=annotate_post_metrics(Post.objects.all(), self.scope.get("user")),
+            ),
             "users",
         ).order_by("-id")
+        return queryset
 
     # ====================== ACTIONS ======================
 
@@ -145,7 +144,8 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     @action()
     @interaction_rate_limit
     async def mark_all_as_read(self, request_id=None, **kwargs):
-        updated = await self._mark_all_as_read()
+        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        updated = await self._mark_all_as_read(queryset=queryset)
 
         group = getattr(self, "notification_group", None)
         channel_layer = get_channel_layer()
@@ -172,10 +172,8 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
         )
 
     @database_sync_to_async
-    def _mark_all_as_read(self):
-        user = self.scope.get("user")
-        return Notification.objects.filter(
-            recipient=user,
+    def _mark_all_as_read(self, queryset: QuerySet):
+        return queryset.filter(
             is_read=False,
         ).update(is_read=True)
 
@@ -183,11 +181,7 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     @rate_limit(limit=40, period=60)
     async def preferences(self, request_id=None, **kwargs):
         data = await self._preferences()
-        return await self.reply(
-            data=data,
-            request_id=request_id,
-            status=200,
-        )
+        return data, 200
 
     @database_sync_to_async
     def _preferences(self):

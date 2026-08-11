@@ -28,6 +28,7 @@ from django.utils.text import slugify
 
 from apps.posts.models import Post, Asset
 from .models import UserInteraction, PostRecommendationCache
+from ..posts.querysets import annotate_post_metrics
 
 User = get_user_model()
 
@@ -290,6 +291,8 @@ class PostRecommender:
         ).exclude(
             author_id__in=self.user.blocked.values_list("id", flat=True)
         )
+
+        base_qs = annotate_post_metrics(base_qs, self.user)
 
         if window_days > 0:
             base_qs = base_qs.filter(
@@ -606,6 +609,8 @@ class PostRecommender:
             community_note_of__isnull=True,
             published_at__lte=now,
         )
+
+        base_qs = annotate_post_metrics(base_qs, self.user)
 
         candidate_window_days = self._as_int("RECOMMENDATIONS.CANDIDATE_WINDOW_DAYS", 30)
 

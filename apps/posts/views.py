@@ -25,27 +25,38 @@ class PostCreateView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
 
         try:
-            post = serializer.save()
+            # Wrap in a transaction to prevent orphaned posts if S3 fails
+            with transaction.atomic():
+                post = serializer.save()
 
-            post = annotate_post_metrics(
-                Post.objects.filter(pk=post.pk),
-                request.user,
-            ).get()
+                # Re-fetch with annotations so PostSerializer methods work safely
+                post = annotate_post_metrics(
+                    Post.objects.filter(pk=post.pk),
+                    request.user,
+                ).first()
 
-            upload_data = []
-            for asset in post.assets.all():
-                # Generate the upload link for this specific file
-                link = generate_presigned_url(asset.file_key, asset.content_type)
-                upload_data.append({"asset_id": asset.id, "name": asset.name, "url": link})
+                upload_data = []
+                for asset in post.assets.all():
+                    link = generate_presigned_url(asset.file_key, asset.content_type)
+                    upload_data.append({
+                        "asset_id": asset.id,
+                        "name": asset.name,
+                        "url": link
+                    })
+
+                # Serialize INSIDE the transaction to ensure it succeeds before committing
+                post_data = self.get_serializer(post).data
+
         except Exception as e:
-            logger.info(f"Post create error: {e}")
+            # Use .exception() instead of .info() so you get the full stack trace in your logs
+            logger.exception("Post create error")
             return Response(
                 {"detail": "Could not create post or generate upload URLs."},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
         return Response(
-            {"post": self.get_serializer(post).data, "uploads": upload_data},
+            {"post": post_data, "uploads": upload_data},
             status=status.HTTP_201_CREATED,
         )
 

@@ -422,10 +422,10 @@ LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
-        # 'verbose': {
-        #     'format': '{levelname} {asctime} {module} {message}',
-        #     'style': '{',
-        # },
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
         "json": {
             "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
             "format": "%(asctime)s %(levelname)s %(name)s %(module)s %(message)s",
@@ -433,15 +433,15 @@ LOGGING = {
     },
     'handlers': {
         'console': {
-            'level': LOG_LEVEL,
+            'level': 'DEBUG',
             'class': 'logging.StreamHandler',
-            'formatter': 'json',
+            'formatter': 'verbose',
         },
     },
     'loggers': {
         'apps.broadcast': {
             'handlers': ['console'],
-            'level': LOG_LEVEL,
+            'level': 'DEBUG',
             'propagate': True,
         },
         'apps.recommendations': {
