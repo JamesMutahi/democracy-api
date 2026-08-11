@@ -1,38 +1,50 @@
-# Use the official Python runtime image
+# Use the official Python runtime image.
 FROM python:3.12.3
 
-# Install geospatial libraries
-RUN apt-get update && apt-get install -y binutils libproj-dev gdal-bin
+# Python runtime behavior.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-# Create the app directory
-RUN mkdir /democracy
+# Install geospatial and PostgreSQL client library dependencies.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    binutils \
+    libproj-dev \
+    gdal-bin \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set the working directory inside the container
+# Create a non-root application user.
+RUN useradd --create-home --shell /usr/sbin/nologin appuser
+
+# Create and set the application working directory.
 WORKDIR /democracy
 
-# Set environment variables
-# Prevents Python from writing pyc files to disk
-ENV PYTHONDONTWRITEBYTECODE=1
-#Prevents Python from buffering stdout and stderr
-ENV PYTHONUNBUFFERED=1
+# Upgrade pip.
+RUN python -m pip install --upgrade pip
 
-# Upgrade pip
-RUN pip install --upgrade pip
+# Copy requirements first for better Docker layer caching.
+COPY requirements.txt requirements.txt
 
-# Copy the Django project  and install dependencies
-COPY ../requirements.txt  /democracy/
+# Install Python dependencies.
+RUN python -m pip install --no-cache-dir -r requirements.txt
 
-# run this command to install all dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy the rest of the application.
+COPY . .
 
-# Copy the Django project to the container
-COPY .. /democracy/
-
-# Expose the Django port
-EXPOSE 8000
-
-# Make the entrypoint script executable
+# Make the entrypoint script executable.
 RUN chmod +x docker/entrypoint.sh
 
-# Use entrypoint to migrate
-ENTRYPOINT ["./docker/entrypoint.sh"]
+# Create a writable directory for Celery Beat schedule persistence.
+RUN mkdir -p /data && chown -R appuser:appuser /democracy /data
+
+# Run the application as a non-root user.
+USER appuser
+
+# Expose the Django/Uvicorn port.
+EXPOSE 8000
+
+# Use an absolute entrypoint path.
+ENTRYPOINT ["/democracy/docker/entrypoint.sh"]
+
+# Default command if no Compose command is provided.
+CMD ["uvicorn", "project.asgi:application", "--host", "0.0.0.0", "--port", "8000", "--workers", "3", "--proxy-headers", "--forwarded-allow-ips=*"]

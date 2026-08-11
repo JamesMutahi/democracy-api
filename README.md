@@ -49,4 +49,6 @@ TUNNEL_TOKEN='TUNNEL_TOKEN'
 cd docker
 docker-compose config 
 docker compose up --build
+
+docker compose --profile monitoring up -d flower
 ```

@@ -1,0 +1,52 @@
+# Git
+.git
+.gitignore
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+.eggs/
+*.egg-info/
+
+# Testing / tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node, if present
+node_modules/
+
+# Local data / volumes
+postgres_data/
+redis_data/
+celery_beat_data/
+media/
+staticfiles/
+
+# Docker / compose files are not needed inside the app image
+docker-compose*.yml
+compose*.yml
+Dockerfile
+.dockerignore
+
+# Init scripts are used by the db container via bind mount,
+# but usually do not need to be baked into the app image.
+docker/init-scripts/
+
+# Docs
+README.md
+LICENSE
+docs/

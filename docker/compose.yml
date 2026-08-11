@@ -1,109 +1,273 @@
 name: democracy
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 x-environment: &shared-environment
-  SENTRY_DSN: ${SENTRY_DSN}
-  SENTRY_RELEASE: ${SENTRY_RELEASE}
-  SECRET_KEY: ${SECRET_KEY}
-  DEBUG: ${DEBUG}
-  MODE: ${MODE}
-  ALLOWED_HOSTS: ${ALLOWED_HOSTS}
-  ORIGINS: ${ORIGINS}
-  DB_NAME: ${DB_NAME}
-  DB_USER: ${DB_USER}
-  DB_PASSWORD: ${DB_PASSWORD}
-  DB_HOST: "db"
+  SENTRY_DSN: ${SENTRY_DSN:-}
+  SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+  DEBUG: ${DEBUG:-0}
+  MODE: ${MODE:-production}
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS:?ALLOWED_HOSTS is required}
+  ORIGINS: ${ORIGINS:-}
+
+  DB_NAME: ${DB_NAME:?DB_NAME is required}
+  DB_USER: ${DB_USER:?DB_USER is required}
+  DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+  DB_HOST: db
   DB_PORT: "5432"
 
 services:
   db:
     image: postgis/postgis:17-3.5
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${DB_NAME:?DB_NAME is required}
+      POSTGRES_USER: ${DB_USER:?DB_USER is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
     volumes:
-      - ./init-scripts:/docker-entrypoint-initdb.d
+      - ./init-scripts:/docker-entrypoint-initdb.d:ro
       - postgres_data:/var/lib/postgresql/data
-    env_file:
-      - .env
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - backend
+    logging: *default-logging
+
+    # Uncomment only if you need local direct DB access.
+    # Binds to localhost only, not publicly.
+    # ports:
+    #   - "127.0.0.1:5432:5432"
 
   redis:
-    image: redis:alpine
-    ports:
-      - "6379:6379"
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --maxmemory-policy
+      - noeviction
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - backend
+    logging: *default-logging
+
+    # Uncomment only if you need local direct Redis access.
+    # Binds to localhost only, not publicly.
+    # ports:
+    #   - "127.0.0.1:6379:6379"
 
   web:
     build:
       context: ..
       dockerfile: ./docker/Dockerfile
-    container_name: democracy_web
-    command: uvicorn project.asgi:application --host 0.0.0.0 --port 8000 --workers 3
-    ports:
-      - "8000:8000"
+    restart: unless-stopped
+    command:
+      - uvicorn
+      - project.asgi:application
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --workers
+      - "3"
+      - --proxy-headers
+      - "--forwarded-allow-ips=*"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       <<: *shared-environment
-    env_file:
-      - .env
+      RUN_DB_SETUP: ${RUN_DB_SETUP:-true}
+      LOAD_FIXTURES: ${LOAD_FIXTURES:-true}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; socket.create_connection(('127.0.0.1', 8000), timeout=3)"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - frontend
+      - backend
+    logging: *default-logging
+
+    # If you need direct local access to Django/Uvicorn:
+    # ports:
+    #   - "127.0.0.1:8000:8000"
+
+    # If your app stores user-uploaded media files:
+    # volumes:
+    #   - media_data:/democracy/media
 
   celery:
     build:
       context: ..
       dockerfile: ./docker/Dockerfile
-    command: celery -A project worker --loglevel=info
-    volumes:
-      - .:/app
+    restart: unless-stopped
+    command:
+      - celery
+      - "-A"
+      - project
+      - worker
+      - --loglevel=info
+      - --max-tasks-per-child=1000
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_healthy
     environment:
       <<: *shared-environment
-    depends_on:
-      - db
-      - redis
-      - web
+      RUN_DB_SETUP: "false"
+      LOAD_FIXTURES: "false"
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - backend
+    logging: *default-logging
+
+    # Development-only bind mount.
+    # Only use this if you want live code reloading for Celery workers.
+    # Remove in production.
+    #
+    # If compose.yml is inside docker/, use:
+    #   - ..:/democracy
+    #
+    # If compose.yml is at repository root, use:
+    #   - .:/democracy
+    #
+    # volumes:
+    #   - ..:/democracy
 
   celery_beat:
     build:
       context: ..
       dockerfile: ./docker/Dockerfile
-    command: celery -A project beat --loglevel=info
-    volumes:
-      - .:/app
+    restart: unless-stopped
+    command:
+      - celery
+      - "-A"
+      - project
+      - beat
+      - --loglevel=info
+      - --schedule=/data/celerybeat-schedule
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_healthy
     environment:
       <<: *shared-environment
-    depends_on:
-      - db
-      - redis
-      - web
-      - celery
+      RUN_DB_SETUP: "false"
+      LOAD_FIXTURES: "false"
+    volumes:
+      - celery_beat_data:/data
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - backend
+    logging: *default-logging
+
+    # Development-only bind mount. See note under celery service.
+    # volumes:
+    #   - ..:/democracy
 
   flower:
+    # Flower is disabled by default because it is powerful and should be protected.
+    # Start it explicitly with:
+    #   docker compose --profile monitoring up -d flower
+    profiles: [ "monitoring" ]
     build:
       context: ..
       dockerfile: ./docker/Dockerfile
-    command: celery -A project flower --port=5555
-    ports:
-      - "5555:5555"
+    restart: unless-stopped
+    command:
+      - celery
+      - "-A"
+      - project
+      - flower
+      - --port=5555
+      - --address=0.0.0.0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       <<: *shared-environment
-    depends_on:
-      - db
-      - redis
-      - web
-      - celery
-      - celery_beat
+      RUN_DB_SETUP: "false"
+      LOAD_FIXTURES: "false"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - backend
+    logging: *default-logging
+
+    # Do not expose Flower publicly.
+    # If you need local access, use localhost only:
+    # ports:
+    #   - "127.0.0.1:5555:5555"
+
+    # If exposing Flower even internally:
+    # Add basic auth or put it behind Cloudflare Access.
+    # Example:
+    # command:
+    #   - celery
+    #   - "-A"
+    #   - project
+    #   - flower
+    #   - --port=5555
+    #   - --address=0.0.0.0
+    #   - --basic-auth=${FLOWER_USERNAME}:${FLOWER_PASSWORD}
 
   tunnel:
-    image: cloudflare/cloudflared:latest
-    container_name: cloudflare-tunnel
+    image: cloudflare/cloudflared:2026.7.3
     restart: unless-stopped
     command: tunnel run
     environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?TUNNEL_TOKEN is required}
     depends_on:
-      - web
+      web:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - frontend
+    logging: *default-logging
 
 volumes:
   postgres_data:
+  celery_beat_data:
+  # media_data:
+
+networks:
+  frontend:
+  backend:
