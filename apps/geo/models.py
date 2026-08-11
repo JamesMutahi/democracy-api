@@ -2,7 +2,6 @@ from django.contrib.gis.db import models
 from django.core.cache import cache
 from django.db.models.signals import post_delete, post_save
 
-
 GEO_CACHE_VERSION_KEY = "geo:cache-version"
 
 
@@ -10,9 +9,6 @@ class County(models.Model):
     name = models.CharField(max_length=255, db_index=True)
     center = models.PointField(srid=4326, null=True, blank=True)
     boundaries = models.MultiPolygonField(null=True, blank=True)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["name"]
@@ -36,9 +32,6 @@ class Constituency(models.Model):
     )
     boundaries = models.MultiPolygonField(null=True, blank=True)
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
     class Meta:
         ordering = ["name"]
         verbose_name = "constituency"
@@ -60,9 +53,6 @@ class Ward(models.Model):
         related_name="wards",
     )
     boundaries = models.MultiPolygonField(null=True, blank=True)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["name"]

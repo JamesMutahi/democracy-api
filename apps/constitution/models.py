@@ -18,9 +18,6 @@ class Section(models.Model):
                                related_name="subsections",
                                )
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
     class Meta:
         db_table = "Section"
         ordering = ["parent_id", "id"]
@@ -59,11 +56,7 @@ class Section(models.Model):
             while ancestor is not None:
                 if ancestor.pk in seen:
                     raise ValidationError(
-                        {
-                            "parent": (
-                                "This parent would create a circular hierarchy."
-                            )
-                        }
+                        {"parent": "This parent would create a circular hierarchy."}
                     )
 
                 seen.add(ancestor.pk)
