@@ -13,9 +13,11 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
-import sentry_sdk
 from decouple import config, Csv
-from sentry_sdk.integrations.django import DjangoIntegration
+from sentry_sdk.integrations.celery import CeleryIntegration
+from sentry_sdk.integrations.redis import RedisIntegration
+
+from apps.recommendations.conf import POST_RECOMMENDER_CONFIG, FOLLOW_RECOMMENDER_CONFIG
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -27,20 +29,35 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = config('SECRET_KEY', default="NO-SECRET")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config('DEBUG', cast=bool, default=True)
+DEBUG = config('DEBUG', cast=bool, default=False)
 
 MODE = config('MODE', default="dev")
+
+if MODE.lower() in {"prod", "production"} and DEBUG:
+    raise ValueError("DEBUG must not be True in production")
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv())
 
 # Sentry
-sentry_sdk.init(
-    dsn=config('SENTRY_DSN'),
-    integrations=[DjangoIntegration()],
-    traces_sample_rate=0.2,
-    environment=MODE,
-    release=config("SENTRY_RELEASE"),
-)
+SENTRY_DSN = config("SENTRY_DSN", default="")
+SENTRY_RELEASE = config("SENTRY_RELEASE", default="local")
+
+if SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[
+            DjangoIntegration(),
+            CeleryIntegration(),
+            RedisIntegration(),
+        ],
+        traces_sample_rate=0.2,
+        environment=MODE,
+        release=SENTRY_RELEASE,
+        send_default_pii=False,
+    )
 
 if os.name == 'nt':
     OSGEO4W = r"C:\OSGeo4W"
@@ -99,7 +116,7 @@ INSTALLED_APPS = [
 ]
 
 if MODE == 'dev' and DEBUG:
-    DATA_UPLOAD_MAX_NUMBER_FIELDS = None
+    DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000
 
 AUTH_USER_MODEL = 'users.User'
 
@@ -114,8 +131,20 @@ SITE_ID = 1
 # CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOWED_ORIGINS = config('ORIGINS', cast=Csv())
 CSRF_TRUSTED_ORIGINS = config('ORIGINS', cast=Csv())
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-SECURE_SSL_REDIRECT = True
+
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+    SECURE_HSTS_SECONDS = 60 * 60 * 24 * 30
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = False
+
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_REFERRER_POLICY = "same-origin"
+    X_FRAME_OPTIONS = "DENY"
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -137,6 +166,7 @@ TEMPLATES = [
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
+                'django.template.context_processors.debug',
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
@@ -153,13 +183,18 @@ ASGI_APPLICATION = 'project.asgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.contrib.gis.db.backends.postgis',
-        'NAME': config('DB_NAME'),
-        'USER': config('DB_USER'),
-        'PASSWORD': config('DB_PASSWORD'),
-        'HOST': config('DB_HOST'),
-        'PORT': config('DB_PORT'),
+    "default": {
+        "ENGINE": "django.contrib.gis.db.backends.postgis",
+        "NAME": config("DB_NAME"),
+        "USER": config("DB_USER"),
+        "PASSWORD": config("DB_PASSWORD"),
+        "HOST": config("DB_HOST"),
+        "PORT": config("DB_PORT"),
+        "CONN_MAX_AGE": config("DB_CONN_MAX_AGE", cast=int, default=0),
+        "CONN_HEALTH_CHECKS": True,
+        "OPTIONS": {
+            "sslmode": config("DB_SSL_MODE", default="prefer"),
+        },
     }
 }
 
@@ -171,9 +206,9 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_FILTER_BACKENDS': ('django_filters.rest_framework.DjangoFilterBackend',),
-    'DEFAULT_SCHEMA_CLASS': 'rest_framework.schemas.coreapi.AutoSchema',
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'NON_FIELD_ERRORS_KEY': 'error',
-    'DATETIME_FORMAT': '%Y-%m-%d %H:%M:%S',
+    'DATETIME_FORMAT': 'iso-8601',
     'TEST_REQUEST_DEFAULT_FORMAT': 'json',
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.AnonRateThrottle',
@@ -182,14 +217,23 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/hour',
         'user': '1000/hour',
-    }
+    },
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 20,
+    "MAX_PAGE_SIZE": 100,
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
-    'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": config("JWT_SIGNING_KEY", default=SECRET_KEY),
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
 }
 
 # Password validation
@@ -213,7 +257,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-uk'
+LANGUAGE_CODE = 'en-ke'
 
 TIME_ZONE = 'Africa/Nairobi'
 
@@ -226,34 +270,39 @@ USE_TZ = True
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [("redis", 6379)],
-        },
-    },
-}
+REDIS_URL = config("REDIS_URL", default="redis://redis:6379")
+REDIS_POOL_MAX_CONNECTIONS = 100
 
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://redis:6379",
+        "LOCATION": f"{REDIS_URL}/1",
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        }
+            "CONNECTION_POOL_KWARGS": {
+                "max_connections": REDIS_POOL_MAX_CONNECTIONS,
+            },
+        },
+        "KEY_PREFIX": "democracy_cache",
+        "TIMEOUT": 60 * 5,
     }
 }
 
-REDIS_URL = "redis://redis:6379"
-REDIS_POOL_MAX_CONNECTIONS = 100
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [f"{REDIS_URL}/2"],
+            "capacity": 1500,
+            "expiry": 10,
+        },
+    },
+}
 
-# Firebase Admin
-import firebase_admin
-from firebase_admin import credentials
-
-cred = credentials.Certificate("serviceAccountKey.json")
-firebase_admin.initialize_app(cred)
+FIREBASE_SERVICE_ACCOUNT_PATH = config(
+    "FIREBASE_SERVICE_ACCOUNT_PATH",
+    default=str(BASE_DIR / "serviceAccountKey.json"),
+)
 
 FCM_DJANGO_SETTINGS = {
     "DEFAULT_FIREBASE_APP": None,
@@ -265,20 +314,36 @@ FCM_DJANGO_SETTINGS = {
 CELERY_TIMEZONE = 'Africa/Nairobi'
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
+CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60
+
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 
 # django-celery-results
 CELERY_BROKER_URL = 'redis://redis:6379'
 CELERY_RESULT_BACKEND = 'redis://redis:6379'
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BROKER_POOL_LIMIT = 10
+CELERY_RESULT_EXPIRES = 60 * 60 * 24  # 1 day
 
 # AWS
 AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY')
 AWS_STORAGE_BUCKET_NAME = config('AWS_STORAGE_BUCKET_NAME')
 AWS_S3_REGION_NAME = config('AWS_S3_REGION_NAME')
-# AWS_S3_SIGNATURE_VERSION = config('AWS_S3_SIGNATURE_VERSION')
+AWS_S3_SIGNATURE_VERSION = config('AWS_S3_SIGNATURE_VERSION', default="s3v4")
 AWS_S3_ENDPOINT_URL = config('AWS_S3_ENDPOINT_URL')
 AWS_S3_CUSTOM_DOMAIN = config('AWS_S3_CUSTOM_DOMAIN')
+
+AWS_S3_OBJECT_PARAMETERS = {
+    "CacheControl": "max-age=31536000",
+}
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
@@ -313,6 +378,8 @@ RECORDING_STATUS_SLEEP_SECONDS = 0.1
 # Set to 0 to disable.
 STALE_RECORDING_SESSION_HOURS = 24
 
+DATA_UPLOAD_MAX_MEMORY_SIZE = 30 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 30 * 1024 * 1024
 
 CHAT_MAX_ASSETS_PER_MESSAGE = 10
 CHAT_MAX_UPLOAD_SIZE = 25 * 1024 * 1024  # 25 MB
@@ -345,256 +412,52 @@ STORAGES = {
     },
 }
 
-# Recommendation System Settings
-POST_RECOMMENDER_CONFIG = {
-    "CACHE": {
-        "KEY_PREFIX": "user_recs_",
-        "TIMEOUT": 60 * 30,
-        "TRENDING_TIMEOUT": 600,
-    },
+POST_RECOMMENDER_CONFIG = POST_RECOMMENDER_CONFIG
 
-    "RECOMMENDATIONS": {
-        "DEFAULT_LIMIT": 20,
-        "SCORED_LIMIT": 50,
-        "DIVERSITY_FACTOR": 0.08,
-    },
+FOLLOW_RECOMMENDER_CONFIG = FOLLOW_RECOMMENDER_CONFIG
 
-    "TRENDING_POSTS": {
-        "DEFAULT_LIMIT": 20,
-        "WINDOW_DAYS": 365,
-        "WEIGHTS": {
-            "likes": 3.0,
-            "bookmarks": 3.0,
-            "clicks": 2.0,
-            "views": 1.0,
-            "reposts": 5.0,
-        },
-    },
-
-    "TRENDING_HASHTAGS": {
-        "DEFAULT_LIMIT": 10,
-        "WINDOW_DAYS": 7,
-        "CACHE_TIMEOUT": 600,
-    },
-
-    "TRENDING_WORDS": {
-        "DEFAULT_LIMIT": 15,
-        "WINDOW_DAYS": 7,
-        "MIN_FREQUENCY": 3,
-        "MIN_WORD_LENGTH": 4,
-        "CACHE_TIMEOUT": 600,
-
-        "STOP_WORDS": [
-            "the", "and", "or", "but", "in", "on", "at", "to", "for",
-            "of", "with", "by", "from", "up", "about", "into", "over",
-            "after", "this", "that", "these", "those", "is", "are",
-            "was", "were", "be", "been", "being", "have", "has", "had",
-            "do", "does", "did", "will", "would", "shall", "should",
-            "can", "could", "may", "might", "must", "a", "an", "i",
-            "you", "he", "she", "it", "we", "they", "me", "him", "her",
-            "us", "them", "my", "your", "his", "its", "our", "their",
-            "not", "no", "yes", "if", "then", "else", "when", "where",
-            "how", "what", "who", "which", "why", "all", "any", "both",
-            "each", "few", "more", "most", "other", "some", "such",
-            "than", "too", "very", "just", "now", "so", "as", "like",
-            "get", "got", "make", "made", "one", "two", "three", "also",
-            "because", "however", "although", "still", "even", "back",
-            "well", "say",
-        ],
-
-        "EXCLUDED_WORDS": [
-            "http",
-            "https",
-            "www",
-            "com",
-            "net",
-            "org",
-            "gov",
-            "edu",
-            "io",
-            "co",
-            "uk",
-            "ca",
-            "au",
-            "de",
-            "fr",
-            "png",
-            "jpg",
-            "jpeg",
-            "gif",
-            "pdf",
-            "html",
-            "php",
-            "asp",
-            "email",
-            "mailto",
-            "utm",
-            "fbclid",
-            "gclid",
-        ],
-    },
-
-    "TRENDING_TOPICS": {
-        "DEFAULT_LIMIT": 30,
-        "WINDOW_DAYS": 7,
-    },
-
-    # Final recommendation score weights
-    "SCORING_WEIGHTS": {
-        "location": 0.25,
-        "content_type": 0.18,
-        "media": 0.12,
-        "following": 0.15,
-        "profile_visit": 0.10,
-        "click": 0.08,
-        "engagement": 0.07,
-        "freshness": 0.10,
-        "similarity": 0.05,
-        "note_quality": 0.02,
-    },
-
-    # Engagement score used inside main recommendations
-    "ENGAGEMENT_WEIGHTS": {
-        "likes": 2.0,
-        "bookmarks": 2.0,
-        "views": 0.5,
-        "reposts": 3.0,
-    },
-
-    "LOCATION_SCORES": {
-        "WARD": 1.0,
-        "CONSTITUENCY": 0.85,
-        "COUNTY": 0.65,
-        "DEFAULT": 0.45,
-        "NO_LOCATION": 0.5,
-    },
-
-    "CONTENT_TYPE_SCORES": {
-        "BALLOT": 0.95,
-        "PETITION": 0.85,
-        "BROADCAST": 0.80,
-        "SURVEY": 0.75,
-        "SECTION": 0.70,
-        "DEFAULT": 0.40,
-    },
-
-    "MEDIA_SCORES": {
-        "VIDEO": 0.95,
-        "IMAGE": 0.85,
-        "ANY_ASSET": 0.70,
-        "DEFAULT": 0.35,
-    },
-
-    "FRESHNESS": {
-        "RECENT_HOURS": 2,
-        "DAY_HOURS": 24,
-        "WEEK_HOURS": 168,
-        "RECENT_SCORE": 1.0,
-        "DAY_SCORE": 0.8,
-        "WEEK_SCORE": 0.5,
-        "OLD_SCORE": 0.2,
-    },
-
-    "SIMILARITY_SCORES": {
-        "BALLOT": 0.75,
-        "SURVEY": 0.75,
-        "PETITION": 0.70,
-        "BROADCAST": 0.80,
-        "DEFAULT": 0.30,
-    },
-
-    "NOTE_QUALITY": {
-        "MIN_HELPFUL_SCORE": 0.7,
-    },
-}
-
-FOLLOW_RECOMMENDER_CONFIG = {
-    "CACHE": {
-        "KEY_PREFIX": "user_follow_recs_",
-        "TIMEOUT": 60 * 60,  # 1 hour
-    },
-
-    "DEFAULT_LIMIT": 15,
-    "SCORED_LIMIT": 80,
-    "DIVERSITY_FACTOR": 0.10,
-
-    # Final follow recommendation weights.
-    # These should sum to 1.0.
-    "WEIGHTS": {
-        "location": 0.25,
-        "mutual": 0.30,
-        "profile_visit": 0.15,
-        "engagement": 0.10,
-        "recency": 0.15,
-        "activity": 0.05,
-    },
-
-    "LOCATION_SCORES": {
-        "WARD": 1.0,
-        "CONSTITUENCY": 0.85,
-        "COUNTY": 0.65,
-        "DEFAULT": 0.45,
-        "NO_LOCATION": 0.50,
-    },
-
-    "MUTUAL_SCORE_TIERS": [
-        {"MIN_MUTUALS": 5, "SCORE": 1.0},
-        {"MIN_MUTUALS": 3, "SCORE": 0.85},
-        {"MIN_MUTUALS": 1, "SCORE": 0.65},
-    ],
-
-    "PROFILE_VISIT": {
-        "SCORE": 0.85,
-    },
-
-    "RECENCY": {
-        "ACTIVE_DAYS": 7,
-        "ACTIVE_SCORE": 0.8,
-        "SEMI_ACTIVE_DAYS": 30,
-        "SEMI_ACTIVE_SCORE": 0.5,
-        "DEFAULT_SCORE": 0.2,
-    },
-
-    # Engagement is normalized/capped so it cannot dominate the score.
-    "ENGAGEMENT": {
-        "LIKE_WEIGHT": 0.6,
-        "CLICK_WEIGHT": 0.4,
-        "CAP": 1.0,
-    },
-
-    # Activity is normalized/capped.
-    # Example: 20 published posts => activity score of 1.0.
-    "ACTIVITY": {
-        "PUBLISHED_POST_CAP": 20,
-    },
-}
+LOG_LEVEL = 'DEBUG' if DEBUG else 'INFO'
 
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {message}',
-            'style': '{',
+        # 'verbose': {
+        #     'format': '{levelname} {asctime} {module} {message}',
+        #     'style': '{',
+        # },
+        "json": {
+            "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
+            "format": "%(asctime)s %(levelname)s %(name)s %(module)s %(message)s",
         },
     },
     'handlers': {
         'console': {
-            'level': 'DEBUG',
+            'level': LOG_LEVEL,
             'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
+            'formatter': 'json',
         },
     },
     'loggers': {
         'apps.broadcast': {
             'handlers': ['console'],
-            'level': 'DEBUG',
+            'level': LOG_LEVEL,
             'propagate': True,
         },
         'apps.recommendations': {
             'handlers': ['console'],
             'level': 'INFO',
             'propagate': True,
+        },
+        "django.request": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+        "django.security": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
         },
         'django.channels': {
             'handlers': ['console'],

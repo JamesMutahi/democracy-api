@@ -20,7 +20,7 @@ User = get_user_model()
 # Helpers
 # ---------------------------------------------------------------------
 
-def _delay_task(task, *args, **kwargs):
+def delay_on_commit(task, *args, **kwargs):
     """
     Delay Celery task only after DB commit.
     """
@@ -37,7 +37,7 @@ def _enqueue_once(task, key: str, timeout: int, *args, **kwargs):
         should_enqueue = True
 
     if should_enqueue:
-        _delay_task(task, *args, **kwargs)
+        delay_on_commit(task, *args, **kwargs)
 
 
 # ---------------------------------------------------------------------
@@ -69,39 +69,39 @@ def create_user_preferences(sender, instance, created, **kwargs):
 @receiver(post_save, sender=Ballot)
 def ballot_saved(sender, instance, created, **kwargs):
     if created:
-        _delay_task(tasks.create_ballot_notifications_on_create, instance.id)
+        delay_on_commit(tasks.create_ballot_notifications_on_create, instance.id)
 
 
 @receiver(post_save, sender=Survey)
 def survey_saved(sender, instance, created, **kwargs):
     if created:
-        _delay_task(tasks.create_survey_notifications_on_create, instance.id)
+        delay_on_commit(tasks.create_survey_notifications_on_create, instance.id)
 
 
 @receiver(post_save, sender=Broadcast)
 def broadcast_saved(sender, instance, created, **kwargs):
     if created:
         # This task now handles both normal broadcasts and livestreams.
-        _delay_task(tasks.create_broadcast_notifications_on_create, instance.id)
+        delay_on_commit(tasks.create_broadcast_notifications_on_create, instance.id)
 
 
 @receiver(post_save, sender=Message)
 def message_saved(sender, instance, created, **kwargs):
     if created:
-        _delay_task(tasks.create_message_notifications_on_create, instance.id)
+        delay_on_commit(tasks.create_message_notifications_on_create, instance.id)
 
 
 @receiver(post_save, sender=Post)
 def post_saved(sender, instance, created, **kwargs):
     if created:
-        _delay_task(tasks.create_post_notifications_on_create, instance.id)
+        delay_on_commit(tasks.create_post_notifications_on_create, instance.id)
 
 
 @receiver(post_save, sender=Petition)
 def petition_saved(sender, instance, created, update_fields=None, **kwargs):
     if created:
         instance._previous_status = instance.is_open
-        _delay_task(tasks.create_petition_notifications_on_create, instance.id)
+        delay_on_commit(tasks.create_petition_notifications_on_create, instance.id)
         return
 
     if update_fields is not None and "is_open" not in update_fields:
@@ -110,7 +110,7 @@ def petition_saved(sender, instance, created, update_fields=None, **kwargs):
     previous = getattr(instance, "_previous_status", None)
     if instance.is_open != previous:
         instance._previous_status = instance.is_open
-        _delay_task(tasks.notify_on_petition_status_change, instance.id, instance.is_open)
+        delay_on_commit(tasks.notify_on_petition_status_change, instance.id, instance.is_open)
 
 
 # ---------------------------------------------------------------------
@@ -162,10 +162,10 @@ def on_interaction(sender, instance, action, pk_set, **kwargs):
                 _enqueue_once(tasks.notify_on_like, key, 5, pk, instance.id)
 
             elif sender == User.following.through:
-                _delay_task(tasks.notify_on_follow, instance.id, pk)
+                delay_on_commit(tasks.notify_on_follow, instance.id, pk)
 
             elif sender == Petition.supporters.through:
-                _delay_task(tasks.notify_on_support, pk, instance.id)
+                delay_on_commit(tasks.notify_on_support, pk, instance.id)
 
     elif action == "post_remove":
         for pk in pk_set:
@@ -174,10 +174,10 @@ def on_interaction(sender, instance, action, pk_set, **kwargs):
                 _enqueue_once(tasks.delete_notification_on_unlike, key, 5, pk, instance.id)
 
             elif sender == User.following.through:
-                _delay_task(tasks.delete_notification_on_unfollow, instance.id, pk)
+                delay_on_commit(tasks.delete_notification_on_unfollow, instance.id, pk)
 
             elif sender == Petition.supporters.through:
-                _delay_task(tasks.delete_notification_on_support_removal, pk, instance.id)
+                delay_on_commit(tasks.delete_notification_on_support_removal, pk, instance.id)
 
 
 # ---------------------------------------------------------------------
@@ -194,7 +194,7 @@ def notification_deleted(sender, instance, **kwargs):
     recipient_id = instance.recipient_id
 
     if notification_id and recipient_id:
-        _delay_task(
+        delay_on_commit(
             tasks.send_notification_delete,
             notification_id=notification_id,
             recipient_id=recipient_id,
@@ -203,4 +203,4 @@ def notification_deleted(sender, instance, **kwargs):
 
 @receiver(post_delete, sender=Message)
 def message_deleted(sender, instance, **kwargs):
-    _delay_task(tasks.delete_notification_on_message_deletion, instance.id)
+    delay_on_commit(tasks.delete_notification_on_message_deletion, instance.id)

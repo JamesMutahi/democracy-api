@@ -16,6 +16,7 @@ from apps.notification.serializers import NotificationSerializer
 from apps.petition.models import Petition
 from apps.posts.models import Post
 from apps.survey.models import Survey
+from apps.utils.firebase import get_firebase_app
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -117,6 +118,7 @@ def send_push_to_user(user, title, body, data=None):
         return
 
     try:
+        get_firebase_app()
         devices.send_message(
             fireMessage(
                 notification=fireNotification(title=title, body=body),
@@ -140,6 +142,7 @@ def send_push_to_user_ids(user_ids, title: str, body: str, data: dict | None = N
         return
 
     try:
+        get_firebase_app()
         devices.send_message(
             fireMessage(
                 notification=fireNotification(

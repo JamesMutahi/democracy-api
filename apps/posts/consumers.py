@@ -746,7 +746,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
             upvotes = post.upvotes.count()
             downvotes = post.downvotes.count()
 
-        self._signal_post_update(post)
+            self._signal_post_update(post)
         return {
             'pk': pk,
             'is_upvoted': False,
