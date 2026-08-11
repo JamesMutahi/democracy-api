@@ -69,17 +69,31 @@ class BallotSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_total_votes(obj):
-        return obj.total_votes
+        if hasattr(obj, "total_votes"):
+            return obj.total_votes
+
+        from django.db.models import Count
+        result = obj.options.aggregate(total=Count("votes_through"))
+        return result["total"] or 0
 
     def get_voted_option(self, obj):
+        if hasattr(obj, "voted_option_id"):
+            return obj.voted_option_id
+
         user = get_current_user(self.context)
         vote = OptionVote.objects.filter(
-            user=user, option__ballot=obj
+            user=user,
+            option__ballot=obj,
+        ).order_by(
+            "-voted_at"
         ).select_related(
-            'option'
+            "option"
         ).first()
+
         return vote.option_id if vote else None
 
     def get_reason(self, obj):
-        reason = Reason.objects.filter(ballot=obj, user=get_current_user(self.context)).first()
-        return ReasonSerializer(reason, context=self.context).data if reason else None
+        reasons = getattr(obj, "user_reason", [])
+        if not reasons:
+            return None
+        return ReasonSerializer(reasons[0], context=self.context).data

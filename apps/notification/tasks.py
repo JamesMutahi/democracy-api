@@ -10,6 +10,7 @@ from fcm_django.models import FCMDevice
 from firebase_admin.messaging import Message as fireMessage, Notification as fireNotification
 
 from apps.ballot.models import Ballot
+from apps.ballot.querysets import annotate_ballot_metrics
 from apps.broadcast.models import Broadcast
 from apps.chat.models import Message
 from apps.notification.models import Notification, Preferences
@@ -184,6 +185,10 @@ def _serialize_notification(notification: Notification) -> dict:
         Prefetch(
             "post",
             queryset=annotate_post_metrics(Post.objects.all(), notification.recipient),
+        ),
+        Prefetch(
+            "ballot",
+            queryset=annotate_ballot_metrics(Ballot.objects.all(), notification.recipient),
         )
     ).first()
     return NotificationSerializer(
