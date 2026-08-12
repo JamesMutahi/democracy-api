@@ -433,7 +433,7 @@ LOGGING = {
     },
     'handlers': {
         'console': {
-            'level': 'DEBUG',
+            'level': LOG_LEVEL,
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
@@ -441,7 +441,7 @@ LOGGING = {
     'loggers': {
         'apps.broadcast': {
             'handlers': ['console'],
-            'level': 'DEBUG',
+            'level': LOG_LEVEL,
             'propagate': True,
         },
         'apps.recommendations': {

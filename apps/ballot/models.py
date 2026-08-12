@@ -59,50 +59,106 @@ class Ballot(BaseModel):
     def __str__(self):
         return self.title
 
+    @property
+    def is_open(self):
+        now = timezone.now()
+        return self.is_active and self.start_time <= now < self.end_time
+
+    def clean(self):
+        super().clean()
+
+        if self.start_time and self.end_time and self.end_time <= self.start_time:
+            raise ValidationError({
+                "end_time": _("End time must be after start time."),
+            })
+
+        if self.constituency_id and self.county_id:
+            constituency_county_id = getattr(self.constituency, "county_id", None)
+            if constituency_county_id is not None and constituency_county_id != self.county_id:
+                raise ValidationError({
+                    "constituency": _(
+                        "The selected constituency does not belong to the selected county."
+                    ),
+                })
+
+        if self.ward_id:
+            if self.constituency_id:
+                ward_constituency_id = getattr(self.ward, "constituency_id", None)
+                if ward_constituency_id is not None and ward_constituency_id != self.constituency_id:
+                    raise ValidationError({
+                        "ward": _(
+                            "The selected ward does not belong to the selected constituency."
+                        ),
+                    })
+
+            if self.county_id:
+                ward_county_id = getattr(self.ward, "county_id", None)
+                if ward_county_id is not None and ward_county_id != self.county_id:
+                    raise ValidationError({
+                        "ward": _(
+                            "The selected ward does not belong to the selected county."
+                        ),
+                    })
+
 
 class Option(models.Model):
     ballot = models.ForeignKey(Ballot, on_delete=models.CASCADE, related_name='options')
-    number = models.IntegerField() # Required by grappelli for dragging rows
+    number = models.IntegerField()  # Required by grappelli for dragging rows
     text = models.CharField(max_length=255)
-    votes = models.ManyToManyField(User, blank=True, through='OptionVote', related_name='voted_options')
 
     class Meta:
-        ordering = ['id']
+        db_table = 'Option'
+        ordering = ["number", "id"]
         constraints = [
             models.UniqueConstraint(
                 fields=['ballot', 'text'],
                 name='unique_option_text_per_ballot',
             ),
         ]
-        indexes = [
-            models.Index(fields=['ballot']),
-        ]
-        db_table = 'Option'
 
     def __str__(self):
         return self.text
 
 
-class OptionVote(models.Model):
-    """Through model for Option votes with timestamp"""
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='voted_options_through')
-    option = models.ForeignKey(Option, on_delete=models.CASCADE, related_name='votes_through')
+class BallotVote(models.Model):
+    """
+    One vote per user per ballot.
+    """
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="votes")
+    ballot = models.ForeignKey(Ballot, on_delete=models.CASCADE, related_name="votes")
+    option = models.ForeignKey(Option, on_delete=models.CASCADE, related_name="votes")
     voted_at = models.DateTimeField(default=timezone.now, db_index=True)
 
     class Meta:
+        db_table = "BallotVote"
+        ordering = ["-voted_at", "-id"]
+        verbose_name = "Ballot Vote"
+        verbose_name_plural = "Ballot Votes"
         constraints = [
             models.UniqueConstraint(
-                fields=['user', 'option'],
-                name='unique_vote_per_user_per_option',
+                fields=["user", "ballot"],
+                name="unique_ballot_vote_per_user_per_ballot",
             ),
         ]
-        ordering = ['-voted_at']
-        db_table = 'OptionVote'
-        verbose_name = 'Option Vote'
-        verbose_name_plural = 'Option Votes'
+
+    def clean(self):
+        super().clean()
+
+        if self.option_id and self.ballot_id:
+            option_ballot_id = getattr(self.option, "ballot_id", None)
+            if option_ballot_id is not None and option_ballot_id != self.ballot_id:
+                raise ValidationError(
+                    {
+                        "option": _("The selected option does not belong to the selected ballot."),
+                    }
+                )
 
     def __str__(self):
-        return f"{self.user} voted option {self.option.id} at {self.voted_at}"
+        return (
+            f"{self.user} voted option {self.option_id} "
+            f"at {self.voted_at} in ballot {self.ballot_id}"
+        )
 
 
 class Reason(BaseModel):
@@ -111,16 +167,13 @@ class Reason(BaseModel):
     text = models.TextField()
 
     class Meta:
+        db_table = "Reason"
         constraints = [
             models.UniqueConstraint(
-                fields=['ballot', 'user'],
-                name='unique_reason_per_user_per_ballot',
+                fields=["ballot", "user"],
+                name="unique_reason_per_user_per_ballot",
             ),
         ]
-        indexes = [
-            models.Index(fields=['ballot', 'user']),
-        ]
-        db_table = 'Reason'
 
     def __str__(self):
         return self.text

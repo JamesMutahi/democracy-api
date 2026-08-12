@@ -31,8 +31,12 @@ RUN python -m pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application.
 COPY . .
 
-# Make the entrypoint script executable.
-RUN chmod +x docker/entrypoint.sh
+# Explicitly copy the entrypoint so the build fails early if it is missing.
+COPY docker/entrypoint.sh /democracy/docker/entrypoint.sh
+
+# Remove Windows line endings and make executable.
+RUN sed -i 's/\r$//' /democracy/docker/entrypoint.sh \
+    && chmod +x /democracy/docker/entrypoint.sh
 
 # Create a writable directory for Celery Beat schedule persistence.
 RUN mkdir -p /data && chown -R appuser:appuser /democracy /data
@@ -44,7 +48,8 @@ USER appuser
 EXPOSE 8000
 
 # Use an absolute entrypoint path.
-ENTRYPOINT ["/democracy/docker/entrypoint.sh"]
+# Use /bin/sh explicitly to avoid shebang-related exec issues.
+ENTRYPOINT ["/bin/sh", "/democracy/docker/entrypoint.sh"]
 
 # Default command if no Compose command is provided.
 CMD ["uvicorn", "project.asgi:application", "--host", "0.0.0.0", "--port", "8000", "--workers", "3", "--proxy-headers", "--forwarded-allow-ips=*"]

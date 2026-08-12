@@ -227,7 +227,9 @@ class PostSerializer(serializers.ModelSerializer):
     @staticmethod
     def get_likes(obj):
         # Fallback to .count() if the annotation is missing
-        return getattr(obj, "likes_count", obj.likes.count())
+        if hasattr(obj, "likes_count"):
+            return obj.likes_count
+        return obj.likes.count()
 
     def get_is_liked(self, obj):
         if hasattr(obj, "is_liked"):
@@ -237,7 +239,9 @@ class PostSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_bookmarks(obj):
-        return getattr(obj, "bookmarks_count", obj.bookmarks.count())
+        if hasattr(obj, "bookmarks_count"):
+            return obj.bookmarks_count
+        return obj.bookmarks.count()
 
     def get_is_bookmarked(self, obj):
         if hasattr(obj, "is_bookmarked"):
@@ -247,7 +251,9 @@ class PostSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_replies(obj):
-        return getattr(obj, "replies_count", obj.replies.filter(is_active=True, status='published').count())
+        if hasattr(obj, "replies_count"):
+            return obj.replies_count
+        return obj.replies.filter(is_active=True, status='published').count()
 
     @staticmethod
     def get_reposts(obj):
@@ -283,17 +289,23 @@ class PostSerializer(serializers.ModelSerializer):
     def get_upvotes(obj):
         if not obj.community_note_of:
             return 0
-        return getattr(obj, "upvotes_count", obj.upvotes.count())
+        if hasattr(obj, "upvotes_count"):
+            return obj.upvotes_count
+        return obj.upvotes.count()
 
     @staticmethod
     def get_downvotes(obj):
         if not obj.community_note_of:
             return 0
-        return getattr(obj, "downvotes_count", obj.downvotes.count())
+        if hasattr(obj, "downvotes_count"):
+            return obj.downvotes_count
+        return obj.downvotes.count()
 
     @staticmethod
     def get_community_note(obj: Post):
-        return getattr(obj, "top_community_note_body", obj.get_top_note())
+        if hasattr(obj, "top_community_note_body"):
+            return obj.top_community_note_body
+        return obj.get_top_note()
 
     @transaction.atomic
     def create(self, validated_data):

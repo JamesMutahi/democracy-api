@@ -1,4 +1,5 @@
 from channels.db import database_sync_to_async
+from django.db import transaction
 from django.db.models import QuerySet, Q, Count
 from django.utils import timezone
 from djangochannelsrestframework.decorators import action
@@ -7,7 +8,7 @@ from djangochannelsrestframework.mixins import RetrieveModelMixin
 from djangochannelsrestframework.observer import model_observer
 from rest_framework.exceptions import PermissionDenied, NotFound, ValidationError
 
-from apps.ballot.models import Ballot, Option, Reason, OptionVote
+from apps.ballot.models import Ballot, Option, Reason, BallotVote
 from apps.ballot.querysets import annotate_ballot_metrics
 from apps.ballot.serializers import BallotSerializer, OptionSerializer
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
@@ -72,15 +73,38 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     @option_activity.serializer
     def option_activity_serializer(self, instance: Option, action, **kwargs):
         return {
-            'data': get_activity_data(instance.ballot),
+            'data': get_activity_data_for_ballot_id(instance.ballot_id),
             'action': 'update',
             'pk': instance.ballot.pk,
             'response_status': 200,
         }
 
+    @model_observer(BallotVote)
+    async def vote_activity(self, message, **kwargs):
+        await self.send_json(message)
+
+    @vote_activity.groups_for_signal
+    def vote_activity_signal_groups(self, instance: BallotVote, **kwargs):
+        yield f"ballot__{instance.ballot_id}"
+
+    @vote_activity.groups_for_consumer
+    def vote_activity_consumer_groups(self, pk=None, **kwargs):
+        if pk is not None:
+            yield f"ballot__{pk}"
+
+    @vote_activity.serializer
+    def vote_activity_serializer(self, instance: BallotVote, action, **kwargs):
+        return {
+            "data": get_activity_data_for_ballot_id(instance.ballot_id),
+            "action": "update",
+            "pk": instance.ballot_id,
+            "response_status": 200,
+        }
+
     async def disconnect(self, code):
         await self.ballot_activity.unsubscribe()
         await self.option_activity.unsubscribe()
+        await self.vote_activity.unsubscribe()
         await super().disconnect(code)
 
     # ====================== Filter ======================
@@ -201,6 +225,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         if pk:
             await self.ballot_activity.subscribe(pk=pk, request_id=request_id)
             await self.option_activity.subscribe(pk=pk, request_id=request_id)
+            await self.vote_activity.subscribe(pk=pk, request_id=request_id)
         return response, status
 
     @action()
@@ -208,6 +233,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     async def unsubscribe(self, pk: int, request_id: str, **kwargs):
         await self.ballot_activity.unsubscribe(pk=pk, request_id=request_id)
         await self.option_activity.unsubscribe(pk=pk, request_id=request_id)
+        await self.vote_activity.unsubscribe(pk=pk, request_id=request_id)
         return {}, 200
 
     # ====================== Voting Actions ======================
@@ -219,47 +245,70 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     @database_sync_to_async
     def perform_vote(self, option_pk: int):
-        from django.db import transaction
-
-        user = self.scope['user']
+        user = self.scope["user"]
 
         try:
             with transaction.atomic():
                 option = (
-                    Option.objects
-                    .select_related('ballot')
-                    .select_for_update()
+                    Option.objects.select_related("ballot")
                     .get(pk=option_pk, ballot__is_active=True)
                 )
+
                 ballot = option.ballot
+
                 self._user_can_vote_in_ballot(user, ballot)
 
-                # Single DELETE for all other votes in this ballot
-                OptionVote.objects.filter(
-                    user=user, option__ballot=ballot
-                ).exclude(option=option).delete()
+                vote, created = BallotVote.objects.get_or_create(
+                    user=user,
+                    ballot=ballot,
+                    defaults={
+                        "option": option,
+                        "voted_at": timezone.now(),
+                    },
+                )
 
-                # Clear any previous reason
+                # First time voting in this ballot.
+                if created:
+                    return {
+                        "ballot_id": ballot.pk,
+                        "option_id": option.pk,
+                        "has_changed": False,
+                        "already_voted": False,
+                    }
+
+                # Voter clicked the same option again.
+                # Do not delete the reason.
+                if vote.option_id == option.pk:
+                    return {
+                        "ballot_id": ballot.pk,
+                        "option_id": option.pk,
+                        "has_changed": False,
+                        "already_voted": True,
+                    }
+
+                # Voter is changing option.
+                # The previous reason no longer applies.
                 Reason.objects.filter(ballot=ballot, user=user).delete()
 
-                # Cast the new vote (idempotent via unique_together)
-                OptionVote.objects.get_or_create(user=user, option=option)
+                vote.option = option
+                vote.voted_at = timezone.now()
+                vote.save(update_fields=["option", "voted_at"])
 
-                # Re-fetch with full annotations
-                ballot = annotate_ballot_metrics(
-                    Ballot.objects.filter(pk=ballot.pk),
-                    user,
-                ).get()
-
-                return BallotSerializer(ballot, context={'scope': self.scope}).data
+                return {
+                    "ballot_id": ballot.pk,
+                    "option_id": option.pk,
+                    "has_changed": True,
+                    "already_voted": True,
+                }
 
         except Option.DoesNotExist:
             raise NotFound("Option not found")
-        except Ballot.DoesNotExist:
-            raise NotFound("Ballot not found")
 
     @staticmethod
     def _user_can_vote_in_ballot(user, ballot: Ballot):
+        if not ballot.is_active:
+            raise PermissionDenied("This ballot is not active.")
+
         voting_time = timezone.now()
 
         # Start time check
@@ -282,65 +331,94 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
             raise PermissionDenied(f'You are not a registered voter in {ballot.ward.name} ward')
         return True
 
+    @action()
+    @interaction_rate_limit
+    async def add_reason(self, pk: int, text: str, **kwargs):
+        result = await self.perform_add_reason(ballot_pk=pk, text=text)
+        return result, 200
+
     @database_sync_to_async
     def perform_add_reason(self, ballot_pk: int, text: str):
-        from django.db import transaction
-
-        user = self.scope['user']
+        user = self.scope["user"]
 
         try:
-            ballot = annotate_ballot_metrics(
-                Ballot.objects.filter(pk=ballot_pk, is_active=True),
-                user,
-            ).get()
+            ballot = Ballot.objects.get(pk=ballot_pk, is_active=True)
         except Ballot.DoesNotExist:
-            raise NotFound('Ballot not found or inactive')
+            raise NotFound("Ballot not found or inactive")
 
         self._user_can_vote_in_ballot(user, ballot)
 
-        has_voted = OptionVote.objects.filter(
+        has_voted = BallotVote.objects.filter(
             user=user,
-            option__ballot=ballot,
+            ballot=ballot,
         ).exists()
 
         if not has_voted:
-            raise ValidationError('Please cast your vote first')
+            raise ValidationError("Please cast your vote first.")
+
+        text = (text or "").strip()
+        reason = None
 
         with transaction.atomic():
-            if len(text) == 0:
+            if not text:
                 Reason.objects.filter(ballot=ballot, user=user).delete()
             else:
-                Reason.objects.update_or_create(
+                reason, _ = Reason.objects.update_or_create(
                     ballot=ballot,
                     user=user,
-                    defaults={'text': text},
+                    defaults={"text": text},
                 )
 
-        # Re-fetch with fresh annotations
-        ballot = annotate_ballot_metrics(
-            Ballot.objects.filter(pk=ballot.pk),
-            user,
-        ).get()
-
-        return BallotSerializer(ballot, context={'scope': self.scope}).data
+        return {
+            "ballot_id": ballot.pk,
+            "reason": reason.text if reason is not None else None,
+        }
 
 
-# ── Module-level helper for observer payloads ────────────────
+# ── Module-level helpers for observer payloads ────────────────
+
+def get_activity_data_for_ballot_id(ballot_id: int) -> dict:
+    ballot = (
+        Ballot.objects.select_related("county", "constituency", "ward")
+        .filter(pk=ballot_id)
+        .first()
+    )
+
+    if ballot is None:
+        return {"id": ballot_id}
+
+    return get_activity_data(ballot)
+
 
 def get_activity_data(ballot: Ballot) -> dict:
     now = timezone.now()
+
+    total_votes = getattr(ballot, "total_votes", None)
+    if total_votes is None:
+        total_votes = ballot.votes.count()
+
+    options = (
+        ballot.options.annotate(
+            vote_count=Count("votes", distinct=True),
+        ).order_by("number", "id")
+    )
+
     return {
-        'id': ballot.pk,
-        'title': ballot.title,
-        'description': ballot.description,
-        'county': CountySerializer(ballot.county).data if ballot.county else None,
-        'constituency': ConstituencySerializer(ballot.constituency).data if ballot.constituency else None,
-        'ward': WardSerializer(ballot.ward).data if ballot.ward else None,
-        'start_time': ballot.start_time,
-        'end_time': ballot.end_time,
-        'has_started': now > ballot.start_time,
-        'has_ended': ballot.end_time < now,
-        'total_votes': ballot.options.aggregate(total=Count("votes_through"))["total"],
-        'options': OptionSerializer(ballot.options.all(), many=True).data,
-        'is_active': ballot.is_active,
+        "id": ballot.pk,
+        "title": ballot.title,
+        "description": ballot.description,
+        "county": CountySerializer(ballot.county).data if ballot.county else None,
+        "constituency": (
+            ConstituencySerializer(ballot.constituency).data
+            if ballot.constituency
+            else None
+        ),
+        "ward": WardSerializer(ballot.ward).data if ballot.ward else None,
+        "start_time": ballot.start_time.isoformat(),
+        "end_time": ballot.end_time.isoformat(),
+        "has_started": now >= ballot.start_time,
+        "has_ended": ballot.end_time < now,
+        "total_votes": total_votes,
+        "options": OptionSerializer(options, many=True).data,
+        "is_active": ballot.is_active,
     }
