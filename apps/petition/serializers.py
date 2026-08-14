@@ -1,6 +1,5 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
-from rest_framework.exceptions import PermissionDenied
 
 from apps.geo.models import County, Constituency, Ward
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
@@ -77,9 +76,8 @@ class PetitionSerializer(serializers.ModelSerializer):
         Prefer annotated supporters_count if present.
         This avoids an extra COUNT query per petition in list views.
         """
-        supporters_count = getattr(instance, "supporters_count", None)
-        if supporters_count is not None:
-            return supporters_count
+        if hasattr(instance, "supporters_count"):
+            return instance.supporters_count
         return instance.supporters.count()
 
     def get_recent_supporters(self, instance: Petition):
@@ -103,9 +101,8 @@ class PetitionSerializer(serializers.ModelSerializer):
         Prefer annotated value if present.
         Falls back to a safe DB check.
         """
-        annotated = getattr(instance, "is_supported_by_request_user", None)
-        if annotated is not None:
-            return bool(annotated)
+        if hasattr(instance, "is_supported_by_request_user"):
+            return instance.is_supported_by_request_user
 
         user = get_current_user(self.context)
 
@@ -128,39 +125,32 @@ class PetitionSerializer(serializers.ModelSerializer):
 
         if ward and not constituency:
             raise serializers.ValidationError({
-                    "ward": "Constituency is required when a ward is provided.",
-                })
+                "ward": "Constituency is required when a ward is provided.",
+            })
 
         if constituency and not county:
             raise serializers.ValidationError({
-                    "constituency": "County is required when a constituency is provided.",
-                })
+                "constituency": "County is required when a constituency is provided.",
+            })
 
         if county and constituency:
             constituency_county_id = getattr(constituency, "county_id", None)
             if constituency_county_id and constituency_county_id != county.pk:
                 raise serializers.ValidationError({
-                        "constituency": "Constituency must belong to the selected county.",
-                    })
+                    "constituency": "Constituency must belong to the selected county.",
+                })
 
         if constituency and ward:
             ward_constituency_id = getattr(ward, "constituency_id", None)
             if ward_constituency_id and ward_constituency_id != constituency.pk:
                 raise serializers.ValidationError({
-                        "ward": "Ward must belong to the selected constituency.",
-                    })
+                    "ward": "Ward must belong to the selected constituency.",
+                })
 
         return attrs
 
     def create(self, validated_data):
         user = get_current_user(self.context)
-
-        if not user or not getattr(user, "is_authenticated", False):
-            raise PermissionDenied(
-                "Authentication is required to create a petition."
-            )
-
         validated_data["author"] = user
         validated_data["is_open"] = True
-
         return super().create(validated_data)

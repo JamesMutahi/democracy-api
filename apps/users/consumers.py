@@ -121,7 +121,8 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         self.assert_can_view_user(obj)
         return obj
 
-    def get_user_or_error(self, pk: int):
+    @staticmethod
+    def get_user_or_error(pk: int):
         try:
             return User.objects.get(pk=pk)
         except (User.DoesNotExist, ValueError, TypeError):

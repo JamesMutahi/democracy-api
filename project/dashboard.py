@@ -55,6 +55,20 @@ class CustomIndexDashboard(Dashboard):
             collapsible=True,
             limit=5,
         ))
+        self.children.append(modules.LinkList(
+            title=_("Recommendation System"),
+            column=2,
+            collapsible=True,
+            draggable=False,
+            children=[
+                {
+                    "title": _("Open Recommendation Dashboard"),
+                    "url": "/recommendation-admin/dashboard/",
+                    "external": False,
+                },
+            ],
+        ),
+        )
 
     # class Media:
     #     css = {

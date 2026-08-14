@@ -37,6 +37,7 @@ urlpatterns = [
     path('broadcast/', include('apps.broadcast.urls')),
     path('recommendation-admin/', recommendation_admin.urls),
     path('admin/', admin.site.urls),
+    path("recommendation-admin/", recommendation_admin.urls),
     path('nested_admin/', include('nested_admin.urls')),
     path('auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

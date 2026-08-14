@@ -164,6 +164,7 @@ class PostRecommendationAdminSite(AdminSite):
     def get_urls(self):
         urls = super().get_urls()
 
+        # https://api.peopleofkenya.com/recommendation-admin/dashboard/
         custom_urls = [
             path(
                 "dashboard/",
