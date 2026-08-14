@@ -14,7 +14,6 @@ class SectionSerializer(serializers.ModelSerializer):
             "text",
             "is_title",
             "parent",
-            "position",
             "parent_count",
         ]
         read_only_fields = [

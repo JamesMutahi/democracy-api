@@ -10,17 +10,6 @@ from apps.utils.serializer_user import get_current_user
 User = get_user_model()
 
 
-def get_authenticated_user(context):
-    """
-    Safely return the authenticated user from serializer context.
-    Returns None for anonymous users.
-    """
-    user = get_current_user(context)
-    if user and getattr(user, "is_authenticated", False):
-        return user
-    return None
-
-
 def annotate_user_queryset(queryset, user):
     """
     Annotate queryset with counts and current-user relation flags.
@@ -103,23 +92,23 @@ class UserSerializer(serializers.ModelSerializer):
         )
         read_only_fields = fields
 
+    @staticmethod
     def get_following(self, obj):
-        value = getattr(obj, "following_count", None)
-        if value is not None:
-            return value
+        if hasattr(obj, "following_count"):
+            return obj.following_count
         return obj.following.count()
 
+    @staticmethod
     def get_followers(self, obj):
-        value = getattr(obj, "followers_count", None)
-        if value is not None:
-            return value
+        if hasattr(obj, "followers_count"):
+            return obj.followers_count
         return obj.followers.count()
 
     def get_email(self, obj):
         """
         Only expose email to the owner or staff users.
         """
-        current_user = get_authenticated_user(self.context)
+        current_user = get_current_user(self.context)
 
         if not current_user:
             return None
@@ -130,74 +119,68 @@ class UserSerializer(serializers.ModelSerializer):
         return None
 
     def get_is_muted(self, obj):
-        current_user = get_authenticated_user(self.context)
+        current_user = get_current_user(self.context)
 
         if not current_user or current_user.pk == obj.pk:
             return False
 
-        annotated = getattr(obj, "is_muted", None)
-        if annotated is not None:
-            return bool(annotated)
+        if hasattr(obj, "is_muted"):
+            return obj.is_muted
 
         return current_user.muted.filter(pk=obj.pk).exists()
 
     def get_is_blocked(self, obj):
-        current_user = get_authenticated_user(self.context)
+        current_user = get_current_user(self.context)
 
         if not current_user or current_user.pk == obj.pk:
             return False
 
-        annotated = getattr(obj, "is_blocked", None)
-        if annotated is not None:
-            return bool(annotated)
+        if hasattr(obj, "is_blocked"):
+            return obj.is_blocked
 
         return current_user.blocked.filter(pk=obj.pk).exists()
 
     def get_has_blocked(self, obj):
-        current_user = get_authenticated_user(self.context)
+        current_user = get_current_user(self.context)
 
         if not current_user or current_user.pk == obj.pk:
             return False
 
-        annotated = getattr(obj, "has_blocked", None)
-        if annotated is not None:
-            return bool(annotated)
+        if hasattr(obj, "has_blocked"):
+            return obj.has_blocked
 
         return obj.blocked.filter(pk=current_user.pk).exists()
 
     def get_is_followed(self, obj):
-        current_user = get_authenticated_user(self.context)
+        current_user = get_current_user(self.context)
 
         if not current_user or current_user.pk == obj.pk:
             return False
 
-        annotated = getattr(obj, "is_followed", None)
-        if annotated is not None:
-            return bool(annotated)
+        if hasattr(obj, "is_followed"):
+            return obj.is_followed
 
         return current_user.following.filter(pk=obj.pk).exists()
 
     def get_is_notifying(self, obj):
-        current_user = get_authenticated_user(self.context)
+        current_user = get_current_user(self.context)
 
         if not current_user or current_user.pk == obj.pk:
             return False
 
-        annotated = getattr(obj, "is_notifying", None)
-        if annotated is not None:
-            return bool(annotated)
+        if hasattr(obj, "is_notifying"):
+            return obj.is_notifying
 
         return current_user.notifiers.filter(pk=obj.pk).exists()
 
     def get_is_visited(self, obj):
-        current_user = get_authenticated_user(self.context)
+        current_user = get_current_user(self.context)
 
         if not current_user or current_user.pk == obj.pk:
             return False
 
-        annotated = getattr(obj, "is_visited", None)
-        if annotated is not None:
-            return bool(annotated)
+        if hasattr(obj, "is_visited"):
+            return obj.is_visited
 
         return ProfileVisit.objects.filter(
             visitor_id=current_user.pk,
@@ -218,7 +201,8 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             "bio",
         )
 
-    def validate_name(self, value):
+    @staticmethod
+    def validate_name(value):
         value = value.strip()
 
         if not value:

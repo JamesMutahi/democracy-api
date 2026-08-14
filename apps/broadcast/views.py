@@ -48,7 +48,7 @@ def _get_broadcast(broadcast_id):
             )
             .get(pk=broadcast_id)
         )
-    except Exception:
+    except Broadcast.DoesNotExist:
         return None
 
 

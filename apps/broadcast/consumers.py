@@ -22,12 +22,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.generics import get_object_or_404
 
 from apps.broadcast.models import Broadcast, SpeakerRequest
-from apps.broadcast.serializers import (
-    BroadcastActivitySerializer,
-    BroadcastListSerializer,
-    BroadcastSerializer,
-    SpeakerRequestSerializer,
-)
+from apps.broadcast.serializers import BroadcastSerializer, SpeakerRequestSerializer
 from apps.broadcast.services import BroadcastParticipantService
 from apps.utils.list_paginator import list_paginator
 from apps.utils.throttles import interaction_rate_limit, rate_limit
@@ -103,13 +98,22 @@ class BroadcastConsumer(
             data = {}
         else:
             try:
-                broadcast = self.get_queryset().get(pk=instance.pk)
+                broadcast = Broadcast.objects.select_related(
+                    "host",
+                    "county",
+                    "constituency",
+                    "ward",
+                ).prefetch_related(
+                    "co_hosts",
+                    "speakers",
+                    "recording_sessions",
+                ).get(pk=instance.pk)
             except Broadcast.DoesNotExist:
                 broadcast = instance
 
-            data = BroadcastActivitySerializer(
+            data = BroadcastSerializer(
                 broadcast,
-                context={"scope": getattr(self, "scope", {})},
+                context={"scope": {"user": broadcast.host}},
             ).data
 
         return {
@@ -316,13 +320,7 @@ class BroadcastConsumer(
             return queryset
 
         if action_name == "user_broadcasts":
-            user = kwargs.get("user")
-            if user:
-                queryset = queryset.filter(host=user)
-            else:
-                queryset = queryset.none()
-
-            return queryset
+            return queryset.filter(host=kwargs.get("user"))
 
         if action_name in {"patch", "delete"}:
             return queryset.filter(host=self.scope["user"])
@@ -336,7 +334,6 @@ class BroadcastConsumer(
     async def list(self, request_id: str, page_size=20, **kwargs):
         safe_kwargs = self._build_list_kwargs(kwargs)
         safe_kwargs["action"] = "list"
-        safe_kwargs["filter_by_region"] = True
         safe_kwargs["county"], safe_kwargs["constituency"], safe_kwargs["ward"] = (
             await self.get_user_regions()
         )
@@ -375,17 +372,8 @@ class BroadcastConsumer(
 
     @action()
     @rate_limit(limit=60, period=60)
-    async def retrieve(self, pk: int, request_id: str = None, **kwargs):
-        broadcast = await database_sync_to_async(self.get_object)(pk=pk)
-
-        if not await self._user_can_view(broadcast):
-            raise PermissionDenied("You do not have permission to view this broadcast.")
-
-        data = await database_sync_to_async(self._serialize_broadcast)(broadcast)
-        return data, 200
-
-    def _serialize_broadcast(self, broadcast: Broadcast) -> dict:
-        return BroadcastSerializer(broadcast, context={"scope": self.scope}).data
+    async def retrieve(self, request_id: str, **kwargs):
+        return await super().retrieve(**kwargs)
 
     @database_sync_to_async
     def get_user_regions(self):
@@ -400,7 +388,7 @@ class BroadcastConsumer(
 
         participant_counts = BroadcastParticipantService.get_participant_counts(broadcast_ids)
 
-        serializer = BroadcastListSerializer(
+        serializer = BroadcastSerializer(
             broadcasts,
             many=True,
             context={
@@ -416,40 +404,6 @@ class BroadcastConsumer(
         }
 
     # ====================== PERMISSION HELPERS ======================
-
-    @database_sync_to_async
-    def _user_can_view(self, broadcast: Broadcast) -> bool:
-        return self._user_can_view_sync(broadcast)
-
-    def _user_can_view_sync(self, broadcast: Broadcast) -> bool:
-        user = self.scope["user"]
-
-        if broadcast.host_id == user.id:
-            return True
-
-        if broadcast.co_hosts.filter(id=user.id).exists():
-            return True
-
-        if broadcast.speakers.filter(id=user.id).exists():
-            return True
-
-        if not broadcast.is_active:
-            return False
-
-        if not broadcast.county_id:
-            return True
-
-        if user.county_id != broadcast.county_id:
-            return False
-
-        if broadcast.constituency_id and user.constituency_id != broadcast.constituency_id:
-            return False
-
-        if broadcast.ward_id and user.ward_id != broadcast.ward_id:
-            return False
-
-        return True
-
     @database_sync_to_async
     def _broadcast_is_joinable(self, broadcast: Broadcast) -> bool:
         if not broadcast.is_active:
@@ -465,8 +419,8 @@ class BroadcastConsumer(
         user = self.scope["user"]
 
         return (
-            broadcast.host_id == user.id or
-            broadcast.co_hosts.filter(id=user.id).exists()
+                broadcast.host_id == user.id or
+                broadcast.co_hosts.filter(id=user.id).exists()
         )
 
     @database_sync_to_async
@@ -474,9 +428,9 @@ class BroadcastConsumer(
         user = self.scope["user"]
 
         return (
-            broadcast.host_id == user.id or
-            broadcast.co_hosts.filter(id=user.id).exists() or
-            broadcast.speakers.filter(id=user.id).exists()
+                broadcast.host_id == user.id or
+                broadcast.co_hosts.filter(id=user.id).exists() or
+                broadcast.speakers.filter(id=user.id).exists()
         )
 
     @database_sync_to_async
@@ -500,9 +454,9 @@ class BroadcastConsumer(
     @database_sync_to_async
     def _target_is_speaker_or_co_host(self, broadcast: Broadcast, target_user_id: int) -> bool:
         return (
-            broadcast.host_id == target_user_id or
-            broadcast.co_hosts.filter(id=target_user_id).exists() or
-            broadcast.speakers.filter(id=target_user_id).exists()
+                broadcast.host_id == target_user_id or
+                broadcast.co_hosts.filter(id=target_user_id).exists() or
+                broadcast.speakers.filter(id=target_user_id).exists()
         )
 
     @database_sync_to_async
@@ -516,16 +470,16 @@ class BroadcastConsumer(
     async def subscribe(self, pk: int, request_id: str, is_muted: bool = False, **kwargs):
         broadcast = await database_sync_to_async(self.get_object)(pk=pk)
 
-        if not await self._user_can_view(broadcast):
-            raise PermissionDenied("You do not have permission to access this broadcast.")
-
         if not await self._broadcast_is_joinable(broadcast):
             raise ValidationError("This broadcast cannot be joined.")
 
-        await self.broadcast_activity.subscribe(pk=pk, request_id=request_id)
+        user_id = self.scope["user"].id
+
+        await self.broadcast_activity.subscribe(pk=pk, request_id=user_id)
 
         if await self._user_can_manage_speakers(broadcast=broadcast):
-            await self.speaker_request_activity.subscribe(pk=pk, request_id=request_id)
+            await self.speaker_request_activity.subscribe(pk=pk, request_id=user_id)
+
 
         if self._parse_bool(is_muted):
             await database_sync_to_async(BroadcastParticipantService.set_mute_status)(
@@ -538,28 +492,6 @@ class BroadcastConsumer(
         result = await self.add_participant(pk=pk)
         return result, 200
 
-    @action()
-    @interaction_rate_limit
-    async def unsubscribe(self, pk: int, request_id: str, **kwargs):
-        broadcast = await database_sync_to_async(self.get_object)(pk=pk)
-
-        await database_sync_to_async(BroadcastParticipantService.connection_left_broadcast)(
-            broadcast_id=pk,
-            user_id=self.scope["user"].id,
-            connection_id=getattr(self, "connection_id", "unknown"),
-        )
-
-        await self.broadcast_activity.unsubscribe(pk=pk, request_id=request_id)
-
-        try:
-            await self.speaker_request_activity.unsubscribe(pk=pk, request_id=request_id)
-        except Exception:
-            pass
-
-        await database_sync_to_async(BroadcastParticipantService.signal_broadcast)(broadcast=broadcast)
-
-        return {"pk": pk}, 200
-
     @database_sync_to_async
     def add_participant(self, pk: int):
         BroadcastParticipantService.connection_joined_broadcast(
@@ -568,10 +500,34 @@ class BroadcastConsumer(
             connection_id=getattr(self, "connection_id", "unknown"),
         )
 
+        logger.info(f'JOINED: {getattr(self, "connection_id", "unknown")}')
+
         broadcast = get_object_or_404(self.get_queryset(), pk=pk)
         BroadcastParticipantService.signal_broadcast(broadcast)
 
         return BroadcastSerializer(broadcast, context={"scope": self.scope}).data
+
+    @action()
+    @interaction_rate_limit
+    async def unsubscribe(self, pk: int, request_id: str, **kwargs):
+        broadcast = await database_sync_to_async(self.get_object)(pk=pk)
+
+        user_id = self.scope["user"].id
+
+        await database_sync_to_async(BroadcastParticipantService.connection_left_broadcast)(
+            broadcast_id=pk,
+            user_id=user_id,
+            connection_id=getattr(self, "connection_id", "unknown"),
+        )
+
+        logger.info(f'LEFT: {getattr(self, "connection_id", "unknown")}')
+
+        await database_sync_to_async(BroadcastParticipantService.signal_broadcast)(broadcast=broadcast)
+
+        await self.broadcast_activity.unsubscribe(pk=pk, request_id=user_id)
+        await self.speaker_request_activity.unsubscribe(pk=pk, request_id=user_id)
+
+        return {"pk": pk}, 200
 
     # ====================== PATCH / DELETE ======================
 
@@ -605,7 +561,7 @@ class BroadcastConsumer(
     @interaction_rate_limit
     async def mute(self, pk: int, data: dict, **kwargs):
         if not isinstance(data, dict) or "is_muted" not in data:
-            raise ValidationError("is_muted is required.")
+            raise ValidationError({"is_muted": "This field is required"})
 
         broadcast = await database_sync_to_async(self.get_object)(pk=pk)
 
@@ -649,7 +605,7 @@ class BroadcastConsumer(
         target_user_id = data.get("user_id")
 
         if not target_user_id:
-            raise ValidationError("user_id is required.")
+            raise ValidationError({"user_id": "This field is required"})
 
         try:
             target_user_id = int(target_user_id)
@@ -741,9 +697,6 @@ class BroadcastConsumer(
         user = self.scope["user"]
         broadcast = await database_sync_to_async(self.get_object)(pk=pk)
 
-        if not await self._user_can_view(broadcast):
-            raise PermissionDenied("You do not have permission to access this broadcast.")
-
         if not await self._broadcast_is_joinable(broadcast):
             raise ValidationError("This broadcast cannot be joined.")
 
@@ -818,7 +771,7 @@ class BroadcastConsumer(
                 broadcast_id=broadcast.id,
                 user_id=request_obj.user.id,
                 is_muted=True,
-                muted_by=BroadcastParticipantService.MUTE_HOST,
+                muted_by=BroadcastParticipantService.MUTE_SELF,
             )
         else:
             broadcast.speakers.remove(request_obj.user)
@@ -858,8 +811,14 @@ class BroadcastConsumer(
         if not target_user:
             raise ValidationError("Target user not found.")
 
-        data = await self._manage_co_host(pk=pk, user_id=target_user.id)
-        return data, 200
+        is_co_host = await self._manage_co_host(pk=pk, user_id=target_user.id)
+
+        if is_co_host:
+            await self.speaker_request_activity.subscribe(pk=pk, request_id=user_id)
+        else:
+            await self.speaker_request_activity.unsubscribe(pk=pk, request_id=user_id)
+
+        return {"pk": pk, "is_co_host": is_co_host}, 200
 
     @database_sync_to_async
     @transaction.atomic
@@ -888,7 +847,7 @@ class BroadcastConsumer(
 
         BroadcastParticipantService.signal_broadcast(broadcast)
 
-        return {"pk": pk, "is_co_host": is_co_host}
+        return is_co_host
 
     @action()
     @interaction_rate_limit

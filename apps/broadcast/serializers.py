@@ -46,7 +46,52 @@ class SpeakerRequestSerializer(serializers.ModelSerializer):
         return None
 
 
-class BroadcastBaseSerializer(serializers.ModelSerializer):
+class BroadcastSerializer(serializers.ModelSerializer):
+    host = UserSerializer(read_only=True)
+
+    co_hosts = UserSerializer(read_only=True, many=True)
+    co_host_ids = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        source="co_hosts",
+        many=True,
+        write_only=True,
+        required=False,
+    )
+
+    speakers = UserSerializer(read_only=True, many=True)
+    speaker_ids = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        source="speakers",
+        many=True,
+        write_only=True,
+        required=False,
+    )
+
+    participants = serializers.SerializerMethodField(read_only=True)
+
+    county = CountySerializer(read_only=True)
+    county_id = serializers.PrimaryKeyRelatedField(
+        queryset=County.objects.all(),
+        source="county",
+        write_only=True,
+        required=False,
+    )
+
+    constituency = ConstituencySerializer(read_only=True)
+    constituency_id = serializers.PrimaryKeyRelatedField(
+        queryset=Constituency.objects.all(),
+        source="constituency",
+        write_only=True,
+        required=False,
+    )
+
+    ward = WardSerializer(read_only=True)
+    ward_id = serializers.PrimaryKeyRelatedField(
+        queryset=Ward.objects.all(),
+        source="ward",
+        write_only=True,
+        required=False,
+    )
     participants_count = serializers.SerializerMethodField(read_only=True)
     muted = serializers.SerializerMethodField(read_only=True)
     has_started = serializers.SerializerMethodField(read_only=True)
@@ -56,7 +101,40 @@ class BroadcastBaseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Broadcast
-        fields = []
+        fields = [
+            "id",
+            "host",
+            "type",
+            "co_hosts",
+            "co_host_ids",
+            "title",
+            "description",
+            "county",
+            "county_id",
+            "constituency",
+            "constituency_id",
+            "ward",
+            "ward_id",
+            "speakers",
+            "speaker_ids",
+            "participants",
+            "participants_count",
+            "muted",
+            "recording_status",
+            "recording_url",
+            "has_started",
+            "has_ended",
+            "start_time",
+            "end_time",
+            "is_active",
+        ]
+
+        extra_kwargs = {
+            "start_time": {
+                "allow_null": True,
+                "required": False,
+            },
+        }
 
     # ====================== TIME HELPERS ======================
 
@@ -153,90 +231,6 @@ class BroadcastBaseSerializer(serializers.ModelSerializer):
 
         return BroadcastParticipantService.get_muted_users(obj.id)
 
-
-class BroadcastSerializer(BroadcastBaseSerializer):
-    host = UserSerializer(read_only=True)
-
-    co_hosts = UserSerializer(read_only=True, many=True)
-    co_host_ids = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(),
-        source="co_hosts",
-        many=True,
-        write_only=True,
-        required=False,
-    )
-
-    speakers = UserSerializer(read_only=True, many=True)
-    speaker_ids = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(),
-        source="speakers",
-        many=True,
-        write_only=True,
-        required=False,
-    )
-
-    participants = serializers.SerializerMethodField(read_only=True)
-
-    county = CountySerializer(read_only=True)
-    county_id = serializers.PrimaryKeyRelatedField(
-        queryset=County.objects.all(),
-        source="county",
-        write_only=True,
-        required=False,
-    )
-
-    constituency = ConstituencySerializer(read_only=True)
-    constituency_id = serializers.PrimaryKeyRelatedField(
-        queryset=Constituency.objects.all(),
-        source="constituency",
-        write_only=True,
-        required=False,
-    )
-
-    ward = WardSerializer(read_only=True)
-    ward_id = serializers.PrimaryKeyRelatedField(
-        queryset=Ward.objects.all(),
-        source="ward",
-        write_only=True,
-        required=False,
-    )
-
-    class Meta(BroadcastBaseSerializer.Meta):
-        fields = [
-            "id",
-            "host",
-            "type",
-            "co_hosts",
-            "co_host_ids",
-            "title",
-            "description",
-            "county",
-            "county_id",
-            "constituency",
-            "constituency_id",
-            "ward",
-            "ward_id",
-            "speakers",
-            "speaker_ids",
-            "participants",
-            "participants_count",
-            "muted",
-            "recording_status",
-            "recording_url",
-            "has_started",
-            "has_ended",
-            "start_time",
-            "end_time",
-            "is_active",
-        ]
-
-        extra_kwargs = {
-            "start_time": {
-                "allow_null": True,
-                "required": False,
-            },
-        }
-
     # ====================== PARTICIPANTS ======================
 
     def get_participants(self, obj):
@@ -325,21 +319,21 @@ class BroadcastSerializer(BroadcastBaseSerializer):
                     })
             else:
                 if "county" in attrs and attrs["county"] and (
-                    not user.county_id or user.county_id != attrs["county"].id
+                        not user.county_id or user.county_id != attrs["county"].id
                 ):
                     raise serializers.ValidationError({
                         "county": "You cannot change this broadcast to this county."
                     })
 
                 if "constituency" in attrs and attrs["constituency"] and (
-                    not user.constituency_id or user.constituency_id != attrs["constituency"].id
+                        not user.constituency_id or user.constituency_id != attrs["constituency"].id
                 ):
                     raise serializers.ValidationError({
                         "constituency": "You cannot change this broadcast to this constituency."
                     })
 
                 if "ward" in attrs and attrs["ward"] and (
-                    not user.ward_id or user.ward_id != attrs["ward"].id
+                        not user.ward_id or user.ward_id != attrs["ward"].id
                 ):
                     raise serializers.ValidationError({
                         "ward": "You cannot change this broadcast to this ward."
@@ -429,64 +423,3 @@ class BroadcastSerializer(BroadcastBaseSerializer):
         BroadcastParticipantService.signal_broadcast(instance)
 
         return instance
-
-
-class BroadcastListSerializer(BroadcastSerializer):
-    class Meta(BroadcastSerializer.Meta):
-        fields = [
-            "id",
-            "host",
-            "type",
-            "title",
-            "description",
-            "county",
-            "constituency",
-            "ward",
-            "participants_count",
-            "recording_status",
-            "has_started",
-            "has_ended",
-            "start_time",
-            "end_time",
-            "is_active",
-        ]
-
-
-class BroadcastActivitySerializer(BroadcastBaseSerializer):
-    host_id = serializers.IntegerField(read_only=True)
-    host_name = serializers.CharField(source="host.name", read_only=True, default=None)
-
-    co_host_ids = serializers.PrimaryKeyRelatedField(
-        source="co_hosts",
-        many=True,
-        read_only=True,
-    )
-
-    speaker_ids = serializers.PrimaryKeyRelatedField(
-        source="speakers",
-        many=True,
-        read_only=True,
-    )
-
-    class Meta(BroadcastBaseSerializer.Meta):
-        fields = [
-            "id",
-            "host_id",
-            "host_name",
-            "type",
-            "title",
-            "description",
-            "county_id",
-            "constituency_id",
-            "ward_id",
-            "co_host_ids",
-            "speaker_ids",
-            "participants_count",
-            "muted",
-            "recording_status",
-            "has_started",
-            "has_ended",
-            "start_time",
-            "end_time",
-            "is_active",
-        ]
