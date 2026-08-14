@@ -76,6 +76,8 @@ class ChatManager(Manager.from_queryset(ChatQuerySet)):
 
 
 class Chat(BaseModel):
+    name = models.CharField(max_length=255, blank=True, null=True)
+    is_group = models.BooleanField(default=False)
     users = models.ManyToManyField(User, related_name="chats")
     objects = ChatManager()
 
