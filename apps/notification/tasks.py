@@ -12,10 +12,12 @@ from firebase_admin.messaging import Message as fireMessage, Notification as fir
 from apps.ballot.models import Ballot
 from apps.ballot.querysets import annotate_ballot_metrics
 from apps.broadcast.models import Broadcast
+from apps.broadcast.querysets import annotate_broadcast_metrics
 from apps.chat.models import Message
 from apps.notification.models import Notification, Preferences
 from apps.notification.serializers import NotificationSerializer
 from apps.petition.models import Petition
+from apps.petition.querysets import annotate_petition_metrics
 from apps.posts.models import Post
 from apps.posts.querysets import annotate_post_metrics
 from apps.survey.models import Survey
@@ -189,6 +191,14 @@ def _serialize_notification(notification: Notification) -> dict:
         Prefetch(
             "ballot",
             queryset=annotate_ballot_metrics(Ballot.objects.all(), notification.recipient),
+        ),
+        Prefetch(
+            "broadcast",
+            queryset=annotate_broadcast_metrics(Broadcast.objects.all(), notification.recipient),
+        ),
+        Prefetch(
+            "petition",
+            queryset=annotate_petition_metrics(Petition.objects.all(), notification.recipient),
         )
     ).first()
     return NotificationSerializer(

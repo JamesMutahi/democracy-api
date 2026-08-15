@@ -71,7 +71,7 @@ def build_section_depth_cache():
 
 class ConstitutionConsumer(ListModelMixin, RetrieveModelMixin, GenericAsyncAPIConsumer):
     serializer_class = SectionSerializer
-    queryset = Section.objects.select_related("parent").order_by("parent_id", "id")
+    queryset = Section.objects.select_related("parent").order_by("id")
     lookup_field = "pk"
 
     async def connect(self):

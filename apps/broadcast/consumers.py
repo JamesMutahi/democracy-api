@@ -22,6 +22,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.generics import get_object_or_404
 
 from apps.broadcast.models import Broadcast, SpeakerRequest
+from apps.broadcast.querysets import annotate_broadcast_metrics
 from apps.broadcast.serializers import BroadcastSerializer, SpeakerRequestSerializer
 from apps.broadcast.services import BroadcastParticipantService
 from apps.utils.list_paginator import list_paginator
@@ -48,18 +49,9 @@ class BroadcastConsumer(
     page_size = 20
 
     def get_queryset(self, **kwargs) -> QuerySet:
-        return (
-            Broadcast.objects.select_related(
-                "host",
-                "county",
-                "constituency",
-                "ward",
-            )
-            .prefetch_related(
-                "co_hosts",
-                "speakers",
-                "recording_sessions",
-            )
+        return annotate_broadcast_metrics(
+            Broadcast.objects.filter(is_active=True),
+            self.scope.get("user"),
         )
 
     async def connect(self):

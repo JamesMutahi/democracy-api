@@ -215,8 +215,6 @@ class SurveySerializer(serializers.ModelSerializer):
         prefetched = getattr(instance, 'user_response', None)
         if prefetched is None:
             user = get_current_user(self.context)
-            if not getattr(user, 'is_authenticated', False):
-                return None
             user_response = Response.objects.filter(survey=instance, user=user).first()
         else:
             user_response = prefetched[0] if prefetched else None
@@ -227,7 +225,6 @@ class SurveySerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_total_responses(instance: Survey):
-        annotated = getattr(instance, 'total_responses_count', None)
-        if annotated is not None:
-            return annotated
+        if hasattr(instance, "total_responses_count"):
+            return instance.total_responses_count
         return instance.responses.count()

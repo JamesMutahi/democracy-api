@@ -20,7 +20,7 @@ class Section(models.Model):
 
     class Meta:
         db_table = "Section"
-        ordering = ["parent_id", "id"]
+        ordering = ["id"]
         verbose_name = "section"
         verbose_name_plural = "sections"
         indexes = [

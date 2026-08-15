@@ -124,11 +124,7 @@ class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     @database_sync_to_async
     def get_user_regions(self):
         user = self.scope['user']
-        return (
-            getattr(user, 'county', None),
-            getattr(user, 'constituency', None),
-            getattr(user, 'ward', None),
-        )
+        return user.county, user.constituency, user.ward
 
     @database_sync_to_async
     def list_(self, page_size: int, **kwargs):
@@ -174,9 +170,9 @@ class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
         now = timezone.now()
         if now < survey.start_time:
-            raise PermissionDenied('Voting has not started yet')
+            raise PermissionDenied('Survey has not started yet')
         if now > survey.end_time:
-            raise PermissionDenied('Voting has ended')
+            raise PermissionDenied('Survey has ended')
 
         serializer = ResponseSerializer(data=data, context={'scope': self.scope})
         serializer.is_valid(raise_exception=True)

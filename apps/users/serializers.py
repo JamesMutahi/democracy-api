@@ -1,5 +1,4 @@
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Exists, OuterRef
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 
@@ -10,39 +9,18 @@ from apps.utils.serializer_user import get_current_user
 User = get_user_model()
 
 
-def annotate_user_queryset(queryset, user):
-    """
-    Annotate queryset with counts and current-user relation flags.
-
-    This dramatically reduces N+1 queries when serializing user lists.
-    """
-    queryset = queryset.annotate(
-        following_count=Count("following", distinct=True),
-        followers_count=Count("followers", distinct=True),
-        is_followed=Exists(
-            User.objects.filter(pk=user.pk, following__pk=OuterRef("pk"))
-        ),
-        is_muted=Exists(
-            User.objects.filter(pk=user.pk, muted__pk=OuterRef("pk"))
-        ),
-        is_blocked=Exists(
-            User.objects.filter(pk=user.pk, blocked__pk=OuterRef("pk"))
-        ),
-        has_blocked=Exists(
-            User.objects.filter(pk=OuterRef("pk"), blocked__pk=user.pk)
-        ),
-        is_notifying=Exists(
-            User.objects.filter(pk=user.pk, notifiers__pk=OuterRef("pk"))
-        ),
-        is_visited=Exists(
-            ProfileVisit.objects.filter(
-                visitor_id=user.pk,
-                visited_id=OuterRef("pk"),
-            )
-        ),
-    )
-
-    return queryset
+class SimpleUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "username",
+            "name",
+            "image",
+            "cover_photo",
+            "bio",
+        )
+        read_only_fields = fields
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -89,13 +67,13 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     @staticmethod
-    def get_following(self, obj):
+    def get_following(obj):
         if hasattr(obj, "following_count"):
             return obj.following_count
         return obj.following.count()
 
     @staticmethod
-    def get_followers(self, obj):
+    def get_followers(obj):
         if hasattr(obj, "followers_count"):
             return obj.followers_count
         return obj.followers.count()

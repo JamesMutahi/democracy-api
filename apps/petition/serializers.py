@@ -4,7 +4,7 @@ from rest_framework import serializers
 from apps.geo.models import County, Constituency, Ward
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
 from apps.petition.models import Petition, PetitionSupport
-from apps.users.serializers import UserSerializer
+from apps.users.serializers import UserSerializer, SimpleUserSerializer
 from apps.utils.serializer_user import get_current_user
 
 User = get_user_model()
@@ -80,29 +80,20 @@ class PetitionSerializer(serializers.ModelSerializer):
             return instance.supporters_count
         return instance.supporters.count()
 
-    def get_recent_supporters(self, instance: Petition):
+    @staticmethod
+    def get_recent_supporters(instance: Petition):
         """
         Efficiently fetch the latest 5 supporters using the through model.
         """
-        if not instance.pk:
-            return []
+        return recent_supporters(petition_id=instance.pk)
 
-        supports = (
-            PetitionSupport.objects.filter(petition_id=instance.pk)
-            .select_related("user")
-            .order_by("-supported_at", "-id")[:5]
-        )
-
-        users = [support.user for support in supports]
-        return UserSerializer(users, many=True, context=self.context).data
-
-    def get_is_supported(self, instance: Petition) -> bool:
+    def get_has_supported(self, instance: Petition) -> bool:
         """
         Prefer annotated value if present.
         Falls back to a safe DB check.
         """
-        if hasattr(instance, "is_supported_by_request_user"):
-            return instance.is_supported_by_request_user
+        if hasattr(instance, "is_supported"):
+            return instance.is_supported
 
         user = get_current_user(self.context)
 
@@ -154,3 +145,17 @@ class PetitionSerializer(serializers.ModelSerializer):
         validated_data["author"] = user
         validated_data["is_open"] = True
         return super().create(validated_data)
+
+
+def recent_supporters(petition_id: int):
+    """
+    Efficiently fetch the latest 5 supporters using the through model.
+    """
+    supports = (
+        PetitionSupport.objects.filter(petition_id=petition_id)
+        .select_related("user")
+        .order_by("-supported_at", "-id")[:5]
+    )
+
+    users = [support.user for support in supports]
+    return SimpleUserSerializer(users, many=True).data

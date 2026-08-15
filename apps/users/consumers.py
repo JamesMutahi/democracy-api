@@ -16,7 +16,8 @@ from apps.petition.models import Petition
 from apps.posts.models import Post
 from apps.recommendations.follow_recommender import FollowRecommender
 from apps.users.models import ProfileVisit
-from apps.users.serializers import UserSerializer, annotate_user_queryset
+from apps.users.querysets import annotate_user_queryset
+from apps.users.serializers import UserSerializer
 from apps.utils.list_paginator import list_paginator
 from apps.utils.throttles import rate_limit, interaction_rate_limit
 
@@ -675,13 +676,15 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     # ====================== Object Helpers ======================
 
-    def get_petition_or_error(self, pk: int):
+    @staticmethod
+    def get_petition_or_error(pk: int):
         try:
             return Petition.objects.get(pk=pk)
         except (Petition.DoesNotExist, ValueError, TypeError):
             raise NotFound("Petition not found")
 
-    def get_broadcast_or_error(self, pk: int):
+    @staticmethod
+    def get_broadcast_or_error(pk: int):
         try:
             return Broadcast.objects.get(pk=pk)
         except (Broadcast.DoesNotExist, ValueError, TypeError):

@@ -3,7 +3,7 @@ from datetime import datetime, time
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Count, Exists, F, OuterRef, Q, QuerySet
+from django.db.models import F, Q, QuerySet
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 from djangochannelsrestframework.decorators import action
@@ -16,8 +16,11 @@ from djangochannelsrestframework.mixins import (
 from djangochannelsrestframework.observer import model_observer
 from rest_framework.exceptions import NotFound, PermissionDenied
 
+from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
 from apps.petition.models import Petition, PetitionClick, PetitionSupport
-from apps.petition.serializers import PetitionSerializer
+from apps.petition.querysets import annotate_petition_metrics
+from apps.petition.serializers import PetitionSerializer, recent_supporters
+from apps.users.serializers import SimpleUserSerializer
 from apps.utils.list_paginator import list_paginator
 from apps.utils.throttles import interaction_rate_limit, rate_limit
 
@@ -31,11 +34,18 @@ class PetitionConsumer(
     GenericAsyncAPIConsumer,
 ):
     serializer_class = PetitionSerializer
-    queryset = Petition.objects.all()
     lookup_field = "pk"
 
     page_size = 20
     max_page_size = 100
+
+    def get_queryset(self, **kwargs) -> QuerySet:
+        return annotate_petition_metrics(
+            Petition.objects.filter(is_active=True),
+            self.scope.get("user"),
+        )
+
+    # ── connection ──────────────────────────────────────────────
 
     async def connect(self):
         user = self.scope.get("user")
@@ -52,35 +62,7 @@ class PetitionConsumer(
         """
         Observer for Petition model changes.
         """
-        if message.get("action") != "delete":
-            data = await self.get_petition_serializer_data(
-                pk=message.get("data")
-            )
-
-            if data is None:
-                message["action"] = "delete"
-                message["data"] = message.get("data")
-            else:
-                message["data"] = data
-
         await self.send_json(message)
-
-    @database_sync_to_async
-    def get_petition_serializer_data(self, pk: int):
-        """
-        Serialize a petition for realtime updates.
-
-        Uses the optimized queryset with select_related and annotations.
-        """
-        try:
-            petition = self.get_queryset().get(pk=pk)
-        except Petition.DoesNotExist:
-            return None
-
-        return PetitionSerializer(
-            petition,
-            context={"scope": self.scope},
-        ).data
 
     @petition_activity.groups_for_signal
     def petition_activity_signal_groups(self, instance: Petition, **kwargs):
@@ -95,7 +77,7 @@ class PetitionConsumer(
     @petition_activity.serializer
     def petition_activity_serializer(self, instance: Petition, action, **kwargs):
         return {
-            "data": instance.pk,
+            "data": get_activity_data(instance),
             "action": action.value,
             "pk": instance.pk,
             "response_status": (
@@ -111,30 +93,11 @@ class PetitionConsumer(
     async def support_activity(self, message, **kwargs):
         """
         Observer for PetitionSupport changes.
-
-        When support changes, broadcast updated parent petition data.
         """
-        petition_pk = message.get("data")
-
-        if not petition_pk:
-            return
-
-        data = await self.get_petition_serializer_data(pk=petition_pk)
-
-        if data is None:
-            return
-
-        message["data"] = data
-        message["action"] = "update"
-
         await self.send_json(message)
 
     @support_activity.groups_for_signal
-    def support_activity_signal_groups(
-        self,
-        instance: PetitionSupport,
-        **kwargs,
-    ):
+    def support_activity_signal_groups(self, instance: PetitionSupport, **kwargs):
         if instance.petition_id:
             yield f"petition__{instance.petition_id}"
 
@@ -145,15 +108,15 @@ class PetitionConsumer(
 
     @support_activity.serializer
     def support_activity_serializer(
-        self,
-        instance: PetitionSupport,
-        action,
-        **kwargs,
+            self,
+            instance: PetitionSupport,
+            action,
+            **kwargs,
     ):
         return {
-            "data": instance.petition_id,
+            "data": get_activity_data_for_petition_id(instance.petition_id),
             "action": "update",
-            "pk": instance.pk,
+            "pk": instance.petition_id,
             "response_status": 200,
         }
 
@@ -164,47 +127,8 @@ class PetitionConsumer(
 
     # ====================== Queryset / Helpers ======================
 
-    def get_queryset(self, **kwargs) -> QuerySet:
-        """
-        Base queryset for all consumer queries.
-
-        Optimizations:
-        - select_related author/location FKs
-        - exclude inactive petitions except internal author-only actions
-        - annotate supporters_count
-        - annotate whether current user supports each petition
-        """
-        action_name = kwargs.get("action")
-
-        queryset = Petition.objects.select_related(
-            "author",
-            "county",
-            "constituency",
-            "ward",
-        )
-
-        if action_name not in {"delete", "patch"}:
-            queryset = queryset.filter(is_active=True)
-
-        queryset = queryset.annotate(
-            supporters_count=Count("supporters", distinct=True),
-        )
-
-        user = self.scope.get("user")
-
-        if user is not None and getattr(user, "is_authenticated", False):
-            queryset = queryset.annotate(
-                is_supported_by_request_user=Exists(
-                    PetitionSupport.objects.filter(
-                        petition_id=OuterRef("pk"),
-                        user_id=user.pk,
-                    )
-                )
-            )
-
-        return queryset
-
-    def _as_bool(self, value, default: bool = True) -> bool:
+    @staticmethod
+    def _as_bool(value, default: bool = True) -> bool:
         """
         Parse JSON/client boolean-like values safely.
         """
@@ -232,7 +156,8 @@ class PetitionConsumer(
 
         return bool(value)
 
-    def _parse_datetime(self, value, end_of_day: bool = False):
+    @staticmethod
+    def _parse_datetime(value, end_of_day: bool = False):
         """
         Parse datetime or date strings.
 
@@ -265,7 +190,8 @@ class PetitionConsumer(
 
         return parsed
 
-    def _normalize_previous_petitions(self, value):
+    @staticmethod
+    def _normalize_previous_petitions(value):
         """
         Normalize previous_petitions into a clean list of integers.
         """
@@ -312,11 +238,11 @@ class PetitionConsumer(
 
             if search_term:
                 search_filter = (
-                    Q(title__icontains=search_term)
-                    | Q(description__icontains=search_term)
-                    | Q(county__name__icontains=search_term)
-                    | Q(constituency__name__icontains=search_term)
-                    | Q(ward__name__icontains=search_term)
+                        Q(title__icontains=search_term)
+                        | Q(description__icontains=search_term)
+                        | Q(county__name__icontains=search_term)
+                        | Q(constituency__name__icontains=search_term)
+                        | Q(ward__name__icontains=search_term)
                 )
 
                 if hasattr(User, "name"):
@@ -434,20 +360,10 @@ class PetitionConsumer(
             return queryset.order_by("-supporters_count", "-created_at")
 
         if action_name == "user_petitions":
-            user = kwargs.get("user") or self.scope.get("user")
-
-            if not user or not getattr(user, "is_authenticated", False):
-                return queryset.none()
-
-            return queryset.filter(author=user).order_by("-created_at")
+            return queryset.filter(author=kwargs.get("user")).order_by("-created_at")
 
         if action_name in {"delete", "patch"}:
-            user = self.scope.get("user")
-
-            if not user:
-                return queryset.none()
-
-            return queryset.filter(author=user)
+            return queryset.filter(author=self.scope.get("user"))
 
         return queryset.order_by("-supporters_count", "-created_at")
 
@@ -460,40 +376,17 @@ class PetitionConsumer(
         kwargs["previous_petitions"] = self._normalize_previous_petitions(
             kwargs.get("previous_petitions")
         )
-
         kwargs["county"], kwargs["constituency"], kwargs["ward"] = (
             await self.get_user_regions()
         )
-
-        queryset = self.filter_queryset(
-            self.get_queryset(**kwargs),
-            **kwargs,
-        )
-
-        data = await self.list_(
-            queryset=queryset,
-            page_size=page_size,
-            **kwargs,
-        )
-
-        await self.reply(
-            action="list",
-            data=data,
-            request_id=request_id,
-        )
+        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        data = await self.list_(queryset=queryset, page_size=page_size, **kwargs)
+        await self.reply(action="list", data=data, request_id=request_id)
 
     @database_sync_to_async
     def get_user_regions(self):
         user = self.scope.get("user")
-
-        if not user or not getattr(user, "is_authenticated", False):
-            return None, None, None
-
-        return (
-            getattr(user, "county", None),
-            getattr(user, "constituency", None),
-            getattr(user, "ward", None),
-        )
+        return user.county, user.constituency, user.ward
 
     @database_sync_to_async
     def list_(self, queryset: QuerySet, page_size=None, **kwargs):
@@ -604,10 +497,7 @@ class PetitionConsumer(
         Uses select_for_update on the petition to avoid race conditions.
         Uses the through model directly so observers fire correctly.
         """
-        user_pk = getattr(self.scope.get("user"), "pk", None)
-
-        if not user_pk:
-            raise PermissionDenied("Authentication is required.")
+        user_pk = self.scope.get("user").id
 
         user = User.objects.only(
             "id",
@@ -651,7 +541,8 @@ class PetitionConsumer(
                 "supporters": supporters_count,
             }
 
-    def _user_can_support(self, petition: Petition, user) -> bool:
+    @staticmethod
+    def _user_can_support(petition: Petition, user) -> bool:
         """
         Region eligibility check using IDs to avoid extra object fetches.
         """
@@ -662,8 +553,8 @@ class PetitionConsumer(
             return False
 
         if (
-            petition.constituency_id
-            and petition.constituency_id != getattr(user, "constituency_id", None)
+                petition.constituency_id
+                and petition.constituency_id != getattr(user, "constituency_id", None)
         ):
             return False
 
@@ -790,3 +681,45 @@ class PetitionConsumer(
         )
 
         return data, 200
+
+
+# ── Module-level helpers for observer payloads ────────────────
+
+def get_activity_data_for_petition_id(petition_id: int) -> dict:
+    petition = (
+        Petition.objects.select_related("county", "constituency", "ward")
+        .filter(pk=petition_id)
+        .first()
+    )
+
+    if petition is None:
+        return {"id": petition_id}
+
+    return get_activity_data(petition)
+
+
+def get_activity_data(petition: Petition) -> dict:
+    supporters_count = getattr(petition, "supporters_count", None)
+
+    if supporters_count is None:
+        supporters_count = petition.supporters.count()
+
+    return {
+        "id": petition.pk,
+        "title": petition.title,
+        "description": petition.description,
+        "county": CountySerializer(petition.county).data if petition.county else None,
+        "constituency": (
+            ConstituencySerializer(petition.constituency).data
+            if petition.constituency
+            else None
+        ),
+        "ward": WardSerializer(petition.ward).data if petition.ward else None,
+        "supporters": supporters_count,
+        "recent_supporters": recent_supporters(petition_id=petition.pk),
+        "image": petition.image.url,
+        "video": petition.video.url if petition.video else None,
+        "views": petition.views,
+        "is_open": petition.is_open,
+        "is_active": petition.is_active,
+    }
