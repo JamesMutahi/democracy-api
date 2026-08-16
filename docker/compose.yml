@@ -83,7 +83,7 @@ services:
       - --workers
       - "3"
       - --proxy-headers
-      - "--forwarded-allow-ips=*"
+      - --forwarded-allow-ips=*
     depends_on:
       db:
         condition: service_healthy
@@ -132,6 +132,9 @@ services:
       - project
       - worker
       - --loglevel=info
+      - --queues=celery
+      - --concurrency=8
+      - --prefetch-multiplier=1
       - --max-tasks-per-child=1000
     depends_on:
       db:
@@ -163,6 +166,102 @@ services:
     #
     # volumes:
     #   - ..:/democracy
+
+#  ollama:
+#    image: ollama/ollama
+#    restart: unless-stopped
+#    healthcheck:
+#      test: [ "CMD", "ollama", "list" ]
+#      interval: 30s
+#      timeout: 10s
+#      retries: 5
+#      start_period: 30s
+#    volumes:
+#      - ollama_data:/root/.ollama
+#    networks:
+#      - backend
+#    logging: *default-logging
+
+    # Optional GPU support.
+    # AMD GPU
+#    devices:
+#      - /dev/kfd:/dev/kfd
+#      - /dev/dri:/dev/dri
+#    environment:
+#      # MAGIC VARIABLE for AMD RX 6000 series (RDNA2)
+#      - HSA_OVERRIDE_GFX_VERSION=10.3.0
+#    group_add:
+#      - video
+#      - render
+
+    # Uncomment if you have an NVIDIA GPU and the NVIDIA Container Toolkit installed.
+    #
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+#  ollama_pull:
+#    image: ollama/ollama
+#    restart: "no"
+#    depends_on:
+#      ollama:
+#        condition: service_healthy
+#    environment:
+#      OLLAMA_HOST: http://ollama:11434
+#    command:
+#      - sh
+#      - -c
+#      - ollama pull ${LOCAL_QWEN_MODEL:-qwen2.5:7b-instruct}
+#    networks:
+#      - backend
+#    logging: *default-logging
+
+  celery_summarization:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile
+    restart: unless-stopped
+    command:
+      - celery
+      - "-A"
+      - project
+      - worker
+      - --loglevel=info
+      - --queues=summarization
+      - --concurrency=1
+      - --prefetch-multiplier=1
+      - --max-tasks-per-child=50
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+#      ollama:
+#        condition: service_healthy
+#      ollama_pull:
+#        condition: service_completed_successfully
+    environment:
+      <<: *shared-environment
+      RUN_DB_SETUP: "false"
+      LOAD_FIXTURES: "false"
+
+#      LOCAL_LLM_BACKEND: ${LOCAL_LLM_BACKEND:-ollama}
+#      LOCAL_QWEN_MODEL: ${LOCAL_QWEN_MODEL:-qwen2.5:7b-instruct}
+#      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    stop_grace_period: 120s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - backend
+    logging: *default-logging
+
 
   celery_beat:
     build:
@@ -216,6 +315,7 @@ services:
       - flower
       - --port=5555
       - --address=0.0.0.0
+      - --basic-auth=${FLOWER_USERNAME}:${FLOWER_PASSWORD}
     depends_on:
       db:
         condition: service_healthy
@@ -266,7 +366,8 @@ services:
 volumes:
   postgres_data:
   celery_beat_data:
-  # media_data:
+  media_data:
+  ollama_data:
 
 networks:
   frontend:

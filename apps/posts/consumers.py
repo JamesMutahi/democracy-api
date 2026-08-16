@@ -1103,7 +1103,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
         # 2. Users
         users = User.objects.filter(
-            Q(username__icontains=query) | Q(name__icontains=query)
+            Q(username__istartswith=query) | Q(name__istartswith=query)
         ).only('id', 'username', 'name', 'image')[:6]
 
         for user in users:

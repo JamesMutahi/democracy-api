@@ -33,6 +33,9 @@ class Ballot(BaseModel):
     class Meta:
         db_table = 'Ballot'
         ordering = ['-start_time']
+        indexes = [
+            models.Index(fields=["end_time", "is_active"]),
+        ]
         constraints = [
             models.CheckConstraint(
                 condition=Q(end_time__gt=F("start_time")),
@@ -177,3 +180,43 @@ class Reason(BaseModel):
 
     def __str__(self):
         return self.text
+
+
+class BallotSummary(BaseModel):
+    class Status(models.TextChoices):
+        PENDING = "pending", _("Pending")
+        PROCESSING = "processing", _("Processing")
+        COMPLETED = "completed", _("Completed")
+        FAILED = "failed", _("Failed")
+
+    ballot = models.OneToOneField(
+        Ballot,
+        on_delete=models.CASCADE,
+        related_name="summary",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    summary = models.TextField(blank=True)
+    themes = models.JSONField(default=list, blank=True)
+
+    model_name = models.CharField(max_length=120, blank=True)
+    method = models.CharField(max_length=50, blank=True)
+
+    reasons_total = models.PositiveIntegerField(default=0)
+    reasons_processed = models.PositiveIntegerField(default=0)
+    attempts = models.PositiveIntegerField(default=0)
+    error = models.TextField(blank=True)
+
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "BallotSummary"
+        verbose_name = "Ballot Summary"
+        verbose_name_plural = "Ballot Summaries"
+
+    def __str__(self):
+        return f"Summary for ballot {self.ballot_id} ({self.status})"

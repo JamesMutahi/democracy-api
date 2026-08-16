@@ -43,6 +43,7 @@ class BallotSerializer(serializers.ModelSerializer):
     total_votes = serializers.SerializerMethodField()
     voted_option = serializers.SerializerMethodField()
     reason = serializers.SerializerMethodField()
+    summary = serializers.SerializerMethodField()
 
     options = OptionSerializer(many=True, read_only=True)
 
@@ -71,6 +72,7 @@ class BallotSerializer(serializers.ModelSerializer):
             "voted_option",
             "options",
             "reason",
+            "summary",
         ]
 
     @staticmethod
@@ -124,3 +126,26 @@ class BallotSerializer(serializers.ModelSerializer):
             .values_list("text", flat=True)
             .first()
         )
+
+    @staticmethod
+    def get_summary(obj):
+        summary = getattr(obj, "summary", None)
+
+        if summary is None:
+            return None
+
+        if summary.status != "completed":
+            return {
+                "status": summary.status,
+                "summary": None,
+                "themes": [],
+            }
+
+        return {
+            "status": summary.status,
+            "summary": summary.summary,
+            "themes": summary.themes,
+            "reasons_total": summary.reasons_total,
+            "reasons_processed": summary.reasons_processed,
+            "method": summary.method,
+        }

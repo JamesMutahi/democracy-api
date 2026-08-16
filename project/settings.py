@@ -416,6 +416,24 @@ POST_RECOMMENDER_CONFIG = POST_RECOMMENDER_CONFIG
 
 FOLLOW_RECOMMENDER_CONFIG = FOLLOW_RECOMMENDER_CONFIG
 
+# LLM backend: "ollama" or "openai"
+LOCAL_LLM_BACKEND = config("LOCAL_LLM_BACKEND", default="ollama")
+
+# Ollama settings
+OLLAMA_BASE_URL = config("OLLAMA_BASE_URL", default="http://localhost:11434")
+
+# OpenAI-compatible / vLLM settings
+LOCAL_LLM_BASE_URL = config("LOCAL_LLM_BASE_URL", default="http://localhost:8000/v1")
+
+# Model name
+LOCAL_QWEN_MODEL = config("LOCAL_QWEN_MODEL", default="qwen2.5:7b-instruct")
+
+# Summarization tuning
+BALLOT_SUMMARY_MAX_FULL_COMMENTS = int(config("BALLOT_SUMMARY_MAX_FULL_COMMENTS", default="5000"))
+BALLOT_SUMMARY_SAMPLE_SIZE = int(config("BALLOT_SUMMARY_SAMPLE_SIZE", default="5000"))
+BALLOT_SUMMARY_LLM_CHUNK_SIZE = int(config("BALLOT_SUMMARY_LLM_CHUNK_SIZE", default="50"))
+BALLOT_SUMMARY_REDUCE_BATCH_SIZE = int(config("BALLOT_SUMMARY_REDUCE_BATCH_SIZE", default="10"))
+
 LOG_LEVEL = 'DEBUG' if DEBUG else 'INFO'
 
 LOGGING = {

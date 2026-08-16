@@ -87,7 +87,7 @@ class PetitionSerializer(serializers.ModelSerializer):
         """
         return recent_supporters(petition_id=instance.pk)
 
-    def get_has_supported(self, instance: Petition) -> bool:
+    def get_is_supported(self, instance: Petition) -> bool:
         """
         Prefer annotated value if present.
         Falls back to a safe DB check.

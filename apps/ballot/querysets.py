@@ -49,6 +49,7 @@ def annotate_ballot_metrics(queryset, user):
         "county",
         "constituency",
         "ward",
+        "summary",
     ).order_by(
         "-start_time",
         "-id",
