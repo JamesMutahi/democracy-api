@@ -4,7 +4,9 @@ from django.db import transaction
 from rest_framework import serializers
 
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
-from apps.survey.models import Choice, ChoiceAnswer, Page, Question, Response, Survey, TextAnswer
+from apps.survey.models import Choice, ChoiceAnswer, Page, Question, Response, Survey, TextAnswer, SurveySummary, \
+    SurveyTextCluster
+from apps.survey.tasks import embed_response_text_answers
 from apps.utils.serializer_user import get_current_user
 
 
@@ -181,13 +183,48 @@ class ResponseSerializer(serializers.ModelSerializer):
         return response
 
 
+class SurveyTextClusterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SurveyTextCluster
+        fields = (
+            "id",
+            "question",
+            "external_cluster_id",
+            "label",
+            "summary",
+            "size",
+            "representative_texts",
+        )
+
+
+class SurveySummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SurveySummary
+        fields = (
+            "status",
+            "summary",
+            "choice_stats",
+            "number_stats",
+            "text_themes",
+            "total_responses",
+            "processed_text_answers",
+            "sampled",
+            "model_name",
+            "prompt_version",
+            "completed_at",
+        )
+
+
 class SurveySerializer(serializers.ModelSerializer):
     pages = PageSerializer(many=True, read_only=True)
     response = serializers.SerializerMethodField(read_only=True)
     total_responses = serializers.SerializerMethodField(read_only=True)
+
     county = CountySerializer(read_only=True)
     constituency = ConstituencySerializer(read_only=True)
     ward = WardSerializer(read_only=True)
+
+    summary = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Survey
@@ -204,6 +241,7 @@ class SurveySerializer(serializers.ModelSerializer):
             'pages',
             'response',
             'total_responses',
+            "summary",
         ]
 
     def get_response(self, instance: Survey):
@@ -228,3 +266,43 @@ class SurveySerializer(serializers.ModelSerializer):
         if hasattr(instance, "total_responses_count"):
             return instance.total_responses_count
         return instance.responses.count()
+
+    def get_summary(self, instance: Survey):
+        try:
+            summary = instance.summary
+        except SurveySummary.DoesNotExist:
+            return None
+
+        if summary is None:
+            return None
+
+        return SurveySummarySerializer(summary, context=self.context).data
+
+    @transaction.atomic
+    def create(self, validated_data):
+        validated_data["user"] = get_current_user(self.context)
+
+        text_answers = validated_data.pop("text_answers", [])
+        choice_answers = validated_data.pop("choice_answers", [])
+
+        # One response per (survey, user): replace any previous submission.
+        Response.objects.filter(
+            survey=validated_data["survey"],
+            user=validated_data["user"],
+        ).delete()
+
+        response = Response.objects.create(**validated_data)
+
+        TextAnswer.objects.bulk_create(
+            TextAnswer(response=response, **answer) for answer in text_answers
+        )
+
+        ChoiceAnswer.objects.bulk_create(
+            ChoiceAnswer(response=response, **answer) for answer in choice_answers
+        )
+
+        transaction.on_commit(
+            lambda: embed_response_text_answers.delay(response.id)
+        )
+
+        return response

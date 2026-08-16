@@ -6,8 +6,8 @@ from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
-from apps.survey.models import Response, Survey
-from apps.survey.serializers import ResponseSerializer, SurveySerializer
+from apps.survey.models import Response, Survey, SurveySummary
+from apps.survey.serializers import ResponseSerializer, SurveySerializer, SurveySummarySerializer
 from apps.utils.list_paginator import list_paginator
 from apps.utils.throttles import interaction_rate_limit, rate_limit
 
@@ -20,7 +20,7 @@ class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     queryset = (
         Survey.objects.filter(is_active=True)
-        .select_related('county', 'constituency', 'ward')
+        .select_related('county', 'constituency', 'ward', 'summary')
         .prefetch_related('pages__questions__choices')
         .annotate(total_responses_count=Count('responses', distinct=True))
     )
@@ -200,3 +200,18 @@ class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         if survey.ward_id and survey.ward_id != getattr(user, 'ward_id', None):
             return False
         return True
+
+    @action()
+    @rate_limit(limit=40, period=60)
+    async def summary(self, survey_id: int, request_id: str, **kwargs):
+        data = await self.get_summary(survey_id=survey_id)
+        await self.reply(action="summary", data=data, request_id=request_id)
+
+    @database_sync_to_async
+    def get_summary(self, survey_id: int):
+        try:
+            summary = SurveySummary.objects.get(survey_id=survey_id)
+        except (SurveySummary.DoesNotExist, ValueError, TypeError):
+            return None
+
+        return SurveySummarySerializer(summary).data

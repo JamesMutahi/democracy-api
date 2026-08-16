@@ -11,6 +11,7 @@ from rest_framework.exceptions import PermissionDenied, NotFound, ValidationErro
 from apps.ballot.models import Ballot, Option, Reason, BallotVote
 from apps.ballot.querysets import annotate_ballot_metrics
 from apps.ballot.serializers import BallotSerializer, OptionSerializer
+from apps.ballot.tasks import redact_reason
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
 from apps.utils.list_paginator import list_paginator
 from apps.utils.throttles import rate_limit, interaction_rate_limit
@@ -359,6 +360,9 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         text = (text or "").strip()
         reason = None
 
+        current_vote = BallotVote.objects.filter(user=user, ballot=ballot).first()
+        current_option = current_vote.option if current_vote else None
+
         with transaction.atomic():
             if not text:
                 Reason.objects.filter(ballot=ballot, user=user).delete()
@@ -366,8 +370,11 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
                 reason, _ = Reason.objects.update_or_create(
                     ballot=ballot,
                     user=user,
-                    defaults={"text": text},
+                    defaults={"text": text, "option": current_option},
                 )
+            transaction.on_commit(
+                lambda reason_id=reason.id: redact_reason.delay(reason_id)
+            )
 
         return {
             "ballot_id": ballot.pk,

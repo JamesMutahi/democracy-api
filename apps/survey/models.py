@@ -1,8 +1,10 @@
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
+from pgvector.django import VectorField
 
 from apps.geo.models import County, Constituency, Ward
 
@@ -147,8 +149,16 @@ class TextAnswer(models.Model):
     question = models.ForeignKey(Question, on_delete=models.PROTECT, related_name='text_answers')
     text = models.TextField()
 
+    # PII redaction fields
+    redacted_text = models.TextField(blank=True)
+    pii_entities = models.JSONField(default=list, blank=True)
+    pii_redacted_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
-        db_table = 'TextAnswer'
+        db_table = "TextAnswer"
+        indexes = [
+            models.Index(fields=["question"]),
+        ]
 
     def __str__(self):
         return self.text
@@ -160,7 +170,147 @@ class ChoiceAnswer(models.Model):
     choice = models.ForeignKey(Choice, on_delete=models.PROTECT, related_name='answers')
 
     class Meta:
-        db_table = 'ChoiceAnswer'
+        db_table = "ChoiceAnswer"
+        indexes = [
+            models.Index(fields=["question"]),
+            models.Index(fields=["choice"]),
+        ]
 
     def __str__(self):
         return self.choice.text
+
+
+class SurveySummary(BaseModel):
+    class Status(models.TextChoices):
+        PENDING = "pending", _("Pending")
+        RUNNING = "running", _("Running")
+        COMPLETED = "completed", _("Completed")
+        FAILED = "failed", _("Failed")
+
+    survey = models.OneToOneField(
+        Survey,
+        on_delete=models.CASCADE,
+        related_name="summary",
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+
+    summary = models.TextField(blank=True)
+
+    choice_stats = models.JSONField(default=list, blank=True)
+    number_stats = models.JSONField(default=list, blank=True)
+    text_themes = models.JSONField(default=list, blank=True)
+
+    total_responses = models.PositiveIntegerField(default=0)
+    processed_text_answers = models.PositiveIntegerField(default=0)
+
+    sampled = models.BooleanField(default=False)
+
+    model_name = models.CharField(max_length=255, blank=True)
+    prompt_version = models.CharField(max_length=100, blank=True)
+
+    error = models.TextField(blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "SurveySummary"
+
+    def __str__(self):
+        return f"SurveySummary {self.survey_id} - {self.status}"
+
+
+class SurveyTextCluster(BaseModel):
+    """
+    A thematic cluster for one survey question.
+    """
+
+    survey = models.ForeignKey(
+        Survey,
+        on_delete=models.CASCADE,
+        related_name="text_clusters",
+    )
+
+    question = models.ForeignKey(
+        Question,
+        on_delete=models.CASCADE,
+        related_name="text_clusters",
+    )
+
+    external_cluster_id = models.IntegerField()
+
+    label = models.CharField(max_length=255, blank=True)
+    summary = models.TextField(blank=True)
+
+    size = models.PositiveIntegerField(default=0)
+
+    centroid = VectorField(
+        dimensions=settings.EMBEDDING_DIMENSIONS,
+        null=True,
+        blank=True,
+    )
+
+    representative_texts = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        db_table = "SurveyTextCluster"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["survey", "question", "external_cluster_id"],
+                name="unique_survey_question_cluster",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["survey", "question"]),
+            models.Index(fields=["survey", "question", "size"]),
+        ]
+
+    def __str__(self):
+        return f"Cluster {self.external_cluster_id} for question {self.question_id}"
+
+
+class TextAnswerEmbedding(models.Model):
+    """
+    Embedding for a text answer.
+    """
+
+    text_answer = models.OneToOneField(
+        TextAnswer,
+        on_delete=models.CASCADE,
+        related_name="embedding",
+    )
+
+    survey = models.ForeignKey(
+        Survey,
+        on_delete=models.CASCADE,
+        related_name="text_answer_embeddings",
+    )
+
+    question = models.ForeignKey(
+        Question,
+        on_delete=models.CASCADE,
+        related_name="text_answer_embeddings",
+    )
+
+    embedding = VectorField(dimensions=settings.EMBEDDING_DIMENSIONS)
+
+    cluster = models.ForeignKey(
+        SurveyTextCluster,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="members",
+    )
+
+    class Meta:
+        db_table = "TextAnswerEmbedding"
+        indexes = [
+            models.Index(fields=["survey", "question"]),
+            models.Index(fields=["cluster"]),
+        ]
+
+    def __str__(self):
+        return f"Embedding for TextAnswer {self.text_answer_id}"

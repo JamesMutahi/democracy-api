@@ -46,12 +46,18 @@ app.conf.broker_transport_options = {
 app.conf.task_routes = {
     # Cheap scanner task stays on the normal queue.
     # It only finds ended ballots and enqueues summarization jobs.
-    "apps.ballot.tasks.scan_ended_ballots_for_summarization": {
+    "apps.ballot.tasks.check_ended_ballots": {
+        "queue": "celery",
+    },
+    "apps.survey.tasks.check_ended_surveys": {
         "queue": "celery",
     },
 
     # Expensive local Qwen LLM summarization task goes to its own queue.
-    "apps.ballot.tasks.summarize_ballot_task": {
+    "apps.ballot.tasks.summarize_ballot": {
+        "queue": "summarization",
+    },
+    "apps.survey.tasks.summarize_survey": {
         "queue": "summarization",
     },
 }
@@ -93,7 +99,11 @@ app.conf.beat_schedule = {
 
     # Scan for ended ballots and enqueue summarization jobs.
     "scan-ended-ballots-for-summarization-every-1-min": {
-        "task": "apps.ballot.tasks.scan_ended_ballots_for_summarization",
+        "task": "apps.ballot.tasks.check_ended_ballots",
+        "schedule": crontab(minute="*/1"),
+    },
+    "check-ended-surveys-for-summarization-every-1-min": {
+        "task": "apps.survey.tasks.check_ended_surveys",
         "schedule": crontab(minute="*/1"),
     },
 }

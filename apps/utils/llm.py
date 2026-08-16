@@ -73,7 +73,7 @@ def chat_json(messages, temperature: float = 0.1, timeout: int = 900):
     }
 
     response = requests.post(
-        f"{getattr(settings, 'OLLAMA_BASE_URL', 'http://localhost:11434')}/api/chat",
+        f"{settings.OLLAMA_BASE_URL}/api/chat",
         json=payload,
         timeout=timeout,
     )

@@ -23,7 +23,9 @@ x-environment: &shared-environment
 
 services:
   db:
-    image: postgis/postgis:17-3.5
+    build:
+      context: ..
+      dockerfile: ./docker/db.Dockerfile
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:?DB_NAME is required}

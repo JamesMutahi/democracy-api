@@ -3,6 +3,54 @@
 ```
 psql -U postgres -d [database name]
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+```
+# apps/survey/migrations/000X_add_text_answer_embedding_hnsw.py
+from django.db import migrations
+
+class Migration(migrations.Migration):
+    dependencies = [
+        ("survey", "000X_previous_migration"),
+    ]
+
+    operations = [
+        migrations.RunSQL(
+            sql="""
+            CREATE INDEX IF NOT EXISTS text_answer_embedding_hnsw_idx
+            ON "TextAnswerEmbedding"
+            USING hnsw (embedding vector_cosine_ops);
+            """,
+            reverse_sql="""
+            DROP INDEX IF EXISTS text_answer_embedding_hnsw_idx;
+            """,
+        ),
+    ]
+```
+
+```
+# apps/survey/migrations/000X_add_reason_embedding_hnsw.py
+from django.db import migrations
+
+
+class Migration(migrations.Migration):
+    dependencies = [
+        ("ballot", "000X_previous"),
+    ]
+
+    operations = [
+        migrations.RunSQL(
+            sql="""
+            CREATE INDEX IF NOT EXISTS reason_embedding_hnsw_idx
+            ON "ReasonEmbedding"
+            USING hnsw (embedding vector_cosine_ops);
+            """,
+            reverse_sql="""
+            DROP INDEX IF EXISTS reason_embedding_hnsw_idx;
+            """,
+        ),
+    ]
 ```
 
 ```

@@ -5,16 +5,39 @@ from django.core.cache import cache
 from django.db.models import Q
 from django.utils import timezone
 
-from .models import Ballot, BallotSummary
-from .services import summarize_ballot_reasons
+from .models import Ballot, BallotSummary, Reason
+from .services.summarizer import summarize_ballot_reasons
+from ..utils.pii import redact_text
+
+
+@shared_task(queue="pii")
+def redact_reason(reason_id: int):
+    try:
+        reason = Reason.objects.get(pk=reason_id)
+    except Reason.DoesNotExist:
+        return
+
+    if reason.redacted_text:
+        return
+
+    result = redact_text(reason.text)
+
+    reason.redacted_text = result["text"]
+    reason.pii_entities = result["entities"]
+    reason.pii_redacted_at = timezone.now()
+
+    reason.save(
+        update_fields=[
+            "redacted_text",
+            "pii_entities",
+            "pii_redacted_at",
+            "updated_at",
+        ]
+    )
 
 
 @shared_task
-def scan_ended_ballots_for_summarization():
-    """
-    Runs from Celery Beat.
-    Finds ballots that have ended and queues summarization jobs.
-    """
+def check_ended_ballots():
     now = timezone.now()
     retry_cutoff = now - timedelta(minutes=15)
 
@@ -32,17 +55,13 @@ def scan_ended_ballots_for_summarization():
     )
 
     for ballot_id in ballot_ids:
-        summarize_ballot_task.delay(ballot_id)
+        summarize_ballot.delay(ballot_id)
 
     return len(ballot_ids)
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def summarize_ballot_task(self, ballot_id: int):
-    """
-    Summarize one ended ballot.
-    Uses a cache lock to prevent duplicate processing.
-    """
+def summarize_ballot(self, ballot_id: int):
     lock_key = f"ballot_summary_lock:{ballot_id}"
 
     if not cache.add(lock_key, "1", timeout=60 * 120):
@@ -59,13 +78,7 @@ def summarize_ballot_task(self, ballot_id: int):
         summary.started_at = timezone.now()
         summary.error = ""
         summary.save(
-            update_fields=[
-                "attempts",
-                "status",
-                "started_at",
-                "error",
-                "updated_at",
-            ]
+            update_fields=["attempts", "status", "started_at", "error", "updated_at"]
         )
 
         try:
@@ -74,6 +87,7 @@ def summarize_ballot_task(self, ballot_id: int):
             summary.status = BallotSummary.Status.COMPLETED
             summary.summary = result.get("summary", "")
             summary.themes = result.get("themes", [])
+            summary.option_themes = result.get("option_themes", [])
             summary.model_name = result.get("model", "")
             summary.method = result.get("method", "")
             summary.reasons_total = result.get("reasons_total", 0)
@@ -89,7 +103,6 @@ def summarize_ballot_task(self, ballot_id: int):
             summary.error = str(exc)[:10000]
             summary.finished_at = timezone.now()
             summary.save()
-
             raise self.retry(exc=exc)
 
     finally:

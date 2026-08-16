@@ -139,12 +139,14 @@ class BallotSerializer(serializers.ModelSerializer):
                 "status": summary.status,
                 "summary": None,
                 "themes": [],
+                "option_themes": [],
             }
 
         return {
             "status": summary.status,
             "summary": summary.summary,
             "themes": summary.themes,
+            "option_themes": summary.option_themes,
             "reasons_total": summary.reasons_total,
             "reasons_processed": summary.reasons_processed,
             "method": summary.method,

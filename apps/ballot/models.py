@@ -1,9 +1,11 @@
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q, F
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+from pgvector.django import VectorField
 
 from apps.geo.models import County, Constituency, Ward
 
@@ -167,7 +169,13 @@ class BallotVote(models.Model):
 class Reason(BaseModel):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reasons')
     ballot = models.ForeignKey(Ballot, on_delete=models.CASCADE, related_name='reasons')
+    option = models.ForeignKey(Option, on_delete=models.CASCADE, related_name='reasons')
     text = models.TextField()
+
+    # PII redaction fields
+    redacted_text = models.TextField(blank=True)
+    pii_entities = models.JSONField(default=list, blank=True)
+    pii_redacted_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "Reason"
@@ -201,6 +209,7 @@ class BallotSummary(BaseModel):
     )
     summary = models.TextField(blank=True)
     themes = models.JSONField(default=list, blank=True)
+    option_themes = models.JSONField(default=list, blank=True)
 
     model_name = models.CharField(max_length=120, blank=True)
     method = models.CharField(max_length=50, blank=True)
@@ -220,3 +229,88 @@ class BallotSummary(BaseModel):
 
     def __str__(self):
         return f"Summary for ballot {self.ballot_id} ({self.status})"
+
+
+class ReasonEmbedding(models.Model):
+    """
+    Embedding for a redacted ballot reason.
+    """
+
+    reason = models.OneToOneField(
+        Reason,
+        on_delete=models.CASCADE,
+        related_name="embedding",
+    )
+    ballot = models.ForeignKey(
+        Ballot,
+        on_delete=models.CASCADE,
+        related_name="reason_embeddings",
+    )
+    option = models.ForeignKey(
+        Option,
+        on_delete=models.CASCADE,
+        related_name="reason_embeddings",
+        null=True,
+        blank=True,
+    )
+    embedding = VectorField(dimensions=settings.EMBEDDING_DIMENSIONS)
+
+    class Meta:
+        db_table = "ReasonEmbedding"
+        indexes = [
+            models.Index(fields=["ballot", "option"]),
+        ]
+
+    def __str__(self):
+        return f"Embedding for Reason {self.reason_id}"
+
+
+class ReasonCluster(BaseModel):
+    """
+    A thematic cluster discovered within one ballot + option group.
+    """
+
+    ballot = models.ForeignKey(
+        Ballot,
+        on_delete=models.CASCADE,
+        related_name="reason_clusters",
+    )
+    option = models.ForeignKey(
+        Option,
+        on_delete=models.CASCADE,
+        related_name="reason_clusters",
+        null=True,
+        blank=True,
+    )
+
+    external_cluster_id = models.IntegerField()
+
+    label = models.CharField(max_length=255, blank=True)
+    summary = models.TextField(blank=True)
+    sentiment = models.CharField(max_length=20, default="neutral")
+
+    size = models.PositiveIntegerField(default=0)
+
+    centroid = VectorField(
+        dimensions=settings.EMBEDDING_DIMENSIONS,
+        null=True,
+        blank=True,
+    )
+
+    representative_texts = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        db_table = "ReasonCluster"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["ballot", "option", "external_cluster_id"],
+                name="unique_ballot_option_cluster",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["ballot", "option"]),
+            models.Index(fields=["ballot", "option", "size"]),
+        ]
+
+    def __str__(self):
+        return f"Cluster {self.external_cluster_id} for ballot {self.ballot_id} option {self.option_id}"
