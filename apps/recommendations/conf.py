@@ -94,16 +94,17 @@ POST_RECOMMENDER_CONFIG = {
 
     # Final recommendation score weights
     "SCORING_WEIGHTS": {
-        "location": 0.22,
-        "content_type": 0.16,
+        "location": 0.20,
+        "content_type": 0.15,
         "media": 0.10,
-        "following": 0.14,
-        "profile_visit": 0.09,
-        "click": 0.07,
-        "engagement": 0.06,
-        "freshness": 0.09,
+        "following": 0.10,
+        "profile_visit": 0.05,
+        "click": 0.05,
+        "engagement": 0.10,
+        "freshness": 0.10,
         "similarity": 0.05,
-        "note_quality": 0.02,
+        "note_quality": 0.05,
+        "search_intent": 0.05,
     },
 
     # Engagement score used inside main recommendations

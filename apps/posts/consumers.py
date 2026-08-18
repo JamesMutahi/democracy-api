@@ -604,7 +604,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
             if deleted_count:
                 is_liked = False
             else:
-                post.bookmarks.add(user)
+                post.likes.add(user)
                 is_liked = True
 
             likes = post.likes.count()
@@ -965,9 +965,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     @staticmethod
     def _signal_post_update(post: Post):
         transaction.on_commit(
-            lambda: post_save.send(
-                post_save.send(sender=Post, instance=post, created=False)
-            )
+            lambda: post_save.send(sender=Post, instance=post, created=False)
         )
 
     # ====================== AUTOCOMPLETE ======================

@@ -6,6 +6,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.postgres.search import SearchQuery, SearchRank
 from django.core.cache import cache
 from django.db import connection
 from django.db.models import (
@@ -26,9 +27,12 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.utils.text import slugify
 
-from apps.posts.models import Post, Asset
+from apps.posts.models import Post, Asset, SearchHistory
 from .models import UserInteraction, PostRecommendationCache
+from ..ballot.models import BallotVote
+from ..petition.models import PetitionSupport
 from ..posts.querysets import annotate_post_metrics
+from ..survey.models import Response
 
 User = get_user_model()
 
@@ -38,16 +42,17 @@ logger = logging.getLogger(__name__)
 RECOMMENDER_CACHE_VERSION = "2026-08-07_v2"
 
 DEFAULT_SCORING_WEIGHTS = {
-    "location": 0.25,
-    "content_type": 0.18,
-    "media": 0.12,
-    "following": 0.15,
-    "profile_visit": 0.10,
-    "click": 0.08,
-    "engagement": 0.07,
+    "location": 0.20,
+    "content_type": 0.15,
+    "media": 0.10,
+    "following": 0.10,
+    "profile_visit": 0.05,
+    "click": 0.05,
+    "engagement": 0.10,
     "freshness": 0.10,
     "similarity": 0.05,
-    "note_quality": 0.02,
+    "note_quality": 0.05,
+    "search_intent": 0.05,
 }
 
 DEFAULT_ENGAGEMENT_WEIGHTS = {
@@ -592,139 +597,149 @@ class PostRecommender:
 
     def _compute_scored_posts(self, exclude_post_ids, fetch_limit=None):
         scored_limit = self._as_int("RECOMMENDATIONS.SCORED_LIMIT", 50)
-
         if fetch_limit:
             scored_limit = max(scored_limit, int(fetch_limit))
 
         weights = self._get_normalized_weights("SCORING_WEIGHTS", DEFAULT_SCORING_WEIGHTS)
         engagement_weights = self._get_weights("ENGAGEMENT_WEIGHTS", DEFAULT_ENGAGEMENT_WEIGHTS)
-
         now = timezone.now()
 
+        # --- 1. Base Queryset ---
         base_qs = Post.objects.filter(
-            status="published",
-            is_active=True,
-            is_deleted=False,
-            reply_to__isnull=True,
-            community_note_of__isnull=True,
+            status="published", is_active=True, is_deleted=False,
+            reply_to__isnull=True, community_note_of__isnull=True,
             published_at__lte=now,
         )
-
-        base_qs = annotate_post_metrics(base_qs, self.user)
-
-        candidate_window_days = self._as_int("RECOMMENDATIONS.CANDIDATE_WINDOW_DAYS", 30)
-
-        if candidate_window_days > 0:
-            base_qs = base_qs.filter(
-                published_at__gte=now - timedelta(days=candidate_window_days)
-            )
-
+        base_qs = base_qs.exclude(repost_type=Post.RepostType.REPOST)
+        base_qs = base_qs.exclude(author_id__in=self.user.muted.values_list("id", flat=True))
+        base_qs = base_qs.exclude(author_id__in=self.user.blocked.values_list("id", flat=True))
         if exclude_post_ids:
             base_qs = base_qs.exclude(id__in=exclude_post_ids)
 
-        base_qs = base_qs.exclude(
-            repost_type=Post.RepostType.REPOST
-        ).exclude(
-            author_id__in=self.user.muted.values_list("id", flat=True)
-        ).exclude(
-            author_id__in=self.user.blocked.values_list("id", flat=True)
-        )
+        base_qs = annotate_post_metrics(base_qs, self.user)
 
+        # --- 2. Participation Fatigue (Soft Penalty) ---
+        voted_ballots = BallotVote.objects.filter(user=self.user).values_list('ballot_id', flat=True)
+        signed_petitions = PetitionSupport.objects.filter(user=self.user).values_list('petition_id', flat=True)
+        answered_surveys = Response.objects.filter(user=self.user).values_list('survey_id', flat=True)
+
+        # --- 3. Controversy & Misinformation Penalty ---
+        contested_note_subquery = Post.objects.filter(
+            community_note_of=OuterRef("pk"),
+            status="published", is_active=True, is_deleted=False
+        ).annotate(
+            ups=Count("upvotes", distinct=True),
+            downs=Count("downvotes", distinct=True)
+        ).filter(
+            downs__gt=F("ups") * 2,
+            downs__gte=5
+        ).values("pk")[:1]
+
+        # --- 4. Search Intent ---
+        recent_searches = SearchHistory.objects.filter(
+            user=self.user, search_term__isnull=False
+        ).exclude(search_term='').order_by('-created_at').values_list('search_term', flat=True)[:5]
+
+        if recent_searches:
+            queries = [SearchQuery(term, config='english') for term in recent_searches]
+            combined_query = queries[0]
+            for q in queries[1:]:
+                combined_query |= q
+            base_qs = base_qs.annotate(
+                raw_search_rank=SearchRank(F('search_vector'), combined_query)
+            )
+        else:
+            base_qs = base_qs.annotate(raw_search_rank=Value(0.0, output_field=FloatField()))
+
+        # --- 5. Core Annotations ---
         base_qs = base_qs.select_related(
-            "author",
-            "ballot",
-            "petition",
-            "broadcast",
-            "survey",
-            "section",
-        ).prefetch_related(
-            "assets",
-        )
+            "author", "ballot", "petition", "broadcast", "survey", "section"
+        ).prefetch_related("assets", "reports")
 
-        repost_filter = Q(
-            reply_to__isnull=True,
-            community_note_of__isnull=True,
-            status="published",
-            is_active=True,
-            is_deleted=False,
-        )
+        repost_filter = Q(reply_to__isnull=True, community_note_of__isnull=True, status="published", is_active=True,
+                          is_deleted=False)
 
         base_qs = base_qs.annotate(
-            reposts_count=Count(
-                "reposts",
-                filter=repost_filter,
-                distinct=True,
-            )
+            reposts_count=Count("reposts", filter=repost_filter, distinct=True),
+            report_count=Count("reports", distinct=True),
         )
 
+        # Calculate raw engagement
         raw_engagement_score = Coalesce(
             ExpressionWrapper(
-                Count("likes", distinct=True) * Value(float(engagement_weights.get("likes", 2.0)),
-                                                      output_field=FloatField()) +
-                Count("bookmarks", distinct=True) * Value(float(engagement_weights.get("bookmarks", 2.0)),
-                                                          output_field=FloatField()) +
-                F("views") * Value(float(engagement_weights.get("views", 0.5)), output_field=FloatField()) +
-                F("reposts_count") * Value(float(engagement_weights.get("reposts", 3.0)), output_field=FloatField()),
+                Count("likes", distinct=True) * Value(float(engagement_weights.get("likes", 2.0))) +
+                Count("bookmarks", distinct=True) * Value(float(engagement_weights.get("bookmarks", 2.0))) +
+                F("views") * Value(float(engagement_weights.get("views", 0.5))) +
+                F("reposts_count") * Value(float(engagement_weights.get("reposts", 3.0))),
                 output_field=FloatField(),
             ),
             Value(0.0, output_field=FloatField()),
-            output_field=FloatField(),
         )
 
+        # Define ceilings for normalization
+        click_ceiling = self._as_float("SCORING.CLICK_CEILING", 20.0)
+        engagement_ceiling = self._as_float("SCORING.ENGAGEMENT_CEILING", 1000.0)
+        search_ceiling = self._as_float("SCORING.SEARCH_CEILING", 5.0)
+
+        # Get user-specific click filter
         click_filter = self._get_user_click_filter()
 
-        base_qs = base_qs.annotate(
+        # --- 6. Final Score Assembly ---
+        scored_qs = base_qs.annotate(
+            # Annotate raw metrics needed for normalization
             raw_engagement_score=raw_engagement_score,
             click_count=Coalesce(
-                Count(
-                    "clicks",
-                    filter=click_filter,
-                    distinct=True,
-                ),
+                Count("clicks", filter=click_filter, distinct=True),
                 Value(0, output_field=FloatField()),
                 output_field=FloatField(),
             ),
-        )
-
-        click_ceiling = self._as_float("SCORING.CLICK_CEILING", 20.0)
-        engagement_ceiling = self._as_float("SCORING.ENGAGEMENT_CEILING", 1000.0)
-
-        scored_qs = base_qs.annotate(
+            # Additive Scores (0.0 to 1.0)
             location_score=self._get_location_score(),
             content_type_score=self._get_content_type_score(),
             media_score=self._get_media_score(),
             following_score=self._get_following_score(),
-            profile_visit_score=Case(
-                When(
-                    author_id__in=self.user.visits.values_list("id", flat=True),
-                    then=Value(self._as_float("PROFILE_VISIT_SCORES.VISITED_AUTHOR", 0.85), output_field=FloatField()),
-                ),
-                default=Value(0.0, output_field=FloatField()),
-                output_field=FloatField(),
-            ),
             freshness_score=self._get_freshness_score(now=now),
             similarity_score=self._get_content_similarity_score(),
             note_quality_score=self._get_note_quality_score(),
+            search_intent_score=self._log_normalize_score(F("raw_search_rank"), search_ceiling),
+
+            # Normalized Behavioral Scores
             click_score=self._log_normalize_score(F("click_count"), click_ceiling),
             engagement_score=self._log_normalize_score(F("raw_engagement_score"), engagement_ceiling),
+
+            # Multiplicative Penalties (0.0 to 1.0)
+            participation_multiplier=Case(
+                When(ballot_id__in=voted_ballots, then=Value(0.15)),
+                When(petition_id__in=signed_petitions, then=Value(0.30)),
+                When(survey_id__in=answered_surveys, then=Value(0.10)),
+                default=Value(1.0),
+                output_field=FloatField()
+            ),
+            controversy_multiplier=Case(
+                When(report_count__gte=10, then=Value(0.40)),
+                When(Exists(contested_note_subquery), then=Value(0.30)),
+                default=Value(1.0),
+                output_field=FloatField()
+            ),
         ).annotate(
-            final_score=Coalesce(
-                ExpressionWrapper(
-                    F("location_score") * Value(float(weights.get("location", 0.0)), output_field=FloatField()) +
-                    F("content_type_score") * Value(float(weights.get("content_type", 0.0)),
-                                                    output_field=FloatField()) +
-                    F("media_score") * Value(float(weights.get("media", 0.0)), output_field=FloatField()) +
-                    F("following_score") * Value(float(weights.get("following", 0.0)), output_field=FloatField()) +
-                    F("profile_visit_score") * Value(float(weights.get("profile_visit", 0.0)),
-                                                     output_field=FloatField()) +
-                    F("click_score") * Value(float(weights.get("click", 0.0)), output_field=FloatField()) +
-                    F("engagement_score") * Value(float(weights.get("engagement", 0.0)), output_field=FloatField()) +
-                    F("freshness_score") * Value(float(weights.get("freshness", 0.0)), output_field=FloatField()) +
-                    F("similarity_score") * Value(float(weights.get("similarity", 0.0)), output_field=FloatField()) +
-                    F("note_quality_score") * Value(float(weights.get("note_quality", 0.0)), output_field=FloatField()),
-                    output_field=FloatField(),
-                ),
-                Value(0.0, output_field=FloatField()),
+            # Calculate the weighted sum of ALL additive scores
+            base_weighted_score=ExpressionWrapper(
+                F("location_score") * Value(float(weights.get("location", 0.0))) +
+                F("content_type_score") * Value(float(weights.get("content_type", 0.0))) +
+                F("media_score") * Value(float(weights.get("media", 0.0))) +
+                F("following_score") * Value(float(weights.get("following", 0.0))) +
+                F("freshness_score") * Value(float(weights.get("freshness", 0.0))) +
+                F("similarity_score") * Value(float(weights.get("similarity", 0.0))) +
+                F("note_quality_score") * Value(float(weights.get("note_quality", 0.0))) +
+                F("search_intent_score") * Value(float(weights.get("search_intent", 0.0))) +
+                F("click_score") * Value(float(weights.get("click", 0.0))) +
+                F("engagement_score") * Value(float(weights.get("engagement", 0.0))),
+                output_field=FloatField(),
+            )
+        ).annotate(
+            # Apply multiplicative penalties to the final score
+            final_score=ExpressionWrapper(
+                F("base_weighted_score") * F("participation_multiplier") * F("controversy_multiplier"),
                 output_field=FloatField(),
             )
         ).order_by(
@@ -846,53 +861,50 @@ class PostRecommender:
     # ====================== SCORE COMPONENTS ======================
 
     def _get_location_score(self):
-        default_score = self._as_float("LOCATION_SCORES.DEFAULT", 0.45)
-        no_location_score = self._as_float("LOCATION_SCORES.NO_LOCATION", 0.5)
-
-        county_value = getattr(self.user, "county_id", getattr(self.user, "county", None))
-
-        if not county_value:
-            return Value(no_location_score, output_field=FloatField())
+        """
+        Matches posts to the user's administrative boundaries (Ward > Constituency > County).
+        Civic actions (Ballots, Petitions, etc.) are matched via their FKs.
+        Standard posts without geo-data get a default baseline.
+        """
+        user_ward_id = getattr(self.user, "ward_id", None)
+        user_constituency_id = getattr(self.user, "constituency_id", None)
+        user_county_id = getattr(self.user, "county_id", None)
 
         whens = []
 
-        ward_value = getattr(self.user, "ward_id", getattr(self.user, "ward", None))
-        constituency_value = getattr(
-            self.user,
-            "constituency_id",
-            getattr(self.user, "constituency", None),
-        )
-
-        if ward_value:
-            whens.append(
-                When(
-                    ward=ward_value,
-                    then=Value(self._as_float("LOCATION_SCORES.WARD", 1.0), output_field=FloatField()),
-                )
+        # 1. Ward Level Match (Highest Priority)
+        if user_ward_id:
+            ward_match = (
+                    Q(ballot__ward_id=user_ward_id) |
+                    Q(petition__ward_id=user_ward_id) |
+                    Q(survey__ward_id=user_ward_id) |
+                    Q(broadcast__ward_id=user_ward_id)
             )
+            whens.append(When(ward_match, then=Value(self._as_float("LOCATION_SCORES.WARD", 1.0))))
 
-        if constituency_value:
-            whens.append(
-                When(
-                    constituency=constituency_value,
-                    then=Value(self._as_float("LOCATION_SCORES.CONSTITUENCY", 0.85), output_field=FloatField()),
-                )
+        # 2. Constituency Level Match
+        if user_constituency_id:
+            const_match = (
+                    Q(ballot__constituency_id=user_constituency_id) |
+                    Q(petition__constituency_id=user_constituency_id) |
+                    Q(survey__constituency_id=user_constituency_id) |
+                    Q(broadcast__constituency_id=user_constituency_id)
             )
+            whens.append(When(const_match, then=Value(self._as_float("LOCATION_SCORES.CONSTITUENCY", 0.85))))
 
-        if county_value:
-            whens.append(
-                When(
-                    county=county_value,
-                    then=Value(self._as_float("LOCATION_SCORES.COUNTY", 0.65), output_field=FloatField()),
-                )
+        # 3. County Level Match
+        if user_county_id:
+            county_match = (
+                    Q(ballot__county_id=user_county_id) |
+                    Q(petition__county_id=user_county_id) |
+                    Q(survey__county_id=user_county_id) |
+                    Q(broadcast__county_id=user_county_id)
             )
-
-        if not whens:
-            return Value(default_score, output_field=FloatField())
+            whens.append(When(county_match, then=Value(self._as_float("LOCATION_SCORES.COUNTY", 0.65))))
 
         return Case(
             *whens,
-            default=Value(default_score, output_field=FloatField()),
+            default=Value(self._as_float("LOCATION_SCORES.DEFAULT", 0.45), output_field=FloatField()),
             output_field=FloatField(),
         )
 

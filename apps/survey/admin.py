@@ -34,10 +34,16 @@ class PageInline(GrappelliSortableHiddenMixin, NestedTabularInline):
     classes = ('grp-collapse grp-open',)
 
 
+class SurveySummaryInline(admin.TabularInline):
+    model = SurveySummary
+    extra = 0
+    classes = ('grp-collapse grp-open',)
+
+
 @admin.register(Survey)
 class SurveyAdmin(NestedModelAdmin):
     list_display = ['title', 'county', 'constituency', 'ward', 'start_time', 'end_time', 'is_active']
-    inlines = [PageInline]
+    inlines = [PageInline, SurveySummaryInline]
 
 
 class ChoiceAnswerInline(admin.TabularInline):
