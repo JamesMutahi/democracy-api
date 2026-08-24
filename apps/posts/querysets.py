@@ -22,8 +22,6 @@ def top_community_note_body_subquery():
         Post.objects.filter(
             community_note_of=OuterRef("pk"),
         )
-        # Recommended visibility filters.
-        # Remove any of these if your product rules differ.
         .filter(
             is_deleted=False,
             is_active=True,

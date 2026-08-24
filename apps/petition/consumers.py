@@ -20,7 +20,6 @@ from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardS
 from apps.petition.models import Petition, PetitionClick, PetitionSupport
 from apps.petition.querysets import annotate_petition_metrics
 from apps.petition.serializers import PetitionSerializer, recent_supporters
-from apps.users.serializers import SimpleUserSerializer
 from apps.utils.list_paginator import list_paginator
 from apps.utils.throttles import interaction_rate_limit, rate_limit
 
@@ -571,21 +570,16 @@ class PetitionConsumer(
         try:
             result = await self.perform_change_status(pk=pk)
         except Petition.DoesNotExist:
-            return {"error": "Petition not found."}, 404
+            raise NotFound("Petition not found.")
 
         return result, 200
 
     @database_sync_to_async
     def perform_change_status(self, pk: int):
-        user_pk = getattr(self.scope.get("user"), "pk", None)
-
-        if not user_pk:
-            raise PermissionDenied("Authentication is required.")
-
         with transaction.atomic():
             petition = Petition.objects.select_for_update().get(
                 pk=pk,
-                author_id=user_pk,
+                author_id=self.scope.get("user").id,
                 is_active=True,
             )
 
@@ -600,11 +594,7 @@ class PetitionConsumer(
     @action()
     @interaction_rate_limit
     async def add_view(self, pk: int, request_id: str = None, **kwargs):
-        try:
-            result = await self.record_view(pk=pk)
-        except Petition.DoesNotExist:
-            return {"error": "Petition not found."}, 404
-
+        result = await self.record_view(pk=pk)
         return result, 200
 
     @database_sync_to_async
@@ -620,7 +610,7 @@ class PetitionConsumer(
         ).update(views=F("views") + 1)
 
         if not updated:
-            raise Petition.DoesNotExist
+            raise NotFound("Petition not found.")
 
         return {"pk": pk}
 

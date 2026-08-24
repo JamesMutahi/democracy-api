@@ -1,3 +1,4 @@
+from PIL import Image
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
@@ -9,10 +10,14 @@ from apps.utils.serializer_user import get_current_user
 
 User = get_user_model()
 
+# Constants for image validation
+MIN_IMAGE_WIDTH = 500
+MIN_IMAGE_HEIGHT = 300
+MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
+
 
 class PetitionSerializer(serializers.ModelSerializer):
     author = UserSerializer(read_only=True)
-
     supporters = serializers.SerializerMethodField()
     recent_supporters = serializers.SerializerMethodField()
     is_supported = serializers.SerializerMethodField()
@@ -24,7 +29,6 @@ class PetitionSerializer(serializers.ModelSerializer):
         source="county",
         required=False,
     )
-
     constituency = ConstituencySerializer(read_only=True)
     constituency_id = serializers.PrimaryKeyRelatedField(
         queryset=Constituency.objects.all(),
@@ -32,7 +36,6 @@ class PetitionSerializer(serializers.ModelSerializer):
         source="constituency",
         required=False,
     )
-
     ward = WardSerializer(read_only=True)
     ward_id = serializers.PrimaryKeyRelatedField(
         queryset=Ward.objects.all(),
@@ -70,6 +73,42 @@ class PetitionSerializer(serializers.ModelSerializer):
             "views": {"read_only": True},
         }
 
+    def validate_image(self, value):
+        """
+        Validate that the uploaded image meets size and dimension requirements.
+        - Max size: 10MB
+        - Min dimensions: 500x300px
+        """
+        if value:
+            # Check file size
+            if value.size > MAX_IMAGE_SIZE_BYTES:
+                raise serializers.ValidationError(
+                    f"Image file too large. Maximum size is {MAX_IMAGE_SIZE_BYTES // (1024 * 1024)}MB."
+                )
+
+            # Check dimensions using Pillow
+            try:
+                # Reset file pointer to beginning before reading
+                value.seek(0)
+                img = Image.open(value)
+                width, height = img.size
+
+                if width < MIN_IMAGE_WIDTH or height < MIN_IMAGE_HEIGHT:
+                    raise serializers.ValidationError(
+                        f"Image dimensions must be at least {MIN_IMAGE_WIDTH}x{MIN_IMAGE_HEIGHT}px. "
+                        f"Uploaded image is {width}x{height}px."
+                    )
+
+                # Reset file pointer again so Django can save it properly
+                value.seek(0)
+
+            except Exception as e:
+                if isinstance(e, serializers.ValidationError):
+                    raise
+                raise serializers.ValidationError("Upload a valid image file.")
+
+        return value
+
     @staticmethod
     def get_supporters(instance: Petition) -> int:
         """
@@ -94,15 +133,12 @@ class PetitionSerializer(serializers.ModelSerializer):
         """
         if hasattr(instance, "is_supported"):
             return instance.is_supported
-
         user = get_current_user(self.context)
-
         return instance.supporters.filter(pk=user.pk).exists()
 
     def validate(self, attrs):
         """
         Basic geographic hierarchy validation.
-
         If a ward is provided, it should have a constituency.
         If a constituency is provided, it should have a county.
         Also validate relationships where the FK fields exist.
@@ -137,7 +173,6 @@ class PetitionSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     "ward": "Ward must belong to the selected constituency.",
                 })
-
         return attrs
 
     def create(self, validated_data):
@@ -156,6 +191,5 @@ def recent_supporters(petition_id: int):
         .select_related("user")
         .order_by("-supported_at", "-id")[:5]
     )
-
     users = [support.user for support in supports]
     return SimpleUserSerializer(users, many=True).data

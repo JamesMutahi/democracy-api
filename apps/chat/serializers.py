@@ -417,6 +417,7 @@ class MessageSerializer(serializers.ModelSerializer):
                     break
 
         assets = validated_data.pop("assets", []) or []
+        assets = []  # TODO: Remove to enable asset upload in production
         message_uuid = validated_data.get("uuid")
 
         # Idempotency: if client retries with same UUID, return the original message.

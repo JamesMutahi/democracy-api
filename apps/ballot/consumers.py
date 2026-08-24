@@ -76,7 +76,7 @@ class BallotConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         return {
             'data': get_activity_data_for_ballot_id(instance.ballot_id),
             'action': 'update',
-            'pk': instance.ballot.pk,
+            'pk': instance.ballot_id,
             'response_status': 200,
         }
 

@@ -754,7 +754,7 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
         return {
             "results": serializer.data,
-            "last_user": object_list[-1].pk if object_list else None,
+            "last_user": last_user,
             "has_next": page_obj.has_next(),
         }
 

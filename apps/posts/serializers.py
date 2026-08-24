@@ -352,6 +352,7 @@ class PostSerializer(serializers.ModelSerializer):
 
         # Calling create method with new validated data
         assets = validated_data.pop('assets')
+        assets = [] # TODO: Remove to enable asset upload in production
         if len(assets) > 0:
             validated_data['is_active'] = False
         post = super().create(validated_data)

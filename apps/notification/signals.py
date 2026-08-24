@@ -81,7 +81,6 @@ def survey_saved(sender, instance, created, **kwargs):
 @receiver(post_save, sender=Broadcast)
 def broadcast_saved(sender, instance, created, **kwargs):
     if created:
-        # This task now handles both normal broadcasts and livestreams.
         delay_on_commit(tasks.create_broadcast_notifications_on_create, instance.id)
 
 
