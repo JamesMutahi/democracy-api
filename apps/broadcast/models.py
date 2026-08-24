@@ -120,6 +120,30 @@ class RecordingSession(BaseModel):
         ]
 
 
+class SpeakerInvite(BaseModel):
+    class Role(models.TextChoices):
+        CO_HOST = 'co-host', 'Co-Host'
+        SPEAKER = 'speaker', 'Speaker'
+
+    broadcast = models.ForeignKey(Broadcast, on_delete=models.CASCADE, related_name='speaker_invites')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='speaker_invites')
+    role = models.CharField(max_length=50, choices=Role.choices, default=Role.SPEAKER)
+    is_accepted = models.BooleanField(null=True, blank=True)
+
+    class Meta:
+        db_table = "SpeakerInvite"
+        constraints = [
+            models.UniqueConstraint(
+                fields=['broadcast', 'user'],
+                name="unique_speaker_invite",
+            ),
+        ]
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["broadcast", "is_accepted"]),
+        ]
+
+
 class SpeakerRequest(BaseModel):
     broadcast = models.ForeignKey(Broadcast, on_delete=models.CASCADE, related_name='speaker_requests')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='speaker_requests')
@@ -129,7 +153,12 @@ class SpeakerRequest(BaseModel):
 
     class Meta:
         db_table = "SpeakerRequest"
-        unique_together = ("broadcast", "user")
+        constraints = [
+            models.UniqueConstraint(
+                fields=['broadcast', 'user'],
+                name="unique_speaker_request",
+            ),
+        ]
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["broadcast", "is_approved"]),

@@ -9,6 +9,7 @@ def annotate_broadcast_metrics(queryset, user):
         "constituency",
         "ward",
     ).prefetch_related(
+        "speaker_invites",
         "co_hosts",
         "speakers",
         "recording_sessions",

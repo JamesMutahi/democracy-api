@@ -12,7 +12,6 @@ from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import (
     CreateModelMixin,
-    DeleteModelMixin,
     ListModelMixin,
     PatchModelMixin,
     RetrieveModelMixin,
@@ -21,7 +20,7 @@ from djangochannelsrestframework.observer import model_observer
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.generics import get_object_or_404
 
-from apps.broadcast.models import Broadcast, SpeakerRequest
+from apps.broadcast.models import Broadcast, SpeakerRequest, SpeakerInvite
 from apps.broadcast.querysets import annotate_broadcast_metrics
 from apps.broadcast.serializers import BroadcastSerializer, SpeakerRequestSerializer
 from apps.broadcast.services import BroadcastParticipantService
@@ -41,7 +40,6 @@ class BroadcastConsumer(
     ListModelMixin,
     PatchModelMixin,
     RetrieveModelMixin,
-    DeleteModelMixin,
     GenericAsyncAPIConsumer,
 ):
     serializer_class = BroadcastSerializer
@@ -86,32 +84,32 @@ class BroadcastConsumer(
 
     @broadcast_activity.serializer
     def broadcast_activity_serializer(self, instance: Broadcast, _action, **kwargs):
-        if _action == "delete":
-            data = {}
-        else:
-            try:
-                broadcast = Broadcast.objects.select_related(
-                    "host",
-                    "county",
-                    "constituency",
-                    "ward",
-                ).prefetch_related(
-                    "co_hosts",
-                    "speakers",
-                    "recording_sessions",
-                ).get(pk=instance.pk)
-            except Broadcast.DoesNotExist:
-                broadcast = instance
-
-            data = BroadcastSerializer(
-                broadcast,
-                context={"scope": {"user": broadcast.host}},
-            ).data
-
         return {
-            "data": data,
+            "data": {} if _action == "delete" else get_activity_data(instance),
             "action": _action.value,
             "pk": instance.pk,
+            "response_status": 200,
+        }
+
+    @model_observer(SpeakerInvite)
+    async def speaker_invite_activity(self, message, **kwargs):
+        await self.send_json(message)
+
+    @speaker_invite_activity.groups_for_signal
+    def speaker_invite_activity_signal_groups(self, instance: SpeakerRequest, **kwargs):
+        yield f"broadcast__{instance.broadcast.pk}"
+
+    @speaker_invite_activity.groups_for_consumer
+    def speaker_invite_activity_consumer_groups(self, pk=None, **kwargs):
+        if pk is not None:
+            yield f"broadcast__{pk}"
+
+    @speaker_invite_activity.serializer
+    def speaker_invite_activity_serializer(self, instance: SpeakerInvite, _action, **kwargs):
+        return {
+            "data": get_activity_data(instance.broadcast),
+            "action": "update",
+            "pk": instance.broadcast_id,
             "response_status": 200,
         }
 
@@ -397,6 +395,12 @@ class BroadcastConsumer(
 
     # ====================== PERMISSION HELPERS ======================
     @database_sync_to_async
+    def _user_is_host(self, broadcast: Broadcast) -> bool:
+        user = self.scope["user"]
+
+        return broadcast.host_id == user.id
+
+    @database_sync_to_async
     def _broadcast_is_joinable(self, broadcast: Broadcast) -> bool:
         if not broadcast.is_active:
             return False
@@ -468,10 +472,10 @@ class BroadcastConsumer(
         user_id = self.scope["user"].id
 
         await self.broadcast_activity.subscribe(pk=pk, request_id=user_id)
+        await self.speaker_invite_activity.subscribe(pk=pk, request_id=user_id)
 
         if await self._user_can_manage_speakers(broadcast=broadcast):
             await self.speaker_request_activity.subscribe(pk=pk, request_id=user_id)
-
 
         if self._parse_bool(is_muted):
             await database_sync_to_async(BroadcastParticipantService.set_mute_status)(
@@ -492,8 +496,6 @@ class BroadcastConsumer(
             connection_id=getattr(self, "connection_id", "unknown"),
         )
 
-        logger.info(f'JOINED: {getattr(self, "connection_id", "unknown")}')
-
         broadcast = get_object_or_404(self.get_queryset(), pk=pk)
         BroadcastParticipantService.signal_broadcast(broadcast)
 
@@ -511,8 +513,6 @@ class BroadcastConsumer(
             user_id=user_id,
             connection_id=getattr(self, "connection_id", "unknown"),
         )
-
-        logger.info(f'LEFT: {getattr(self, "connection_id", "unknown")}')
 
         await database_sync_to_async(BroadcastParticipantService.signal_broadcast)(broadcast=broadcast)
 
@@ -637,6 +637,157 @@ class BroadcastConsumer(
 
         return {}, 200
 
+    # ====================== SPEAKER INVITES ======================
+
+    @action()
+    @interaction_rate_limit
+    async def invite_to_speak(self, broadcast_id: int, user_id: int, **kwargs):
+        broadcast = await database_sync_to_async(self.get_object)(pk=broadcast_id)
+
+        if not await self._user_can_manage_speakers(broadcast):
+            raise PermissionDenied("Unauthorized.")
+
+        user = await self._get_user(pk=user_id)
+
+        data = await self._invite_to_speak(user=user, broadcast=broadcast)
+        return data, 200
+
+    @database_sync_to_async
+    @transaction.atomic
+    def _invite_to_speak(self, user, broadcast: Broadcast):
+        BroadcastParticipantService.ensure_can_add_speaker(broadcast)
+        invite_obj, created = SpeakerInvite.objects.get_or_create(
+            broadcast=broadcast,
+            user=user,
+            defaults={"role": SpeakerInvite.Role.SPEAKER, "is_accepted": None},
+        )
+
+        if not created and invite_obj.is_accepted is not None:
+            invite_obj.role = SpeakerInvite.Role.SPEAKER
+            invite_obj.is_accepted = None
+            invite_obj.save()
+
+        return {
+            "invite_id": invite_obj.id,
+            "broadcast_id": invite_obj.broadcast_id,
+            "user_id": invite_obj.user_id,
+        }
+
+    @action()
+    @interaction_rate_limit
+    async def invite_to_co_host(self, broadcast_id: int, user_id: int, **kwargs):
+        broadcast = await database_sync_to_async(self.get_object)(pk=broadcast_id)
+
+        if not await self._user_is_host(broadcast):
+            raise PermissionDenied("You are not the host.")
+
+        user = await self._get_user(pk=user_id)
+
+        data = await self._invite_to_co_host(user=user, broadcast=broadcast)
+        return data, 200
+
+    @database_sync_to_async
+    @transaction.atomic
+    def _invite_to_co_host(self, user, broadcast: Broadcast):
+        BroadcastParticipantService.ensure_can_add_speaker(broadcast)
+        invite_obj, created = SpeakerInvite.objects.get_or_create(
+            broadcast=broadcast,
+            user=user,
+            defaults={"role": SpeakerInvite.Role.CO_HOST, "is_accepted": None},
+        )
+
+        if not created and invite_obj.is_accepted is not None:
+            invite_obj.role = SpeakerInvite.Role.CO_HOST
+            invite_obj.is_accepted = None
+            invite_obj.save()
+
+        return {
+            "invite_id": invite_obj.id,
+            "broadcast_id": invite_obj.broadcast_id,
+            "user_id": invite_obj.user_id,
+        }
+
+    @staticmethod
+    @database_sync_to_async
+    def _get_user(pk: int) -> User:
+        return get_object_or_404(
+            User.objects.filter(is_active=True),
+            pk=pk,
+        )
+
+
+    @action()
+    @interaction_rate_limit
+    async def cancel_invite(self, pk: int, **kwargs):
+        invite_obj = await self.get_speaker_invite(pk=pk)
+
+        if not await self._user_can_manage_speakers(broadcast=invite_obj.broadcast):
+            raise PermissionDenied("You are not authorized to cancel this invite.")
+
+        await database_sync_to_async(invite_obj.delete)()
+
+        return {"pk": pk}, 200
+
+    @action()
+    @interaction_rate_limit
+    async def handle_speaker_invite(self, pk: int, data: dict, **kwargs):
+        if not isinstance(data, dict) or "is_accepted" not in data:
+            raise ValidationError({"is_accepted": "This field is required."})
+
+        is_accepted = self._parse_bool(data.get("is_accepted"))
+
+        invite_obj = await self.get_speaker_invite(pk=pk)
+
+        if not await self._is_the_invited_speaker(invite=invite_obj):
+            raise PermissionDenied("This is not your invite.")
+
+        result = await self._handle_speaker_invite(
+            invite_obj=invite_obj,
+            is_accepted=is_accepted,
+        )
+
+        return result, 200
+
+    @staticmethod
+    @database_sync_to_async
+    def get_speaker_invite(pk: int) -> SpeakerRequest:
+        return get_object_or_404(
+            SpeakerInvite.objects.select_related("broadcast", "user"),
+            pk=pk,
+        )
+
+    @database_sync_to_async
+    def _is_the_invited_speaker(self, invite: SpeakerInvite) -> bool:
+        user = self.scope["user"]
+
+        return invite.user_id == user.id
+
+    @database_sync_to_async
+    @transaction.atomic
+    def _handle_speaker_invite(self, invite_obj: SpeakerInvite, is_accepted: bool):
+        broadcast = invite_obj.broadcast
+
+        invite_obj.is_accepted = is_accepted
+
+        if is_accepted:
+            BroadcastParticipantService.ensure_can_add_speaker(broadcast)
+            if invite_obj.role == SpeakerInvite.Role.CO_HOST:
+                broadcast.speakers.remove(self.scope["user"])
+                broadcast.co_hosts.add(self.scope["user"])
+            else:
+                broadcast.speakers.add(self.scope["user"])
+
+        invite_obj.save()
+
+        transaction.on_commit(
+            lambda: BroadcastParticipantService.signal_broadcast(broadcast)
+        )
+
+        return {
+            "invite_id": invite_obj.pk,
+            "is_accepted": is_accepted,
+        }
+
     # ====================== SPEAKER REQUESTS ======================
 
     @action()
@@ -721,7 +872,7 @@ class BroadcastConsumer(
     @interaction_rate_limit
     async def handle_speaker_request(self, pk: int, data: dict, **kwargs):
         if not isinstance(data, dict) or "is_approved" not in data:
-            raise ValidationError("is_approved is required.")
+            raise ValidationError({"is_approved": "This field is required."})
 
         is_approved = self._parse_bool(data.get("is_approved"))
 
@@ -790,106 +941,60 @@ class BroadcastConsumer(
 
     @action()
     @interaction_rate_limit
-    async def manage_co_host(self, pk: int, user_id: int, **kwargs):
+    async def remove_co_host(self, pk: int, user_id: int, **kwargs):
         broadcast = await database_sync_to_async(self.get_object)(pk=pk)
 
         if broadcast.host_id != self.scope["user"].id:
-            raise PermissionDenied("Only the host can manage co-hosts.")
-
-        if broadcast.host_id == user_id:
-            raise ValidationError("Cannot add host to co-hosts.")
+            raise PermissionDenied("Only the host can remove co-hosts.")
 
         target_user = await self._get_active_user(user_id)
         if not target_user:
-            raise ValidationError("Target user not found.")
+            raise ValidationError("User not found.")
 
-        is_co_host = await self._manage_co_host(pk=pk, user_id=target_user.id)
+        data = await self._remove_co_host(broadcast=broadcast, user_id=target_user.id)
 
-        if is_co_host:
-            await self.speaker_request_activity.subscribe(pk=pk, request_id=user_id)
-        else:
-            await self.speaker_request_activity.unsubscribe(pk=pk, request_id=user_id)
+        await self.speaker_request_activity.unsubscribe(pk=pk, request_id=user_id)
 
-        return {"pk": pk, "is_co_host": is_co_host}, 200
-
-    @database_sync_to_async
-    @transaction.atomic
-    def _manage_co_host(self, pk: int, user_id: int):
-        broadcast = get_object_or_404(self.get_queryset(), pk=pk)
-
-        if broadcast.co_hosts.filter(pk=user_id).exists():
-            broadcast.co_hosts.remove(user_id)
-            is_co_host = False
-
-            BroadcastParticipantService.set_mute_status(
-                broadcast_id=pk,
-                user_id=user_id,
-                is_muted=False,
-            )
-        else:
-            broadcast.co_hosts.add(user_id)
-            broadcast.speakers.remove(user_id)
-            is_co_host = True
-
-            BroadcastParticipantService.set_mute_status(
-                broadcast_id=pk,
-                user_id=user_id,
-                is_muted=False,
-            )
-
-        BroadcastParticipantService.signal_broadcast(broadcast)
-
-        return is_co_host
-
-    @action()
-    @interaction_rate_limit
-    async def manage_speaker(self, pk: int, user_id: int, **kwargs):
-        broadcast = await database_sync_to_async(self.get_object)(pk=pk)
-
-        if not await self._user_can_manage_speakers(broadcast=broadcast):
-            raise PermissionDenied("Only hosts or co-hosts can manage speakers.")
-
-        if broadcast.host_id == user_id:
-            raise ValidationError("Cannot add host to speakers.")
-
-        target_user = await self._get_active_user(user_id)
-        if not target_user:
-            raise ValidationError("Target user not found.")
-
-        data = await self._manage_speaker(pk=pk, user_id=target_user.id)
         return data, 200
 
     @database_sync_to_async
     @transaction.atomic
-    def _manage_speaker(self, pk: int, user_id: int):
-        broadcast = get_object_or_404(self.get_queryset(), pk=pk)
-
-        if broadcast.speakers.filter(pk=user_id).exists():
-            broadcast.speakers.remove(user_id)
-            is_speaker = False
-
-            BroadcastParticipantService.set_mute_status(
-                broadcast_id=pk,
-                user_id=user_id,
-                is_muted=False,
-            )
-        else:
-            BroadcastParticipantService.ensure_can_add_speaker(broadcast)
-
-            broadcast.speakers.add(user_id)
-            broadcast.co_hosts.remove(user_id)
-            is_speaker = True
-
-            BroadcastParticipantService.set_mute_status(
-                broadcast_id=pk,
-                user_id=user_id,
-                is_muted=True,
-                muted_by=BroadcastParticipantService.MUTE_HOST,
-            )
-
+    def _remove_co_host(self, broadcast: Broadcast, user_id: int):
+        broadcast.co_hosts.remove(user_id)
+        BroadcastParticipantService.set_mute_status(
+            broadcast_id=broadcast.pk,
+            user_id=user_id,
+            is_muted=False,
+        )
         BroadcastParticipantService.signal_broadcast(broadcast)
+        return {"user_id": user_id, "broadcast_id": broadcast.pk}
 
-        return {"pk": pk, "is_speaker": is_speaker}
+    @action()
+    @interaction_rate_limit
+    async def remove_speaker(self, pk: int, user_id: int, **kwargs):
+        broadcast = await database_sync_to_async(self.get_object)(pk=pk)
+
+        if not await self._user_can_manage_speakers(broadcast=broadcast):
+            raise PermissionDenied("Only hosts or co-hosts can remove speakers.")
+
+        target_user = await self._get_active_user(user_id)
+        if not target_user:
+            raise ValidationError("User not found.")
+
+        data = await self._remove_speaker(broadcast=broadcast, user_id=target_user.id)
+        return data, 200
+
+    @database_sync_to_async
+    @transaction.atomic
+    def _remove_speaker(self, broadcast: Broadcast, user_id: int):
+        broadcast.speakers.remove(user_id)
+        BroadcastParticipantService.set_mute_status(
+            broadcast_id=broadcast.pk,
+            user_id=user_id,
+            is_muted=False,
+        )
+        BroadcastParticipantService.signal_broadcast(broadcast)
+        return {"user_id": user_id, "broadcast_id": broadcast.pk}
 
     # ====================== CLEANUP ======================
 
@@ -899,3 +1004,29 @@ class BroadcastConsumer(
             user=self.scope["user"],
             is_approved=None,
         ).delete()
+
+
+# ── Module-level helpers for observer payloads ────────────────
+
+def get_activity_data(instance: Broadcast) -> dict:
+    try:
+        broadcast = Broadcast.objects.select_related(
+            "host",
+            "county",
+            "constituency",
+            "ward",
+        ).prefetch_related(
+            "speaker_invites",
+            "co_hosts",
+            "speakers",
+            "recording_sessions",
+        ).get(pk=instance.pk)
+    except Broadcast.DoesNotExist:
+        broadcast = instance
+
+    data = BroadcastSerializer(
+        broadcast,
+        context={"scope": {"user": broadcast.host}},
+    ).data
+
+    return data

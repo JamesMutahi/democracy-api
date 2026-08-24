@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.broadcast.models import Broadcast, SpeakerRequest, Comment
+from apps.broadcast.models import Broadcast, SpeakerRequest, Comment, SpeakerInvite
 
 
 class CommentInline(admin.TabularInline):
@@ -15,8 +15,14 @@ class SpeakerRequestInline(admin.TabularInline):
     classes = ('grp-collapse grp-closed',)
 
 
+class SpeakerInviteInline(admin.TabularInline):
+    model = SpeakerInvite
+    extra = 0
+    classes = ('grp-collapse grp-closed',)
+
+
 @admin.register(Broadcast)
 class BroadcastAdmin(admin.ModelAdmin):
     list_display = ['title', 'type', 'county', 'constituency', 'ward', 'created_at']
     filter_horizontal = ['co_hosts', 'speakers']
-    inlines = [SpeakerRequestInline, CommentInline]
+    inlines = [SpeakerInviteInline, SpeakerRequestInline, CommentInline]

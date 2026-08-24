@@ -7,7 +7,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.broadcast.models import Broadcast, SpeakerRequest
+from apps.broadcast.models import Broadcast, SpeakerRequest, SpeakerInvite
 from apps.broadcast.services import BroadcastParticipantService
 from apps.geo.models import Constituency, County, Ward
 from apps.geo.serializers import ConstituencySerializer, CountySerializer, WardSerializer
@@ -15,14 +15,6 @@ from apps.users.serializers import UserSerializer
 from apps.utils.serializer_user import get_current_user
 
 User = get_user_model()
-
-
-def _get_viewer_id(context):
-    try:
-        user = get_current_user(context)
-        return getattr(user, "id", None)
-    except Exception:
-        return None
 
 
 class SpeakerRequestSerializer(serializers.ModelSerializer):
@@ -37,6 +29,7 @@ class SpeakerRequestSerializer(serializers.ModelSerializer):
             "user",
             "is_approved",
             "decided_by",
+            "updated_at",
         ]
 
     @staticmethod
@@ -44,6 +37,19 @@ class SpeakerRequestSerializer(serializers.ModelSerializer):
         if obj.decided_by:
             return obj.decided_by.name
         return None
+
+
+class SpeakerInviteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SpeakerInvite
+        fields = [
+            "id",
+            "broadcast",
+            "user",
+            "role",
+            "is_accepted",
+            "updated_at",
+        ]
 
 
 class BroadcastSerializer(serializers.ModelSerializer):
@@ -98,6 +104,7 @@ class BroadcastSerializer(serializers.ModelSerializer):
     has_ended = serializers.SerializerMethodField(read_only=True)
     recording_status = serializers.SerializerMethodField(read_only=True)
     recording_url = serializers.SerializerMethodField(read_only=True)
+    speaker_invites = SpeakerInviteSerializer(read_only=True, many=True)
 
     class Meta:
         model = Broadcast
@@ -117,6 +124,7 @@ class BroadcastSerializer(serializers.ModelSerializer):
             "ward_id",
             "speakers",
             "speaker_ids",
+            "speaker_invites",
             "participants",
             "participants_count",
             "muted",
@@ -234,8 +242,8 @@ class BroadcastSerializer(serializers.ModelSerializer):
     # ====================== PARTICIPANTS ======================
 
     def get_participants(self, obj):
-        viewer_id = _get_viewer_id(self.context)
-        cache_key = BroadcastParticipantService.get_participants_cache_key(obj.id, viewer_id)
+        user = get_current_user(self.context)
+        cache_key = BroadcastParticipantService.get_participants_cache_key(obj.id, user.id)
 
         cached = cache.get(cache_key)
         if cached is not None:
@@ -344,25 +352,7 @@ class BroadcastSerializer(serializers.ModelSerializer):
     # ====================== CREATE / UPDATE ======================
 
     def create(self, validated_data):
-        co_hosts = validated_data.pop("co_hosts", None)
-        speakers = validated_data.pop("speakers", None)
-
-        if "co_host_ids" in validated_data:
-            co_hosts = validated_data.pop("co_host_ids")
-
-        if "speaker_ids" in validated_data:
-            speakers = validated_data.pop("speaker_ids")
-
-        if speakers is not None and len(speakers) > BroadcastParticipantService.MAX_SPEAKERS:
-            raise serializers.ValidationError({
-                "speaker_ids": f"A broadcast cannot have more than "
-                               f"{BroadcastParticipantService.MAX_SPEAKERS} speakers."
-            })
-
         host = get_current_user(self.context)
-
-        if not host:
-            raise serializers.ValidationError("Authenticated user is required.")
 
         validated_data["host"] = host
 
@@ -378,38 +368,10 @@ class BroadcastSerializer(serializers.ModelSerializer):
                 )
 
         broadcast = Broadcast.objects.create(**validated_data)
-
-        if co_hosts is not None:
-            broadcast.co_hosts.set(co_hosts)
-
-        if speakers is not None:
-            broadcast.speakers.set(speakers)
-
         return broadcast
 
     def update(self, instance, validated_data):
-        co_hosts = validated_data.pop("co_hosts", None)
-        speakers = validated_data.pop("speakers", None)
-
-        if "co_host_ids" in validated_data:
-            co_hosts = validated_data.pop("co_host_ids")
-
-        if "speaker_ids" in validated_data:
-            speakers = validated_data.pop("speaker_ids")
-
-        if speakers is not None and len(speakers) > BroadcastParticipantService.MAX_SPEAKERS:
-            raise serializers.ValidationError({
-                "speaker_ids": f"A broadcast cannot have more than "
-                               f"{BroadcastParticipantService.MAX_SPEAKERS} speakers."
-            })
-
         instance = super().update(instance, validated_data)
-
-        if co_hosts is not None:
-            instance.co_hosts.set(co_hosts)
-
-        if speakers is not None:
-            instance.speakers.set(speakers)
 
         if instance.type == Broadcast.Type.LIVESTREAM and instance.end_time is not None:
             instance.end_time = None
