@@ -36,10 +36,7 @@ if [ "${RUN_DB_SETUP:-false}" = "true" ]; then
 
   if [ "${LOAD_FIXTURES:-false}" = "true" ]; then
     echo "Installing fixtures..."
-    python manage.py loaddata \
-      ./fixtures/constitution.json \
-      ./fixtures/counties.json \
-      ./fixtures/constituencies.json
+    python manage.py loaddata ./fixtures/constitution.json ./fixtures/counties.json ./fixtures/constituencies.json
   fi
 fi
 

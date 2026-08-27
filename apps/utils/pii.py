@@ -1,3 +1,4 @@
+import logging
 import re
 
 from django.conf import settings
@@ -404,8 +405,33 @@ def _get_presidio_analyzer():
 
     if _ANALYZER is None:
         from presidio_analyzer import AnalyzerEngine
+        from presidio_analyzer.nlp_engine import NlpEngineProvider
 
-        _ANALYZER = AnalyzerEngine()
+        model_name = str(_setting("SPACY_MODEL", "en_core_web_lg"))
+
+        nlp_configuration = {
+            "nlp_engine_name": "spacy",
+            "models": [
+                {
+                    "lang_code": "en",
+                    "model_name": model_name,
+                }
+            ],
+        }
+
+        # Suppress noisy warnings about unsupported language recognizers.
+        presidio_logger = logging.getLogger("presidio-analyzer")
+        original_level = presidio_logger.level
+        presidio_logger.setLevel(logging.ERROR)
+
+        try:
+            provider = NlpEngineProvider(nlp_configuration=nlp_configuration)
+            _ANALYZER = AnalyzerEngine(
+                nlp_engine=provider.create_engine(),
+                supported_languages=["en"],
+            )
+        finally:
+            presidio_logger.setLevel(original_level)
 
     return _ANALYZER
 

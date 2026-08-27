@@ -60,7 +60,7 @@ def check_ended_ballots():
     return len(ballot_ids)
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+@shared_task(bind=True, queue="ballot_summary", max_retries=3, default_retry_delay=60)
 def summarize_ballot(self, ballot_id: int):
     lock_key = f"ballot_summary_lock:{ballot_id}"
 

@@ -37,26 +37,42 @@ class PageInline(GrappelliSortableHiddenMixin, NestedTabularInline):
 class SurveySummaryInline(admin.TabularInline):
     model = SurveySummary
     extra = 0
-    classes = ('grp-collapse grp-open',)
+    classes = ('grp-collapse grp-closed',)
+
+
+class TextAnswerInline(NestedTabularInline):
+    model = TextAnswer
+    extra = 0
+    classes = ('grp-collapse grp-closed',)
+
+
+class ChoiceAnswerInline(NestedTabularInline):
+    model = ChoiceAnswer
+    extra = 0
+    classes = ('grp-collapse grp-closed',)
+
+
+class ResponseInline(NestedTabularInline):
+    model = Response
+    extra = 0
+    inlines = [TextAnswerInline, ChoiceAnswerInline]
+    classes = ('grp-collapse grp-closed',)
+
+
+class SurveyTextClusterInline(admin.TabularInline):
+    model = SurveyTextCluster
+    extra = 0
+    classes = ('grp-collapse grp-closed',)
+
+
+class TextAnswerEmbeddingInline(admin.TabularInline):
+    model = TextAnswerEmbedding
+    extra = 0
+    classes = ('grp-collapse grp-closed',)
 
 
 @admin.register(Survey)
 class SurveyAdmin(NestedModelAdmin):
     list_display = ['title', 'county', 'constituency', 'ward', 'start_time', 'end_time', 'is_active']
-    inlines = [PageInline, SurveySummaryInline]
+    inlines = [PageInline, SurveySummaryInline, ResponseInline, SurveyTextClusterInline, TextAnswerEmbeddingInline]
 
-
-class ChoiceAnswerInline(admin.TabularInline):
-    model = ChoiceAnswer
-    extra = 0
-
-
-class TextAnswerInline(admin.TabularInline):
-    model = TextAnswer
-    extra = 0
-
-
-@admin.register(Response)
-class ResponseAdmin(admin.ModelAdmin):
-    list_display = ['user', 'survey']
-    inlines = [ChoiceAnswerInline, TextAnswerInline]

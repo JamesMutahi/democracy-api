@@ -473,7 +473,7 @@ def summarize_ballot_reasons(ballot_id: int) -> dict:
             "reasons_total": 0,
             "reasons_processed": 0,
             "method": "none",
-            "model": settings.LOCAL_QWEN_MODEL,
+            "model": settings.LOCAL_LLM,
         }
 
     # Step 1: PII redaction
@@ -500,7 +500,7 @@ def summarize_ballot_reasons(ballot_id: int) -> dict:
             "reasons_total": total,
             "reasons_processed": processed,
             "method": method,
-            "model": settings.LOCAL_QWEN_MODEL,
+            "model": settings.LOCAL_LLM,
         }
 
     else:
@@ -916,7 +916,7 @@ def map_reduce_summarize(ballot_id: int, total: int) -> dict:
             "reasons_total": total,
             "reasons_processed": 0,
             "method": method,
-            "model": settings.LOCAL_QWEN_MODEL,
+            "model": settings.LOCAL_LLM,
         }
 
     random.shuffle(texts)
@@ -931,7 +931,7 @@ def map_reduce_summarize(ballot_id: int, total: int) -> dict:
         "reasons_total": total,
         "reasons_processed": len(texts),
         "method": method,
-        "model": settings.LOCAL_QWEN_MODEL,
+        "model": settings.LOCAL_LLM,
     })
 
     return final

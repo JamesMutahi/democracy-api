@@ -28,6 +28,9 @@ COPY requirements.txt requirements.txt
 # Install Python dependencies.
 RUN python -m pip install --no-cache-dir -r requirements.txt
 
+# Install spaCy model required by Presidio.
+RUN python -m spacy download en_core_web_lg
+
 # Copy the rest of the application.
 COPY . .
 

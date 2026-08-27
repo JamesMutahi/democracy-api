@@ -2,6 +2,7 @@ import os
 
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import worker_ready
 from kombu import Queue
 
 # Set the default Django settings module for the 'celery' program.
@@ -27,7 +28,10 @@ app.conf.task_default_queue = "celery"
 # Explicitly declare the queues we use.
 app.conf.task_queues = (
     Queue("celery"),
-    Queue("summarization"),
+    Queue("embeddings"),
+    Queue("pii"),
+    Queue("ballot_summary"),
+    Queue("survey_summary"),
 )
 
 # If you later add more queues dynamically, keep this enabled.
@@ -37,29 +41,6 @@ app.conf.task_create_missing_queues = True
 # For LLM summarization, this is important.
 app.conf.broker_transport_options = {
     "visibility_timeout": 60 * 60 * 12,  # 12 hours
-}
-
-# ─────────────────────────────────────────────
-# Task routing
-# ─────────────────────────────────────────────
-
-app.conf.task_routes = {
-    # Cheap scanner task stays on the normal queue.
-    # It only finds ended ballots and enqueues summarization jobs.
-    "apps.ballot.tasks.check_ended_ballots": {
-        "queue": "celery",
-    },
-    "apps.survey.tasks.check_ended_surveys": {
-        "queue": "celery",
-    },
-
-    # Expensive local Qwen LLM summarization task goes to its own queue.
-    "apps.ballot.tasks.summarize_ballot": {
-        "queue": "summarization",
-    },
-    "apps.survey.tasks.summarize_survey": {
-        "queue": "summarization",
-    },
 }
 
 # ─────────────────────────────────────────────
@@ -107,3 +88,17 @@ app.conf.beat_schedule = {
         "schedule": crontab(minute="*/1"),
     },
 }
+
+
+@worker_ready.connect
+def warmup_presidio(**kwargs):
+    """
+    Preload the Presidio analyzer so the first task does not pay
+    the ~5s initialization cost.
+    """
+
+    try:
+        from apps.utils.pii import _get_presidio_analyzer
+        _get_presidio_analyzer()
+    except Exception:
+        pass

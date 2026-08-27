@@ -262,7 +262,7 @@ def start_survey_summary_pipeline(survey_id: int):
 
     chain(
         redact_survey_text_answers.s(survey_id),
-        ensure_survey_text_embeddings.s(survey_id),
+        ensure_survey_text_embeddings.s(),
         cluster_survey_text_answers.s(),
         summarize_survey_clusters.s(),
         finalize_survey_summary.s(),
@@ -775,7 +775,7 @@ def finalize_survey_summary(survey_id: int):
             total_responses=total_responses,
             processed_text_answers=processed_text_answers,
             sampled=sampled,
-            model_name=getattr(settings, "LOCAL_QWEN_MODEL", ""),
+            model_name=settings.LOCAL_LLM,
             prompt_version="embed-cluster-v1",
             completed_at=timezone.now(),
             error="",

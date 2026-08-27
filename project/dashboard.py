@@ -19,7 +19,7 @@ class CustomIndexDashboard(Dashboard):
             column=1,
             collapsible=True,
             models=('apps.ballot.models.Ballot', 'apps.petition.models.Petition', 'apps.broadcast.models.Broadcast',
-                    'apps.survey.models.Survey', 'apps.survey.models.Response',),
+                    'apps.survey.models.Survey'),
         ))
         self.children.append(modules.ModelList(
             title=_('Miscellaneous'),
