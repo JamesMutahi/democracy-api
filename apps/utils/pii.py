@@ -2,7 +2,6 @@ import re
 
 from django.conf import settings
 
-
 # ======================
 # Regex patterns
 # ======================
@@ -33,23 +32,28 @@ _CREDIT_CARD_RE = re.compile(
     r"(?<!\d)(?:\d[ \-]?){12,18}\d(?!\d)"
 )
 
+# English + Swahili national ID context
 _ID_CONTEXT_RE = re.compile(
-    r"\b(?:national\s+id|id\s+number|identity\s+card|identity\s+no|id\s+no|id)"
+    r"\b(?:national\s+id|id\s+number|identity\s+card|identity\s+no|id\s+no|id|"
+    r"kitambulisho|nambari\s+ya\s+utambulisho|namba\s+ya\s+utambulisho)"
     r"[:#\-]?\s*"
     r"([A-Za-z0-9\-]{5,20})\b",
     re.IGNORECASE,
 )
 
+# English + Swahili account / mobile money context
 _ACCOUNT_CONTEXT_RE = re.compile(
     r"\b(?:bank\s+account|account\s+number|account\s+no|acc\s+no|acct\s+no|"
-    r"m-?pesa\s+number|mobile\s+money\s+number)"
+    r"akaunti|account|m-?pesa|paybill|till\s+number|mobile\s+money)"
     r"[:#\-]?\s*"
     r"([A-Za-z0-9\-]{5,25})\b",
     re.IGNORECASE,
 )
 
+# English + Swahili date-of-birth context
 _DOB_RE = re.compile(
-    r"\b(?:date\s+of\s+birth|birth\s+date|dob|born(?:\s+on)?)"
+    r"\b(?:date\s+of\s+birth|birth\s+date|dob|born(?:\s+on)?|"
+    r"tarehe\s+ya\s+kuzaliwa|siku\s+ya\s+kuzaliwa)"
     r"[:#\-]?\s*"
     r"("
     r"\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}"
@@ -58,7 +62,6 @@ _DOB_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
-
 
 _ANALYZER = None
 
@@ -298,12 +301,12 @@ def _credit_card_entities(text: str) -> list[dict]:
 
 
 def _context_entities(
-    text: str,
-    pattern: re.Pattern,
-    entity_type: str,
-    replacement: str,
-    min_digits: int,
-    max_digits: int,
+        text: str,
+        pattern: re.Pattern,
+        entity_type: str,
+        replacement: str,
+        min_digits: int,
+        max_digits: int,
 ) -> list[dict]:
     entities = []
 
@@ -573,9 +576,9 @@ def _apply_entities(text: str, entities: list[dict]) -> str:
 
     for entity in sorted(entities, key=lambda item: item["start"], reverse=True):
         redacted = (
-            redacted[: entity["start"]]
-            + entity["replacement"]
-            + redacted[entity["end"]:]
+                redacted[: entity["start"]]
+                + entity["replacement"]
+                + redacted[entity["end"]:]
         )
 
     return redacted

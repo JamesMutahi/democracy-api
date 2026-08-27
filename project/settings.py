@@ -426,7 +426,7 @@ OLLAMA_BASE_URL = config("OLLAMA_BASE_URL", default="http://localhost:11434")
 LOCAL_LLM_BASE_URL = config("LOCAL_LLM_BASE_URL", default="http://localhost:8000/v1")
 
 # Model name
-LOCAL_QWEN_MODEL = config("LOCAL_QWEN_MODEL", default="qwen2.5:7b-instruct")
+LOCAL_LLM = config("LOCAL_LLM", default="qwen3:14b")
 
 
 # Embedding

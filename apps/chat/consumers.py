@@ -197,9 +197,6 @@ class ChatConsumer(GenericAsyncAPIConsumer):
     @action()
     @interaction_rate_limit
     async def create(self, data: dict, request_id: str, **kwargs):
-        """
-        Creates a direct/self chat if needed, then creates the first message.
-        """
         target_user_id = data.get("user")
 
         if not target_user_id:
@@ -215,23 +212,11 @@ class ChatConsumer(GenericAsyncAPIConsumer):
         if not chat:
             return {"error": "Failed to create chat."}, 400
 
-        message_data = data.copy()
-        message_data.pop("user", None)
-        message_data.pop("user_ids", None)
-
-        message_data["chat"] = chat.id
-        message_data.setdefault("uuid", str(uuid.uuid4()))
-
-        try:
-            response = await self.create_message(message_data)
-        except ValidationError as exc:
-            return {"errors": exc.detail}, 400
-        except PermissionDenied as exc:
-            return {"error": str(exc.detail)}, 403
-
         await self.subscribe_to_chat(chat.id, request_id)
 
-        return response, 201
+        data = await self.get_chat_serializer_data(chat.pk)
+
+        return data, 201
 
     # ==================== Chat List ====================
 

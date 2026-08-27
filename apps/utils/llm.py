@@ -41,7 +41,7 @@ def chat_json(messages, temperature: float = 0.1, timeout: int = 900):
       - OpenAI-compatible server such as vLLM
     """
     backend = getattr(settings, "LOCAL_LLM_BACKEND", "ollama")
-    model = getattr(settings, "LOCAL_QWEN_MODEL", "qwen2.5:7b-instruct")
+    model = getattr(settings, "LOCAL_LLM", "qwen2.5:7b-instruct")
 
     if backend == "openai":
         if OpenAI is None:
