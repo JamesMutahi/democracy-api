@@ -7,11 +7,11 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.broadcast.models import Broadcast, SpeakerRequest, SpeakerInvite
+from apps.broadcast.models import Broadcast, SpeakerRequest, SpeakerInvite, Comment
 from apps.broadcast.services import BroadcastParticipantService
 from apps.geo.models import Constituency, County, Ward
 from apps.geo.serializers import ConstituencySerializer, CountySerializer, WardSerializer
-from apps.users.serializers import UserSerializer
+from apps.users.serializers import UserSerializer, SimpleUserSerializer
 from apps.utils.serializer_user import get_current_user
 
 User = get_user_model()
@@ -99,6 +99,7 @@ class BroadcastSerializer(serializers.ModelSerializer):
         required=False,
     )
     participants_count = serializers.SerializerMethodField(read_only=True)
+    comments_count = serializers.SerializerMethodField(read_only=True)
     muted = serializers.SerializerMethodField(read_only=True)
     has_started = serializers.SerializerMethodField(read_only=True)
     has_ended = serializers.SerializerMethodField(read_only=True)
@@ -127,6 +128,7 @@ class BroadcastSerializer(serializers.ModelSerializer):
             "speaker_invites",
             "participants",
             "participants_count",
+            "comments_count",
             "muted",
             "recording_status",
             "recording_url",
@@ -230,6 +232,12 @@ class BroadcastSerializer(serializers.ModelSerializer):
             return participant_counts.get(obj.id, 0)
 
         return BroadcastParticipantService.get_participant_count(obj.id)
+
+    @staticmethod
+    def get_comments_count(obj) -> int:
+        if hasattr(obj, "comments_count"):
+            return obj.comments_count
+        return obj.comments.count()
 
     def get_muted(self, obj):
         muted_map = self.context.get("muted_map")
@@ -385,3 +393,28 @@ class BroadcastSerializer(serializers.ModelSerializer):
         BroadcastParticipantService.signal_broadcast(instance)
 
         return instance
+
+
+class CommentSerializer(serializers.ModelSerializer):
+    author = SimpleUserSerializer(read_only=True)
+
+    class Meta:
+        model = Comment
+        fields = [
+            "id",
+            "broadcast",
+            "author",
+            "text",
+            "created_at",
+        ]
+        extra_kwargs = {
+            "text": {
+                "required": True,
+            },
+        }
+
+    def create(self, validated_data):
+        validated_data['author'] = get_current_user(self.context)
+        comment =  super().create(validated_data)
+        BroadcastParticipantService.signal_broadcast(comment.broadcast)
+        return comment

@@ -31,12 +31,13 @@ class PageInline(GrappelliSortableHiddenMixin, NestedTabularInline):
     extra = 0
     sortable_field_name = 'number'
     inlines = [QuestionInline]
-    classes = ('grp-collapse grp-open',)
+    classes = ('grp-collapse grp-closed',)
 
 
 class SurveySummaryInline(admin.TabularInline):
     model = SurveySummary
     extra = 0
+    verbose_name_plural = 'Survey Summary'
     classes = ('grp-collapse grp-closed',)
 
 

@@ -17,12 +17,12 @@ from djangochannelsrestframework.mixins import (
     RetrieveModelMixin,
 )
 from djangochannelsrestframework.observer import model_observer
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError, NotFound
 from rest_framework.generics import get_object_or_404
 
-from apps.broadcast.models import Broadcast, SpeakerRequest, SpeakerInvite
+from apps.broadcast.models import Broadcast, SpeakerRequest, SpeakerInvite, Comment
 from apps.broadcast.querysets import annotate_broadcast_metrics
-from apps.broadcast.serializers import BroadcastSerializer, SpeakerRequestSerializer
+from apps.broadcast.serializers import BroadcastSerializer, SpeakerRequestSerializer, CommentSerializer
 from apps.broadcast.services import BroadcastParticipantService
 from apps.utils.list_paginator import list_paginator
 from apps.utils.throttles import interaction_rate_limit, rate_limit
@@ -49,7 +49,6 @@ class BroadcastConsumer(
     def get_queryset(self, **kwargs) -> QuerySet:
         return annotate_broadcast_metrics(
             Broadcast.objects.filter(is_active=True),
-            self.scope.get("user"),
         )
 
     async def connect(self):
@@ -138,6 +137,31 @@ class BroadcastConsumer(
             "response_status": 200,
         }
 
+    @model_observer(Comment)
+    async def comment_activity(self, message, **kwargs):
+        await self.send_json(message)
+
+    @comment_activity.groups_for_signal
+    def comment_activity_signal_groups(self, instance: Comment, **kwargs):
+        yield f"broadcast_comments__{instance.broadcast.pk}"
+
+    @comment_activity.groups_for_consumer
+    def comment_activity_consumer_groups(self, pk=None, **kwargs):
+        if pk is not None:
+            yield f"broadcast_comments__{pk}"
+
+    @comment_activity.serializer
+    def comment_activity_serializer(self, instance: Comment, _action, **kwargs):
+        return {
+            "data": {} if _action == "delete" else CommentSerializer(
+                instance,
+                context={"scope": getattr(self, "scope", {})},
+            ).data,
+            "action": f"comment_{_action.value}",
+            "pk": instance.pk,
+            "response_status": 200,
+        }
+
     async def websocket_disconnect(self, message):
         logger.info(f"Disconnect called for user {self.scope.get('user')}")
 
@@ -159,7 +183,9 @@ class BroadcastConsumer(
 
         try:
             await self.broadcast_activity.unsubscribe()
+            await self.speaker_invite_activity.unsubscribe()
             await self.speaker_request_activity.unsubscribe()
+            await self.comment_activity.unsubscribe()
         except Exception as e:
             logger.warning(f"Error unsubscribing observer: {e}")
 
@@ -473,6 +499,7 @@ class BroadcastConsumer(
 
         await self.broadcast_activity.subscribe(pk=pk, request_id=user_id)
         await self.speaker_invite_activity.subscribe(pk=pk, request_id=user_id)
+        await self.comment_activity.subscribe(pk=pk, request_id=user_id)
 
         if await self._user_can_manage_speakers(broadcast=broadcast):
             await self.speaker_request_activity.subscribe(pk=pk, request_id=user_id)
@@ -517,7 +544,9 @@ class BroadcastConsumer(
         await database_sync_to_async(BroadcastParticipantService.signal_broadcast)(broadcast=broadcast)
 
         await self.broadcast_activity.unsubscribe(pk=pk, request_id=user_id)
+        await self.speaker_invite_activity.unsubscribe(pk=pk, request_id=user_id)
         await self.speaker_request_activity.unsubscribe(pk=pk, request_id=user_id)
+        await self.comment_activity.unsubscribe(pk=pk, request_id=user_id)
 
         return {"pk": pk}, 200
 
@@ -715,7 +744,6 @@ class BroadcastConsumer(
             pk=pk,
         )
 
-
     @action()
     @interaction_rate_limit
     async def cancel_invite(self, pk: int, **kwargs):
@@ -776,6 +804,12 @@ class BroadcastConsumer(
                 broadcast.co_hosts.add(self.scope["user"])
             else:
                 broadcast.speakers.add(self.scope["user"])
+                BroadcastParticipantService.set_mute_status(
+                    broadcast_id=broadcast.id,
+                    user_id=invite_obj.user_id,
+                    is_muted=True,
+                    muted_by=BroadcastParticipantService.MUTE_SELF,
+                )
 
         invite_obj.save()
 
@@ -995,6 +1029,82 @@ class BroadcastConsumer(
         )
         BroadcastParticipantService.signal_broadcast(broadcast)
         return {"user_id": user_id, "broadcast_id": broadcast.pk}
+
+    # ====================== COMMENTS ======================
+
+    @action()
+    @rate_limit(limit=40, period=60)
+    def comments(self, pk: int, oldest_comment_id: int = None, newest_comment_id: int = None, **kwargs):
+        try:
+            broadcast = Broadcast.objects.select_related("host").prefetch_related("comments").get(pk=pk)
+        except Broadcast.DoesNotExist:
+            raise NotFound("Broadcast not found.")
+
+        queryset = broadcast.comments.all()
+
+        if oldest_comment_id:
+            # Fetch newer comments (polling)
+            queryset = queryset.filter(id__lt=oldest_comment_id)
+        elif newest_comment_id:
+            # Fetch older comments (scrolling up)
+            queryset = queryset.filter(id__gt=newest_comment_id)
+        else:
+            # Fetch latest comments
+            queryset = queryset.all()
+
+        from apps.utils.list_paginator import list_paginator
+
+        page_obj = list_paginator(queryset=queryset, page=1, page_size=20)
+
+        serializer = CommentSerializer(
+            page_obj.object_list,
+            many=True,
+            context={"scope": self.scope}
+        )
+
+        return {
+            "results": serializer.data,
+            "broadcast_id": pk,
+            "oldest_comment_id": oldest_comment_id,
+            "newest_comment_id": newest_comment_id,
+            "has_next": page_obj.has_next(),
+        }, 200
+
+    @action()
+    @interaction_rate_limit
+    def create_comment(self, **kwargs):
+        serializer = CommentSerializer(data=kwargs['data'], context={'scope': self.scope})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return serializer.data, 201
+
+    @action()
+    @interaction_rate_limit
+    async def delete_comment(self, pk: int, **kwargs):
+        comment = await self.get_comment(pk=pk)
+
+        if not await self._user_can_manage_speakers(broadcast=comment.broadcast):
+            raise PermissionDenied("Only hosts and co-hosts can delete comments.")
+
+        if not await self._broadcast_is_joinable(comment.broadcast):
+            raise ValidationError("This broadcast is not active or has ended.")
+
+        await self._delete_comment(comment=comment)
+
+        return {"pk": pk}, 204
+
+    @database_sync_to_async
+    def get_comment(self, pk: int):
+        try:
+            return Comment.objects.select_related("broadcast").get(pk=pk)
+        except Comment.DoesNotExist:
+            raise NotFound("Comment not found.")
+
+    @database_sync_to_async
+    def _delete_comment(self, comment: Comment):
+        broadcast = comment.broadcast
+        comment.delete()
+        BroadcastParticipantService.signal_broadcast(broadcast)
 
     # ====================== CLEANUP ======================
 

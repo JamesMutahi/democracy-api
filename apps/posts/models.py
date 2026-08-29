@@ -78,6 +78,7 @@ class Post(BaseModel):
         ordering = ['-published_at']
         db_table = 'Post'
         indexes = [
+            models.Index(fields=["-published_at"]),
             GinIndex(fields=['search_vector']),
             GinIndex(fields=['trending_vector']),
         ]
@@ -221,6 +222,9 @@ class SearchHistory(BaseModel):
     class Meta:
         ordering = ['-updated_at']
         db_table = 'SearchHistory'
+        indexes = [
+            models.Index(fields=["user", "-updated_at"]),
+        ]
 
 
 class Report(BaseModel):
@@ -229,13 +233,16 @@ class Report(BaseModel):
     issue = models.CharField(max_length=255)
 
     class Meta:
+        db_table = 'Report'
+        indexes = [
+            models.Index(fields=["post", "-created_at"]),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=['user', 'post', 'issue'],
                 name='unique_report_per_user_post_issue',
             )
         ]
-        db_table = 'Report'
 
     def __str__(self):
         return self.issue

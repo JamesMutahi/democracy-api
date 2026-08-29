@@ -168,13 +168,16 @@ class SpeakerRequest(BaseModel):
 class Comment(BaseModel):
     broadcast = models.ForeignKey(Broadcast, on_delete=models.CASCADE, related_name='comments')
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='comments')
-    content = models.TextField()
+    text = models.TextField()
 
     class Meta:
         db_table = "BroadcastComment"
         verbose_name = "Comment"
         verbose_name_plural = "Comments"
-        ordering = ["-created_at"]
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["broadcast", "-created_at"]),
+        ]
 
     def __str__(self):
         return f"Comment({self.author.username} {self.broadcast})"
