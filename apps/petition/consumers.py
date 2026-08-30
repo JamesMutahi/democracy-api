@@ -223,13 +223,13 @@ class PetitionConsumer(
     def filter_queryset(self, queryset: QuerySet, **kwargs) -> QuerySet:
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
 
-        action_name = kwargs.get("action")
+        _action = kwargs.get("action")
         previous_petitions = kwargs.get("previous_petitions") or []
 
         if previous_petitions:
             queryset = queryset.exclude(id__in=previous_petitions)
 
-        if action_name == "list":
+        if _action == "list":
             search_term = kwargs.get("search_term")
 
             if isinstance(search_term, str):
@@ -258,11 +258,11 @@ class PetitionConsumer(
 
                 queryset = queryset.filter(search_filter).distinct()
 
-            is_open_raw = kwargs.get("is_open", True)
+            is_open = kwargs.get("is_open", None)
 
-            if is_open_raw is not None:
+            if is_open is not None:
                 queryset = queryset.filter(
-                    is_open=self._as_bool(is_open_raw, default=True)
+                    is_open=self._as_bool(is_open, default=True)
                 )
 
             filter_by_region = self._as_bool(
@@ -358,10 +358,10 @@ class PetitionConsumer(
 
             return queryset.order_by("-supporters_count", "-created_at")
 
-        if action_name == "user_petitions":
+        if _action == "user_petitions":
             return queryset.filter(author=kwargs.get("user")).order_by("-created_at")
 
-        if action_name in {"delete", "patch"}:
+        if _action in {"delete", "patch"}:
             return queryset.filter(author=self.scope.get("user"))
 
         return queryset.order_by("-supporters_count", "-created_at")

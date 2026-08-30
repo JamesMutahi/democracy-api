@@ -1,7 +1,7 @@
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.ballot.models import Ballot, BallotVote, Option, Reason
+from apps.ballot.models import Ballot, BallotVote, Option, Reason, BallotSummary
 from apps.geo.serializers import (
     CountySerializer,
     ConstituencySerializer,
@@ -37,6 +37,20 @@ class ReasonSerializer(serializers.ModelSerializer):
     class Meta:
         model = Reason
         fields = ["text"]
+
+
+class BallotSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BallotSummary
+        fields = (
+            "status",
+            "summary",
+            "themes",
+            "option_themes",
+            "reasons_total",
+            "reasons_processed",
+            "method",
+        )
 
 
 class BallotSerializer(serializers.ModelSerializer):
@@ -127,27 +141,10 @@ class BallotSerializer(serializers.ModelSerializer):
             .first()
         )
 
-    @staticmethod
-    def get_summary(obj):
+    def get_summary(self, obj):
         summary = getattr(obj, "summary", None)
 
         if summary is None:
             return None
 
-        if summary.status != "completed":
-            return {
-                "status": summary.status,
-                "summary": None,
-                "themes": [],
-                "option_themes": [],
-            }
-
-        return {
-            "status": summary.status,
-            "summary": summary.summary,
-            "themes": summary.themes,
-            "option_themes": summary.option_themes,
-            "reasons_total": summary.reasons_total,
-            "reasons_processed": summary.reasons_processed,
-            "method": summary.method,
-        }
+        return BallotSummarySerializer(summary, context=self.context).data

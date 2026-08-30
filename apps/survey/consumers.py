@@ -1,12 +1,13 @@
 from channels.db import database_sync_to_async
-from django.db.models import Count, Prefetch, Q, QuerySet
+from django.db.models import Q, QuerySet
 from django.utils import timezone
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import RetrieveModelMixin
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
-from apps.survey.models import Response, Survey, SurveySummary
+from apps.survey.models import Survey, SurveySummary
+from apps.survey.querysets import annotate_survey_metrics
 from apps.survey.serializers import ResponseSerializer, SurveySerializer, SurveySummarySerializer
 from apps.utils.list_paginator import list_paginator
 from apps.utils.throttles import interaction_rate_limit, rate_limit
@@ -18,13 +19,6 @@ class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     page_size = 20
     max_page_size = 100
 
-    queryset = (
-        Survey.objects.filter(is_active=True)
-        .select_related('county', 'constituency', 'ward', 'summary')
-        .prefetch_related('pages__questions__choices')
-        .annotate(total_responses_count=Count('responses', distinct=True))
-    )
-
     async def connect(self):
         if self.scope['user'].is_authenticated:
             await self.accept()
@@ -33,20 +27,11 @@ class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     # ====================== Queryset ======================
 
-    def get_queryset(self, **kwargs):
-        queryset = super().get_queryset(**kwargs)
-        user = self.scope.get('user')
-        if user is not None and user.is_authenticated:
-            # Prefetch the *current user's* response per survey (avoids a
-            # per-survey query in SurveySerializer.get_response).
-            queryset = queryset.prefetch_related(
-                Prefetch(
-                    'responses',
-                    queryset=Response.objects.filter(user=user),
-                    to_attr='user_response',
-                )
-            )
-        return queryset
+    def get_queryset(self, **kwargs) -> QuerySet:
+        return annotate_survey_metrics(
+            Survey.objects.filter(is_active=True),
+            self.scope.get("user"),
+        )
 
     # ====================== Filter ======================
 
@@ -55,7 +40,7 @@ class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
         previous_surveys = kwargs.get('previous_surveys')
         search_term = kwargs.get('search_term')
-        is_open = kwargs.get('is_open', True)
+        is_open = kwargs.get('is_open', None)
         filter_by_region = kwargs.get('filter_by_region', True)
         sort_by = kwargs.get('sort_by', 'recent')
         start_date = kwargs.get('start_date')

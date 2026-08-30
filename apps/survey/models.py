@@ -183,7 +183,7 @@ class ChoiceAnswer(models.Model):
 class SurveySummary(BaseModel):
     class Status(models.TextChoices):
         PENDING = "pending", _("Pending")
-        RUNNING = "running", _("Running")
+        PROCESSING = "processing", _("Processing")
         COMPLETED = "completed", _("Completed")
         FAILED = "failed", _("Failed")
 

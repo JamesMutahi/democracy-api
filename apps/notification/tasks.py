@@ -21,6 +21,7 @@ from apps.petition.querysets import annotate_petition_metrics
 from apps.posts.models import Post
 from apps.posts.querysets import annotate_post_metrics
 from apps.survey.models import Survey
+from apps.survey.querysets import annotate_survey_metrics
 from apps.utils.firebase import get_firebase_app
 
 logger = logging.getLogger(__name__)
@@ -193,8 +194,12 @@ def _serialize_notification(notification: Notification) -> dict:
             queryset=annotate_ballot_metrics(Ballot.objects.all(), notification.recipient),
         ),
         Prefetch(
+            "survey",
+            queryset=annotate_survey_metrics(Survey.objects.all(), notification.recipient),
+        ),
+        Prefetch(
             "broadcast",
-            queryset=annotate_broadcast_metrics(Broadcast.objects.all(), notification.recipient),
+            queryset=annotate_broadcast_metrics(Broadcast.objects.all()),
         ),
         Prefetch(
             "petition",

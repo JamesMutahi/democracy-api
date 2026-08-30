@@ -1,6 +1,7 @@
 from collections import Counter
 
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
 
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
@@ -224,6 +225,9 @@ class SurveySerializer(serializers.ModelSerializer):
     constituency = ConstituencySerializer(read_only=True)
     ward = WardSerializer(read_only=True)
 
+    has_started = serializers.SerializerMethodField()
+    has_ended = serializers.SerializerMethodField()
+
     summary = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
@@ -237,12 +241,22 @@ class SurveySerializer(serializers.ModelSerializer):
             'ward',
             'start_time',
             'end_time',
+            "has_started",
+            "has_ended",
             'is_active',
             'pages',
             'response',
             'total_responses',
             "summary",
         ]
+
+    @staticmethod
+    def get_has_started(instance):
+        return timezone.now() >= instance.start_time
+
+    @staticmethod
+    def get_has_ended(instance):
+        return bool(instance.end_time and timezone.now() >= instance.end_time)
 
     def get_response(self, instance: Survey):
         """The current user's response, if any.

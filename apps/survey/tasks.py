@@ -252,11 +252,11 @@ def start_survey_summary_pipeline(survey_id: int):
     if summary.status == SurveySummary.Status.COMPLETED:
         return
 
-    if summary.status == SurveySummary.Status.RUNNING:
+    if summary.status == SurveySummary.Status.PROCESSING:
         return
 
     SurveySummary.objects.filter(pk=summary.pk).update(
-        status=SurveySummary.Status.RUNNING,
+        status=SurveySummary.Status.PROCESSING,
         error="",
     )
 
