@@ -582,8 +582,6 @@ def _send_broadcast_notifications(broadcast):
     if not broadcast or not broadcast.host_id:
         return
 
-    is_live = broadcast.type == Broadcast.Type.LIVESTREAM
-
     users = _active_users().filter(
         notifiers=broadcast.host,
         preferences__allow_notifications=True,
@@ -595,11 +593,11 @@ def _send_broadcast_notifications(broadcast):
 
     users = _apply_location_filters(users, broadcast)
 
-    if is_live:
+    if broadcast.type == Broadcast.Type.LIVESTREAM:
         push_title = f"{broadcast.host} started a live stream"
-        notification_text = broadcast.title or push_title
+        notification_text = push_title
     else:
-        push_title = f"New broadcast from {broadcast.host}"
+        push_title = f"{broadcast.host} created a meeting"
         notification_text = push_title
 
     _notify_users(

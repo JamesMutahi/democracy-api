@@ -1164,7 +1164,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
 def get_activity_data(post: Post):
     return {
-        "pk": post.pk,
+        "id": post.pk,
         "likes": post.likes.count(),
         "bookmarks": post.bookmarks.count(),
         "upvotes": post.upvotes.count(),
