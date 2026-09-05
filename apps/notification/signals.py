@@ -10,7 +10,7 @@ from apps.chat.models import Message
 from apps.notification import tasks
 from apps.notification.models import Preferences, Notification
 from apps.petition.models import Petition
-from apps.posts.models import Post, PostLike
+from apps.posts.models import Post
 from apps.survey.models import Survey
 
 User = get_user_model()
@@ -110,37 +110,6 @@ def petition_saved(sender, instance, created, update_fields=None, **kwargs):
     if instance.is_open != previous:
         instance._previous_status = instance.is_open
         delay_on_commit(tasks.notify_on_petition_status_change, instance.id, instance.is_open)
-
-
-# ---------------------------------------------------------------------
-# Like signals
-# ---------------------------------------------------------------------
-
-@receiver(post_save, sender=PostLike)
-def like_saved(sender, instance, created, **kwargs):
-    if not created:
-        return
-
-    user_id = getattr(instance, "user_id", None)
-    post_id = getattr(instance, "post_id", None)
-
-    if not user_id or not post_id:
-        return
-
-    key = f"notification.like.{post_id}.{user_id}"
-    _enqueue_once(tasks.notify_on_like, key, 5, user_id, post_id)
-
-
-@receiver(post_delete, sender=PostLike)
-def like_deleted(sender, instance, **kwargs):
-    user_id = getattr(instance, "user_id", None)
-    post_id = getattr(instance, "post_id", None)
-
-    if not user_id or not post_id:
-        return
-
-    key = f"notification.unlike.{post_id}.{user_id}"
-    _enqueue_once(tasks.delete_notification_on_unlike, key, 5, user_id, post_id)
 
 
 # ---------------------------------------------------------------------

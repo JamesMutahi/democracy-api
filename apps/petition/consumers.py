@@ -517,19 +517,15 @@ class PetitionConsumer(
                     "You are not a registered voter in the region."
                 )
 
-            support = PetitionSupport.objects.filter(
-                petition=petition,
-                user_id=user.id,
-            ).first()
+            deleted_count, _ = petition.supporters.through.objects.filter(
+                petition_id=petition.pk,
+                user_id=user.pk,
+            ).delete()
 
-            if support:
-                support.delete()
+            if deleted_count:
                 is_supported = False
             else:
-                PetitionSupport.objects.create(
-                    petition=petition,
-                    user_id=user.id,
-                )
+                petition.supporters.add(user)
                 is_supported = True
 
             supporters_count = petition.supporters.count()
