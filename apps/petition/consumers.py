@@ -380,7 +380,7 @@ class PetitionConsumer(
         )
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.list_(queryset=queryset, page_size=page_size, **kwargs)
-        await self.reply(action="list", data=data, request_id=request_id)
+        return data, 200
 
     @database_sync_to_async
     def get_user_regions(self):
@@ -408,20 +408,13 @@ class PetitionConsumer(
             context={"scope": self.scope},
         )
 
-        previous = self._normalize_previous_petitions(
+        previous_petitions = self._normalize_previous_petitions(
             kwargs.get("previous_petitions")
         )
 
-        seen = set(previous)
-        combined_previous = previous + [
-            obj.pk
-            for obj in page_obj.object_list
-            if obj.pk not in seen
-        ]
-
         return {
             "results": serializer.data,
-            "previous_petitions": combined_previous,
+            "previous_petitions": previous_petitions,
             "has_next": page_obj.has_next(),
         }
 

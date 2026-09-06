@@ -123,10 +123,7 @@ class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         )
         return {
             'results': serializer.data,
-            # Return the accumulated cursor so the client can pass it straight back.
-            'previous_surveys': list(kwargs.get('previous_surveys') or []) + [
-                survey.id for survey in page_obj.object_list
-            ],
+            'previous_surveys': kwargs.get('previous_surveys'),
             'has_next': page_obj.has_next(),
         }
 
