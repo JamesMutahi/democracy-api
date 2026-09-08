@@ -13,7 +13,7 @@ from rest_framework.response import Response
 
 from apps.broadcast.models import Broadcast, RecordingSession
 from apps.broadcast.services import redis_client
-from apps.notification.tasks import create_live_stream_notifications
+from apps.notification.tasks import create_broadcast_notification_on_host_join
 
 logger = logging.getLogger(__name__)
 
@@ -166,16 +166,16 @@ def generate_agora_token(request):
         privilegeExpiredTs=privilege_expired_ts,
     )
 
-    if broadcast.type == Broadcast.Type.LIVESTREAM and is_host:
-        notification_key = f"livestream:notified:{broadcast.id}"
+    if is_host:
+        notification_key = f"broadcast:notified:{broadcast.id}"
 
         try:
             should_notify = redis_client.set(notification_key, "1", nx=True, ex=3600)
 
             if should_notify:
-                create_live_stream_notifications.delay(broadcast.id)
+                create_broadcast_notification_on_host_join.delay(broadcast.id)
         except Exception as e:
-            logger.error(f"Failed livestream notification dedupe: {e}")
+            logger.error(f"Failed broadcast notification dedupe: {e}")
 
     return Response({
         "app_id": settings.AGORA_APP_ID,

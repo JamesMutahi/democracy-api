@@ -6,6 +6,7 @@ from channels.layers import get_channel_layer
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
+from django.utils import timezone
 from fcm_django.models import FCMDevice
 from firebase_admin.messaging import Message as fireMessage, Notification as fireNotification
 
@@ -578,8 +579,13 @@ def notify_on_petition_status_change(petition_id: int, is_open: bool):
 # Broadcast notifications
 # ---------------------------------------------------------------------
 
-def _send_broadcast_notifications(broadcast):
+def _send_broadcast_notifications(broadcast, is_host_join: bool = False):
     if not broadcast or not broadcast.host_id:
+        return
+
+    # Do not send notifications on instant broadcasts -> host creates and joins immediately
+    has_started = timezone.now() >= broadcast.start_time
+    if not is_host_join and has_started:
         return
 
     users = _active_users().filter(
@@ -594,37 +600,35 @@ def _send_broadcast_notifications(broadcast):
     users = _apply_location_filters(users, broadcast)
 
     if broadcast.type == Broadcast.Type.LIVESTREAM:
-        push_title = f"{broadcast.host} started a live stream"
+        push_title = f"{broadcast.host} {'started' if is_host_join else 'scheduled'} a live stream"
         notification_text = push_title
     else:
-        push_title = f"{broadcast.host} created a meeting"
+        push_title = f"{broadcast.host} {'started' if is_host_join else 'scheduled'} a meeting"
         notification_text = push_title
 
-    _notify_users(
-        users=users,
-        text=notification_text,
-        push_title=push_title,
-        push_body=_truncate(broadcast.title or push_title),
-        broadcast=broadcast,
-    )
+    if not Notification.objects.filter(text=notification_text, broadcast=broadcast).exists():
+        _notify_users(
+            users=users,
+            text=notification_text,
+            push_title=push_title,
+            push_body=_truncate(broadcast.title or push_title),
+            broadcast=broadcast,
+        )
 
 
 @shared_task
 def create_broadcast_notifications_on_create(broadcast_id):
     broadcast = Broadcast.objects.select_related("host").filter(id=broadcast_id).first()
-    _send_broadcast_notifications(broadcast)
+    _send_broadcast_notifications(broadcast, is_host_join=False)
 
 
 @shared_task
-def create_live_stream_notifications(broadcast_id):
+def create_broadcast_notification_on_host_join(broadcast_id):
     broadcast = Broadcast.objects.select_related("host").filter(id=broadcast_id).first()
     if not broadcast:
         return
 
-    if broadcast.type != Broadcast.Type.LIVESTREAM:
-        return
-
-    _send_broadcast_notifications(broadcast)
+    _send_broadcast_notifications(broadcast, is_host_join=True)
 
 
 # ---------------------------------------------------------------------

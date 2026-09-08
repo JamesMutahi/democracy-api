@@ -9,7 +9,7 @@ class Level5Inline(NestedTabularInline):
     extra = 0
     verbose_name = 'subsection'
     classes = ('grp-collapse grp-closed',)
-    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title')}),)
+    fieldsets = ((None, {'fields': ('numeral', 'text', 'is_title')}),)
 
 
 class Level4Inline(NestedTabularInline):
@@ -17,7 +17,7 @@ class Level4Inline(NestedTabularInline):
     extra = 0
     verbose_name = 'subsection'
     classes = ('grp-collapse grp-closed',)
-    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title')}),)
+    fieldsets = ((None, {'fields': ('numeral', 'text', 'is_title')}),)
     inlines = [Level5Inline]
 
 
@@ -26,7 +26,7 @@ class Level3Inline(NestedTabularInline):
     extra = 0
     verbose_name = 'subsection'
     classes = ('grp-collapse grp-closed',)
-    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title')}),)
+    fieldsets = ((None, {'fields': ('numeral', 'text', 'is_title')}),)
     inlines = [Level4Inline]
 
 
@@ -35,7 +35,7 @@ class Level2Inline(NestedTabularInline):
     extra = 0
     verbose_name = 'subsection'
     classes = ('grp-collapse grp-closed',)
-    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title')}),)
+    fieldsets = ((None, {'fields': ('numeral', 'text', 'is_title')}),)
     inlines = [Level3Inline]
 
 
@@ -44,7 +44,7 @@ class Level1Inline(NestedTabularInline):
     extra = 0
     verbose_name = 'subsection'
     classes = ('grp-collapse grp-open',)
-    fieldsets = ((None, {'fields': ('numeral', 'text', 'tag', 'is_title')}),)
+    fieldsets = ((None, {'fields': ('numeral', 'text', 'is_title')}),)
     inlines = [Level2Inline]
 
 
