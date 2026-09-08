@@ -33,6 +33,7 @@ from ..ballot.models import BallotVote
 from ..petition.models import PetitionSupport
 from ..posts.querysets import annotate_post_metrics
 from ..survey.models import Response
+from ..utils.stop_words import STOP_WORDS
 
 User = get_user_model()
 
@@ -475,23 +476,6 @@ class PostRecommender:
         """
         start_date = timezone.now() - timedelta(days=days)
 
-        stop_words = {
-            "the", "and", "or", "but", "in", "on", "at", "to", "for", "of",
-            "with", "by", "from", "up", "about", "into", "over", "after",
-            "this", "that", "these", "those", "is", "are", "was", "were",
-            "be", "been", "being", "have", "has", "had", "do", "does", "did",
-            "will", "would", "shall", "should", "can", "could", "may",
-            "might", "must", "a", "an", "i", "you", "he", "she", "it", "we",
-            "they", "me", "him", "her", "us", "them", "my", "your", "his",
-            "its", "our", "their", "not", "no", "yes", "if", "then", "else",
-            "when", "where", "how", "what", "who", "which", "why", "all",
-            "any", "both", "each", "few", "more", "most", "other", "some",
-            "such", "than", "too", "very", "just", "now", "so", "as", "like",
-            "get", "got", "make", "made", "one", "two", "three", "also",
-            "because", "however", "although", "still", "even", "back", "well",
-            "say",
-        }
-
         quoted_table = connection.ops.quote_name(Post._meta.db_table)
 
         sql = f"""
@@ -526,7 +510,7 @@ class PostRecommender:
                     [
                         "published",
                         start_date,
-                        list(stop_words),
+                        list(STOP_WORDS),
                         min_frequency,
                         limit,
                     ],
@@ -641,7 +625,7 @@ class PostRecommender:
         ).exclude(search_term='').order_by('-created_at').values_list('search_term', flat=True)[:5]
 
         if recent_searches:
-            queries = [SearchQuery(term, config='english') for term in recent_searches]
+            queries = [SearchQuery(term, config='simple') for term in recent_searches]
             combined_query = queries[0]
             for q in queries[1:]:
                 combined_query |= q

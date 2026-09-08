@@ -1,4 +1,6 @@
 from django.contrib.auth import get_user_model
+from django.contrib.postgres.indexes import GinIndex, OpClass
+from django.contrib.postgres.search import SearchVectorField
 from django.db import models
 from django.db.models import F, Q
 from django.utils import timezone
@@ -38,6 +40,7 @@ class Broadcast(BaseModel):
     start_time = models.DateTimeField(default=timezone.now)
     end_time = models.DateTimeField(blank=True, null=True)
     is_active = models.BooleanField(_('active'), default=True)
+    search_vector = SearchVectorField(null=True, blank=True)
 
     class Meta:
         db_table = "Broadcast"
@@ -51,6 +54,11 @@ class Broadcast(BaseModel):
             models.Index(fields=["county"]),
             models.Index(fields=["constituency"]),
             models.Index(fields=["ward"]),
+            # Full-text search index
+            GinIndex(fields=['search_vector'], name='broadcast_search_vector_idx'),
+            # Trigram indexes for fuzzy matching
+            GinIndex(OpClass(F('title'), name='gin_trgm_ops'), name='broadcast_title_trgm_idx'),
+            GinIndex(OpClass(F('description'), name='gin_trgm_ops'), name='broadcast_description_trgm_idx'),
         ]
 
         constraints = [

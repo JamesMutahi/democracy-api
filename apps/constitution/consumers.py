@@ -1,6 +1,9 @@
 from asgiref.sync import sync_to_async
 from channels.db import database_sync_to_async
+from django.contrib.postgres.search import SearchQuery, SearchRank, TrigramSimilarity
 from django.core.cache import cache
+from django.db import DatabaseError
+from django.db.models import Q
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import ListModelMixin, RetrieveModelMixin
@@ -87,9 +90,72 @@ class ConstitutionConsumer(ListModelMixin, RetrieveModelMixin, GenericAsyncAPICo
         context["section_depth"] = getattr(self, "_section_depth_cache", None)
         return context
 
+    @staticmethod
+    def _apply_search(queryset, search_term: str):
+        """
+        Apply advanced full-text search with ranking and fuzzy matching.
+        Supports multilingual content (English, Swahili, etc.)
+        """
+        try:
+            # Use 'simple' config for multilingual support
+            search_query = SearchQuery(
+                search_term,
+                config="simple",
+                search_type="websearch",
+            )
+        except DatabaseError:
+            # Fallback to plain text search if websearch syntax is invalid
+            search_query = SearchQuery(search_term, config="simple")
+
+        queryset = queryset.annotate(
+            rank=SearchRank("search_vector", search_query),
+            text_sim=TrigramSimilarity("text", search_term),
+            numeral_sim=TrigramSimilarity("numeral", search_term),
+        ).filter(
+            Q(search_vector=search_query)
+            | Q(text_sim__gt=0.2)
+            | Q(numeral_sim__gt=0.3)
+        )
+
+        # Order by relevance: exact matches first, then fuzzy matches
+        ordering = ["-rank", "-numeral_sim", "-text_sim", "id"]
+        return queryset, ordering
+
     @action()
     @rate_limit(limit=40, period=60)
     async def list(self, **kwargs):
+        search_term = kwargs.get("search_term")
+
+        # NEW: If searching, skip cache and use advanced search
+        if search_term and isinstance(search_term, str):
+            search_term = search_term.strip()
+            if search_term:
+                self._section_depth_cache = await build_section_depth_cache()
+                try:
+                    queryset = self.get_queryset()
+                    if len(search_term) >= 2:
+                        queryset, ordering = self._apply_search(queryset, search_term)
+                        queryset = queryset.order_by(*ordering)
+                    else:
+                        # Fallback for single character searches
+                        queryset = queryset.none()
+
+                    # Serialize results
+                    serializer = self.serializer_class(
+                        queryset[:100],  # Limit search results
+                        many=True,
+                        context=self.get_serializer_context(**kwargs)
+                    )
+                    data = {
+                        "results": serializer.data,
+                        "has_next": False,
+                    }
+                finally:
+                    self._section_depth_cache = None
+
+                return data, 200
+
+        # Original cached list logic
         cache_key = await sync_to_async(self._build_cache_key)(kwargs)
 
         cached = await sync_to_async(cache.get)(cache_key)

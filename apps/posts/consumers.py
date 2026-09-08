@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.postgres.search import TrigramSimilarity, SearchQuery, SearchRank, SearchHeadline
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
-from django.db import transaction, connection
+from django.db import transaction, connection, DatabaseError
 from django.db.models import QuerySet, Case, When, Count, Q, F, Value, OuterRef, Subquery, IntegerField, TextField
 from django.db.models.functions import Coalesce
 from django.db.models.signals import post_save
@@ -24,6 +24,7 @@ from apps.posts.serializers import PostSerializer, ReportSerializer, ThreadSeria
 from apps.recommendations.post_recommender import PostRecommender
 from apps.recommendations.tasks import record_interaction
 from apps.utils.list_paginator import list_paginator
+from apps.utils.stop_words import STOP_WORDS
 from apps.utils.throttles import rate_limit, interaction_rate_limit
 
 User = get_user_model()
@@ -105,7 +106,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
     def _apply_body_search(queryset: QuerySet, search_term: str):
         search_query = SearchQuery(
             search_term,
-            config="english",
+            config="simple",
             search_type="websearch",
         )
 
@@ -129,11 +130,16 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
 
     @staticmethod
     def _apply_full_text_search(queryset: QuerySet, search_term: str):
-        search_query = SearchQuery(
-            search_term,
-            config="english",
-            search_type="websearch",
-        )
+        try:
+            # Use 'simple' config for multilingual support
+            search_query = SearchQuery(
+                search_term,
+                config="simple",
+                search_type="websearch",
+            )
+        except DatabaseError:
+            # Fallback to plain text search if websearch syntax is invalid
+            search_query = SearchQuery(search_term, config="simple")
 
         queryset = queryset.annotate(
             rank=SearchRank("search_vector", search_query),
@@ -262,7 +268,11 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
                 status='published'
             )
 
-            search_term = kwargs.get('search_term', '').strip()
+            search_term = kwargs.get('search_term')
+
+            if search_term is not None:
+                search_term = search_term.strip()
+
             if search_term:
                 if search_term.startswith('#'):
                     tag = search_term[1:].strip().lower()
@@ -1133,7 +1143,7 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
         sql = f"""
             SELECT DISTINCT word, ndoc AS count
             FROM ts_stat($$
-                SELECT to_tsvector('english', coalesce({body_column}, ''))
+                SELECT to_tsvector('simple', coalesce({body_column}, ''))
                 FROM "Post"
                 WHERE status = 'published'
                   AND is_active = true
@@ -1142,12 +1152,13 @@ class PostConsumer(RetrieveModelMixin, DeleteModelMixin, GenericAsyncAPIConsumer
             $$)
             WHERE word LIKE %s
               AND length(word) >= 4
+              AND NOT (lower(word) = ANY(%s::text[]))
             ORDER BY ndoc DESC
             LIMIT %s;
         """
 
         with connection.cursor() as cursor:
-            cursor.execute(sql, [f"{escaped_query}%", limit])
+            cursor.execute(sql, [f"{escaped_query}%", list(STOP_WORDS), limit])
             rows = cursor.fetchall()
 
         return [

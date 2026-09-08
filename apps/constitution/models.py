@@ -1,6 +1,9 @@
+from django.contrib.postgres.indexes import GinIndex, OpClass
+from django.contrib.postgres.search import SearchVector, SearchVectorField
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import F
 from django.db.models.signals import post_delete, post_save
 
 CONSTITUTION_CACHE_VERSION_KEY = "constitution:cache-version"
@@ -17,6 +20,7 @@ class Section(models.Model):
                                blank=True,
                                related_name="subsections",
                                )
+    search_vector = SearchVectorField(null=True, blank=True)
 
     class Meta:
         db_table = "Section"
@@ -25,6 +29,11 @@ class Section(models.Model):
         verbose_name_plural = "sections"
         indexes = [
             models.Index(fields=["parent_id"]),
+            # Full-text search index
+            GinIndex(fields=['search_vector'], name='section_search_vector_idx'),
+            # Trigram indexes for fuzzy matching
+            GinIndex(OpClass(F('text'), name='gin_trgm_ops'), name='section_text_trgm_idx'),
+            GinIndex(OpClass(F('numeral'), name='gin_trgm_ops'), name='section_numeral_trgm_idx'),
         ]
         constraints = [
             models.CheckConstraint(
@@ -66,6 +75,12 @@ class Section(models.Model):
                 except Section.DoesNotExist:
                     break
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Update search vector after save
+        Section.objects.filter(pk=self.pk).update(
+            search_vector=SearchVector('numeral', 'text', config='english'),
+        )
 
 def _bump_constitution_cache_version(sender, **kwargs):
     """

@@ -2,8 +2,11 @@ import uuid
 
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin
+from django.contrib.postgres.indexes import GinIndex, OpClass
+from django.contrib.postgres.search import SearchVectorField, SearchVector
 from django.core.mail import send_mail
 from django.db import models
+from django.db.models import F
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -131,6 +134,8 @@ class User(AbstractBaseUser, PermissionsMixin):
         _("date joined"),
         auto_now_add=True,
     )
+    name_vector = SearchVectorField(null=True, blank=True)
+    username_vector = SearchVectorField(null=True, blank=True)
 
     objects = UserManager()
 
@@ -142,9 +147,23 @@ class User(AbstractBaseUser, PermissionsMixin):
         verbose_name_plural = _("users")
         ordering = ("name", "id")
         db_table = "User"
+        indexes = [
+            GinIndex(fields=['name_vector'], name='user_name_vector_idx'),
+            GinIndex(fields=['username_vector'], name='user_username_vector_idx'),
+            GinIndex(OpClass(F('username'), name='gin_trgm_ops'), name='user_username_trgm_idx'),
+            GinIndex(OpClass(F('name'), name='gin_trgm_ops'), name='user_name_trgm_idx'),
+        ]
 
     def __str__(self):
         return self.name or self.username
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Update vector after initial save
+        User.objects.filter(pk=self.pk).update(
+            name_vector=SearchVector('name', config='simple'),
+            username_vector=SearchVector('username', config='simple'),
+        )
 
     def email_user(self, subject, message, from_email=None, **kwargs):
         """

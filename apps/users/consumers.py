@@ -1,6 +1,7 @@
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.contrib.postgres.search import SearchQuery, TrigramSimilarity, SearchRank
+from django.db import transaction, DatabaseError
 from django.db.models import QuerySet, Q
 from django.db.models.signals import post_save
 from django.utils import timezone
@@ -180,11 +181,37 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         if action_name == "list":
             search_term = kwargs.get("search_term")
 
-            if search_term:
-                queryset = queryset.filter(
-                    Q(username__icontains=search_term)
-                    | Q(name__icontains=search_term)
+            if search_term is not None:
+                search_term = search_term.strip()
+
+            if search_term and len(search_term) >= 2:
+                try:
+                    # Use 'simple' config for multilingual support
+                    search_query = SearchQuery(
+                        search_term,
+                        config="simple",
+                        search_type="websearch",
+                    )
+                except DatabaseError:
+                    # Fallback to plain text search if websearch syntax is invalid
+                    search_query = SearchQuery(search_term, config="simple")
+
+                queryset = queryset.annotate(
+                    rank=SearchRank("name_vector", search_query),
+                    username_sim=TrigramSimilarity("username", search_term),
+                    name_sim=TrigramSimilarity("name", search_term),
+                ).filter(
+                    Q(name_vector=search_query)
+                    | Q(username_vector=search_query)
+                    | Q(username_sim__gt=0.25)
+                    | Q(name_sim__gt=0.25)
+                ).order_by(
+                    "-rank",
+                    "-username_sim",
+                    "-name_sim",
                 )
+            elif search_term:
+                queryset = queryset.none()
 
         return queryset
 
@@ -200,36 +227,9 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
             last_user: int = None,
             **kwargs,
     ):
-        data = await self.get_list_page(
-            page=page,
-            page_size=page_size,
-            last_user=last_user,
-            search_term=kwargs.get("search_term"),
-        )
+        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        data = await database_sync_to_async(self.paginate_users)(queryset, page, page_size, last_user)
         return data, 200
-
-    @database_sync_to_async
-    def get_list_page(
-            self,
-            page: int,
-            page_size: int,
-            last_user: int,
-            search_term: str = None,
-    ):
-        queryset = self.get_list_queryset(search_term=search_term)
-        return self.paginate_users(queryset, page, page_size, last_user)
-
-    def get_list_queryset(self, search_term: str = None):
-        queryset = self.get_annotated_queryset(include_inactive=False)
-        queryset = self.exclude_hidden_social_users(queryset)
-
-        if search_term:
-            queryset = queryset.filter(
-                Q(username__icontains=search_term)
-                | Q(name__icontains=search_term)
-            )
-
-        return queryset
 
     @action()
     @rate_limit(limit=20, period=60)
@@ -240,11 +240,11 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
             page_size: int = None,
             **kwargs,
     ):
-        data = await self.get_recommendations_page(page=page, page_size=page_size)
+        data = await self.get_recommendations(page=page, page_size=page_size)
         return data, 200
 
     @database_sync_to_async
-    def get_recommendations_page(self, page: int, page_size: int):
+    def get_recommendations(self, page: int, page_size: int):
         recommender = FollowRecommender(self.scope["user"])
         recommended = recommender.get_follow_recommendations(limit=50)
 
@@ -706,15 +706,13 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     def paginate_users(
             self,
-            users,
+            queryset: QuerySet,
             page: int,
             page_size: int,
             last_user: int = None,
     ):
         """
         Stable cursor-aware paginator.
-
-        Uses name + pk ordering to avoid duplicates/skips when names collide.
         """
         page_size = self.get_page_size(page_size)
 
@@ -725,8 +723,6 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
         if last_user:
             page = 1
-
-        queryset = users.order_by("name", "pk")
 
         if last_user:
             try:

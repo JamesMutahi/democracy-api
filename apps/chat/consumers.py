@@ -1,5 +1,3 @@
-import uuid
-
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from django.db.models import F
@@ -7,7 +5,6 @@ from django.db.models.signals import post_save
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import action
-from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.chat.models import Chat, Message
 from apps.chat.serializers import (

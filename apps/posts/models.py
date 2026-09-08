@@ -2,7 +2,7 @@ import uuid
 
 from django.contrib.auth import get_user_model
 from django.contrib.gis.db import models
-from django.contrib.postgres.indexes import GinIndex
+from django.contrib.postgres.indexes import GinIndex, OpClass
 from django.contrib.postgres.search import SearchVectorField, SearchVector
 from django.db import transaction
 from django.db.models import ExpressionWrapper, Count, F, FloatField, IntegerField
@@ -13,8 +13,8 @@ from django.utils.translation import gettext_lazy as _
 from taggit.managers import TaggableManager
 
 from apps.ballot.models import Ballot
-from apps.constitution.models import Section
 from apps.broadcast.models import Broadcast
+from apps.constitution.models import Section
 from apps.petition.models import Petition
 from apps.survey.models import Survey
 
@@ -81,6 +81,7 @@ class Post(BaseModel):
             models.Index(fields=["-published_at"]),
             GinIndex(fields=['search_vector']),
             GinIndex(fields=['trending_vector']),
+            GinIndex(OpClass(F('body'), name='gin_trgm_ops'), name='post_body_trgm_idx'),
         ]
 
     def __str__(self):
@@ -133,7 +134,7 @@ class Post(BaseModel):
         super().save(*args, **kwargs)
         # Update vector after initial save
         Post.objects.filter(pk=self.pk).update(
-            search_vector=SearchVector('body', config='english'),
+            search_vector=SearchVector('body', config='simple'),
             trending_vector=SearchVector('body', config='simple'),
         )
 

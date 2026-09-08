@@ -2,8 +2,10 @@ import uuid
 from pathlib import PurePosixPath
 
 from django.contrib.auth import get_user_model
+from django.contrib.postgres.indexes import GinIndex, OpClass
+from django.contrib.postgres.search import SearchVectorField, SearchVector
 from django.db import models
-from django.db.models import Q
+from django.db.models import Q, F
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -123,6 +125,7 @@ class Petition(BaseModel):
 
     is_open = models.BooleanField(_("open"), default=True)
     is_active = models.BooleanField(_("active"), default=True)
+    search_vector = SearchVectorField(null=True, blank=True)
 
     class Meta:
         db_table = "Petition"
@@ -132,6 +135,11 @@ class Petition(BaseModel):
             models.Index(fields=["is_active", "is_open", "-created_at"]),
             models.Index(fields=["author", "-created_at"]),
             models.Index(fields=["county", "constituency", "ward"]),
+            # Full-text search index
+            GinIndex(fields=['search_vector'], name='petition_search_vector_idx'),
+            # Trigram indexes for fuzzy matching
+            GinIndex(OpClass(F('title'), name='gin_trgm_ops'), name='petition_title_trgm_idx'),
+            GinIndex(OpClass(F('description'), name='gin_trgm_ops'), name='petition_description_trgm_idx'),
         ]
 
         constraints = [
@@ -154,6 +162,14 @@ class Petition(BaseModel):
 
     def __str__(self):
         return self.title
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Update search vector after save
+        # Using 'simple' config for multilingual support (English, Swahili, etc.)
+        Petition.objects.filter(pk=self.pk).update(
+            search_vector=SearchVector('title', 'description', config='simple'),
+        )
 
 
 class PetitionSupport(models.Model):

@@ -1,5 +1,7 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.postgres.indexes import GinIndex, OpClass
+from django.contrib.postgres.search import SearchVectorField
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q, F
@@ -31,12 +33,18 @@ class Ballot(BaseModel):
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
     is_active = models.BooleanField(_('active'), default=True)
+    search_vector = SearchVectorField(null=True, blank=True)
 
     class Meta:
         db_table = 'Ballot'
         ordering = ['-start_time']
         indexes = [
             models.Index(fields=["end_time", "is_active"]),
+            # Full-text search index
+            GinIndex(fields=['search_vector'], name='ballot_search_vector_idx'),
+            # Trigram indexes for fuzzy matching
+            GinIndex(OpClass(F('title'), name='gin_trgm_ops'), name='ballot_title_trgm_idx'),
+            GinIndex(OpClass(F('description'), name='gin_trgm_ops'), name='ballot_description_trgm_idx'),
         ]
         constraints = [
             models.CheckConstraint(

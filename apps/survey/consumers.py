@@ -1,4 +1,6 @@
 from channels.db import database_sync_to_async
+from django.contrib.postgres.search import SearchQuery, SearchRank, TrigramSimilarity
+from django.db import DatabaseError
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 from djangochannelsrestframework.decorators import action
@@ -33,6 +35,39 @@ class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
             self.scope.get("user"),
         )
 
+    # ====================== Advanced Search ======================
+
+    @staticmethod
+    def _apply_advanced_search(queryset: QuerySet, search_term: str):
+        """
+        Apply advanced full-text search with ranking and fuzzy matching.
+        Supports multilingual content (English, Swahili, etc.)
+        """
+        try:
+            # Use 'simple' config for multilingual support
+            search_query = SearchQuery(
+                search_term,
+                config="simple",
+                search_type="websearch",
+            )
+        except DatabaseError:
+            # Fallback to plain text search if websearch syntax is invalid
+            search_query = SearchQuery(search_term, config="simple")
+
+        queryset = queryset.annotate(
+            rank=SearchRank("search_vector", search_query),
+            title_sim=TrigramSimilarity("title", search_term),
+            description_sim=TrigramSimilarity("description", search_term),
+        ).filter(
+            Q(search_vector=search_query)
+            | Q(title_sim__gt=0.2)
+            | Q(description_sim__gt=0.1)
+        )
+
+        # Order by relevance: exact matches first, then fuzzy matches
+        ordering = ["-rank", "-title_sim", "-description_sim", "-created_at"]
+        return queryset, ordering
+
     # ====================== Filter ======================
 
     def filter_queryset(self, queryset: QuerySet, **kwargs):
@@ -53,14 +88,18 @@ class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         if previous_surveys:
             queryset = queryset.exclude(id__in=previous_surveys)
 
-        if search_term:
-            queryset = queryset.filter(
-                Q(title__icontains=search_term) |
-                Q(description__icontains=search_term) |
-                Q(county__name__icontains=search_term) |
-                Q(constituency__name__icontains=search_term) |
-                Q(ward__name__icontains=search_term)
-            ).distinct()
+        search_ordering = ["-created_at"]
+
+        if search_term is not None:
+            search_term = search_term.strip()
+
+        if search_term and len(search_term) >= 2:
+            queryset, search_ordering = self._apply_advanced_search(
+                queryset, search_term
+            )
+
+        elif search_term:
+            queryset = queryset.none()
 
         if is_open is not None:
             now = timezone.now()
@@ -82,6 +121,9 @@ class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
         if start_date and end_date:
             queryset = queryset.filter(start_time__lte=end_date, end_time__gte=start_date)
+
+        if search_term and len(search_term) >= 2:
+            return queryset.order_by(*search_ordering)
 
         if sort_by == 'oldest':
             queryset = queryset.order_by('created_at')
