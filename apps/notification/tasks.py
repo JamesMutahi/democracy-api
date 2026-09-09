@@ -15,7 +15,7 @@ from apps.ballot.querysets import annotate_ballot_metrics
 from apps.broadcast.models import Broadcast
 from apps.broadcast.querysets import annotate_broadcast_metrics
 from apps.chat.models import Message
-from apps.notification.models import Notification, Preferences
+from apps.notification.models import Notification, Preferences, NotificationType
 from apps.notification.serializers import NotificationSerializer
 from apps.petition.models import Petition
 from apps.petition.querysets import annotate_petition_metrics
@@ -350,9 +350,7 @@ def _add_aggregated_notification(
         recipient,
         user,
         text: str,
-        is_like: bool = False,
-        is_follow: bool = False,
-        is_support: bool = False,
+        notification_type: str = NotificationType.GENERAL,
         post=None,
         petition=None,
 ):
@@ -369,9 +367,7 @@ def _add_aggregated_notification(
     filters = {
         "recipient": recipient,
         "is_read": False,
-        "is_like": is_like,
-        "is_follow": is_follow,
-        "is_support": is_support,
+        "type": notification_type,
     }
 
     if post is not None:
@@ -393,9 +389,7 @@ def _add_aggregated_notification(
             notification = Notification.objects.create(
                 recipient=recipient,
                 text=text,
-                is_like=is_like,
-                is_follow=is_follow,
-                is_support=is_support,
+                type=notification_type,
                 post=post,
                 petition=petition,
             )
@@ -415,9 +409,7 @@ def _remove_aggregated_notification(
         *,
         recipient_id: int,
         user_id: int,
-        is_like: bool = False,
-        is_follow: bool = False,
-        is_support: bool = False,
+        notification_type: str = NotificationType.GENERAL,
         post_id: int | None = None,
         petition_id: int | None = None,
 ):
@@ -434,9 +426,7 @@ def _remove_aggregated_notification(
     filters = {
         "recipient_id": recipient_id,
         "is_read": False,
-        "is_like": is_like,
-        "is_follow": is_follow,
-        "is_support": is_support,
+        "type": notification_type,
         "users__id": user_id,
     }
 
@@ -794,7 +784,7 @@ def notify_on_follow(user_id, recipient_id):
         recipient=recipient,
         user=user,
         text="followed you",
-        is_follow=True,
+        notification_type=NotificationType.FOLLOW,
     )
 
     if not notification:
@@ -823,7 +813,7 @@ def delete_notification_on_unfollow(user_id, recipient_id):
     _remove_aggregated_notification(
         recipient_id=recipient_id,
         user_id=user_id,
-        is_follow=True,
+        notification_type=NotificationType.FOLLOW,
     )
 
 
@@ -853,7 +843,7 @@ def notify_on_like(user_id, post_id):
         recipient=author,
         user=user,
         text="liked your post",
-        is_like=True,
+        notification_type=NotificationType.LIKE,
         post=post,
     )
 
@@ -888,7 +878,7 @@ def delete_notification_on_unlike(user_id, post_id):
     _remove_aggregated_notification(
         recipient_id=post.author_id,
         user_id=user_id,
-        is_like=True,
+        notification_type=NotificationType.LIKE,
         post_id=post_id,
     )
 
@@ -919,7 +909,7 @@ def notify_on_support(user_id, petition_id):
         recipient=author,
         user=user,
         text="supported your petition",
-        is_support=True,
+        notification_type=NotificationType.SUPPORT,
         petition=petition,
     )
 
@@ -954,7 +944,7 @@ def delete_notification_on_support_removal(user_id, petition_id):
     _remove_aggregated_notification(
         recipient_id=petition.author_id,
         user_id=user_id,
-        is_support=True,
+        notification_type=NotificationType.SUPPORT,
         petition_id=petition_id,
     )
 

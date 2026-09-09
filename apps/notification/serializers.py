@@ -27,9 +27,6 @@ class NotificationSerializer(serializers.ModelSerializer):
             'text',
             'is_read',
             'users',
-            'is_like',
-            'is_follow',
-            'is_support',
             'post',
             'ballot',
             'survey',
@@ -37,6 +34,7 @@ class NotificationSerializer(serializers.ModelSerializer):
             'broadcast',
             'chat',
             'message',
+            'type',
             'created_at',
         ]
         read_only_fields = fields
