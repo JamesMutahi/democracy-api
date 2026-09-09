@@ -219,9 +219,9 @@ class BroadcastSerializer(serializers.ModelSerializer):
 
         for url in urls:
             if url.endswith(".m3u8"):
-                return url
+                return settings.STATIC_URL + url
 
-        return urls[0]
+        return settings.STATIC_URL + urls[0]
 
     # ====================== PARTICIPANT / MUTE HELPERS ======================
 
