@@ -3,6 +3,7 @@ from channels.db import database_sync_to_async
 from django.core.cache import cache
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
+from rest_framework.exceptions import ValidationError, NotFound
 
 from apps.geo.models import (
     GEO_CACHE_VERSION_KEY,
@@ -178,12 +179,12 @@ class GeoConsumer(GenericAsyncAPIConsumer):
         county = kwargs.get("county")
 
         if county is None:
-            return {"error": "county is required."}, 400
+            raise ValidationError({"county": "This field is required."})
 
         try:
             county_id = int(county)
         except (TypeError, ValueError):
-            return {"error": "county must be an integer."}, 400
+            raise ValidationError("county must be an integer.")
 
         include_boundaries = _bool_param(kwargs, "include_boundaries", True)
 
@@ -202,7 +203,7 @@ class GeoConsumer(GenericAsyncAPIConsumer):
         )
 
         if data is None:
-            return {"error": "County not found."}, 404
+            raise NotFound("County not found.")
 
         await _cache_set(cache_key, data)
 
@@ -223,12 +224,12 @@ class GeoConsumer(GenericAsyncAPIConsumer):
         constituency = kwargs.get("constituency")
 
         if constituency is None:
-            return {"error": "constituency is required."}, 400
+            raise ValidationError({"constituency": "This field is required."})
 
         try:
             constituency_id = int(constituency)
         except (TypeError, ValueError):
-            return {"error": "constituency must be an integer."}, 400
+            raise ValidationError("constituency must be an integer.")
 
         include_boundaries = _bool_param(kwargs, "include_boundaries", True)
 
@@ -247,7 +248,7 @@ class GeoConsumer(GenericAsyncAPIConsumer):
         )
 
         if data is None:
-            return {"error": "Constituency not found."}, 404
+            raise NotFound("Constituency not found.")
 
         await _cache_set(cache_key, data)
 

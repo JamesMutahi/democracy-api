@@ -497,11 +497,9 @@ class PetitionConsumer(
         try:
             result = await self.record_support(pk=pk)
         except (Petition.DoesNotExist, NotFound):
-            return {"error": "Petition not found."}, 404
-        except PermissionDenied as exc:
-            return {"error": str(getattr(exc, "detail", "Permission denied."))}, 403
+            raise NotFound("Petition not found")
         except User.DoesNotExist:
-            return {"error": "Authenticated user not found."}, 401
+            raise NotFound("User not found")
 
         return result, 200
 
@@ -633,7 +631,7 @@ class PetitionConsumer(
         try:
             result = await self.record_click(pk=pk)
         except Petition.DoesNotExist:
-            return {"error": "Petition not found."}, 404
+            raise NotFound("Petition not found.")
 
         return result, 200
 

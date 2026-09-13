@@ -193,12 +193,8 @@ class NotificationConsumer(ListModelMixin, GenericAsyncAPIConsumer):
     @action()
     @rate_limit(limit=40, period=60)
     async def update_preferences(self, request_id=None, data=None, **kwargs):
-        payload = await self._update_preferences(data or {})
-        return await self.reply(
-            data=payload,
-            request_id=request_id,
-            status=200,
-        )
+        data = await self._update_preferences(data or {})
+        return data, 200
 
     @database_sync_to_async
     def _update_preferences(self, data):

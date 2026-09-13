@@ -5,6 +5,7 @@ from django.db.models.signals import post_save
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import action
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
 from apps.chat.models import Chat, Message
 from apps.chat.serializers import (
@@ -202,12 +203,12 @@ class ChatConsumer(GenericAsyncAPIConsumer):
                 target_user_id = user_ids[0]
 
         if not target_user_id:
-            return {"error": "user is required."}, 400
+            raise ValidationError("user is required.")
 
         chat = await self.get_or_create_chat_for(target_user_id)
 
         if not chat:
-            return {"error": "Failed to create chat."}, 400
+            raise ValidationError("Failed to create chat.")
 
         await self.subscribe_to_chat(chat.id, request_id)
 
@@ -275,7 +276,7 @@ class ChatConsumer(GenericAsyncAPIConsumer):
         **kwargs,
     ):
         if not chat_id:
-            return {"error": "chat_id is required."}, 400
+            raise ValidationError("chat_id is required.")
 
         response, response_status = await self.get_messages(
             chat_id=chat_id,
@@ -299,10 +300,10 @@ class ChatConsumer(GenericAsyncAPIConsumer):
         try:
             chat = Chat.objects.get(pk=chat_id)
         except Chat.DoesNotExist:
-            return {"error": "Chat not found."}, 404
+            raise NotFound("Chat not found")
 
-        if not can_user_access_chat(user, chat):
-            return {"error": "You cannot access this chat."}, 403
+        if not chat.users.filter(pk=user.pk).exists():
+            raise PermissionDenied("You cannot access this chat.")
 
         queryset = (
             chat.messages.filter(is_deleted=False)
@@ -340,12 +341,12 @@ class ChatConsumer(GenericAsyncAPIConsumer):
     @rate_limit(limit=40, period=60)
     async def retrieve(self, request_id: str, pk: int = None, **kwargs):
         if not pk:
-            return {"error": "pk is required."}, 400
+            raise ValidationError("pk is required.")
 
         chat = await self.get_accessible_chat(pk)
 
         if not chat:
-            return {"error": "Chat not found."}, 404
+            raise NotFound("Chat not found")
 
         data = await self.get_chat_serializer_data(pk=pk)
 
@@ -361,10 +362,10 @@ class ChatConsumer(GenericAsyncAPIConsumer):
         result = await self.mark_as_read_(pk)
 
         if result is None:
-            return {"error": "Chat not found."}, 404
+            raise NotFound("Chat not found")
 
         if result is False:
-            return {"error": "You cannot access this chat."}, 403
+            raise PermissionDenied("You cannot access this chat.")
 
         return {}, 200
 
