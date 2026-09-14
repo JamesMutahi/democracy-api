@@ -8,7 +8,6 @@ from django.contrib.postgres.search import SearchQuery, SearchRank, TrigramSimil
 from django.db import transaction, DatabaseError
 from django.db.models import Q, QuerySet
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import (
@@ -192,79 +191,6 @@ class BroadcastConsumer(
 
         await super().websocket_disconnect(message)
 
-    # ====================== INPUT SANITIZATION ======================
-
-    def _clamp_page_size(self, page_size) -> int:
-        try:
-            page_size = int(page_size)
-        except Exception:
-            page_size = self.page_size
-
-        if page_size <= 0:
-            page_size = self.page_size
-
-        return min(page_size, MAX_PAGE_SIZE)
-
-    def _sanitize_previous_ids(self, value) -> list:
-        if not value:
-            return []
-
-        if isinstance(value, str):
-            value = value.split(",")
-
-        if not isinstance(value, (list, tuple)):
-            return []
-
-        ids = []
-
-        for item in value:
-            try:
-                ids.append(int(item))
-            except Exception:
-                continue
-
-            if len(ids) >= PREVIOUS_IDS_LIMIT:
-                break
-
-        return ids
-
-    def _parse_bool(self, value) -> bool:
-        if isinstance(value, bool):
-            return value
-
-        if isinstance(value, str):
-            return value.lower() in {"1", "true", "yes", "on"}
-
-        return bool(value)
-
-    def _parse_datetime(self, value):
-        if not value:
-            return None
-
-        if hasattr(value, "isoformat"):
-            return value
-
-        parsed = parse_datetime(str(value))
-        return parsed
-
-    def _build_list_kwargs(self, kwargs: dict) -> dict:
-        safe = {}
-
-        if kwargs.get("search_term"):
-            safe["search_term"] = str(kwargs["search_term"])[:SEARCH_TERM_LIMIT]
-
-        if "is_open" in kwargs:
-            safe["is_open"] = self._parse_bool(kwargs.get("is_open"))
-
-        if kwargs.get("sort_by") in {"recent", "oldest"}:
-            safe["sort_by"] = kwargs.get("sort_by")
-
-        safe["start_date"] = self._parse_datetime(kwargs.get("start_date"))
-        safe["end_date"] = self._parse_datetime(kwargs.get("end_date"))
-        safe["previous_broadcasts"] = self._sanitize_previous_ids(kwargs.get("previous_broadcasts"))
-
-        return safe
-
     # ====================== Advanced Search ======================
 
     @staticmethod
@@ -304,9 +230,9 @@ class BroadcastConsumer(
         queryset = super().filter_queryset(queryset=queryset, **kwargs)
 
         action_name = kwargs.get("action")
-        previous_broadcasts = self._sanitize_previous_ids(kwargs.get("previous_broadcasts"))
+        previous_broadcasts = kwargs.get("previous_broadcasts")
         search_term = kwargs.get("search_term")
-        is_open = kwargs.get("is_open")
+        is_open = kwargs.get("is_open", None)
         filter_by_region = kwargs.get("filter_by_region", True)
         sort_by = kwargs.get("sort_by", "recent")
         start_date = kwargs.get("start_date")
@@ -323,7 +249,7 @@ class BroadcastConsumer(
             search_term = search_term.strip()
 
         if action_name == "list":
-            queryset = queryset.filter(type=Broadcast.Type.MEETING, is_active=True)
+            queryset = queryset.filter(type=Broadcast.Type.MEETING)
 
             search_ordering = ["-created_at"]
 
@@ -337,33 +263,23 @@ class BroadcastConsumer(
 
             if is_open is not None:
                 now = timezone.now()
-
                 if is_open:
-                    queryset = queryset.filter(
-                        Q(end_time__gt=now) | Q(end_time__isnull=True)
-                    )
+                    queryset = queryset.filter(Q(end_time__gt=now) | Q(end_time__isnull=True))
                 else:
                     queryset = queryset.filter(end_time__lte=now)
 
             if filter_by_region:
                 region_q = Q(county__isnull=True, constituency__isnull=True, ward__isnull=True)
-
                 if county:
                     region_q |= Q(county=county, constituency__isnull=True, ward__isnull=True)
-
                 if county and constituency:
                     region_q |= Q(county=county, constituency=constituency, ward__isnull=True)
-
                 if county and constituency and ward:
                     region_q |= Q(county=county, constituency=constituency, ward=ward)
-
                 queryset = queryset.filter(region_q)
 
             if start_date and end_date:
-                queryset = queryset.filter(
-                    Q(start_time__lte=end_date) &
-                    (Q(end_time__gte=start_date) | Q(end_time__isnull=True))
-                )
+                queryset = queryset.filter(Q(start_time__lte=end_date) & Q(end_time__gte=start_date))
 
             if search_term and len(search_term) >= 2:
                 return queryset.order_by(*search_ordering)
@@ -388,37 +304,21 @@ class BroadcastConsumer(
     @action()
     @rate_limit(limit=40, period=60)
     async def list(self, request_id: str, page_size=20, **kwargs):
-        safe_kwargs = self._build_list_kwargs(kwargs)
-        safe_kwargs["action"] = "list"
-        safe_kwargs["county"], safe_kwargs["constituency"], safe_kwargs["ward"] = (
-            await self.get_user_regions()
-        )
-
-        queryset = self.filter_queryset(self.get_queryset(**safe_kwargs), **safe_kwargs)
-
-        data = await self.list_(
-            queryset=queryset,
-            page_size=self._clamp_page_size(page_size),
-            **safe_kwargs,
-        )
-
+        kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_regions()
+        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        data = await self.list_(queryset=queryset, page_size=page_size, **kwargs)
         return data, 200
+
+    @database_sync_to_async
+    def get_regions(self):
+        user = self.scope['user']
+        return user.county, user.constituency, user.ward
 
     @action()
     @rate_limit(limit=40, period=60)
     async def user_broadcasts(self, request_id: str, page_size=None, **kwargs):
-        safe_kwargs = self._build_list_kwargs(kwargs)
-        safe_kwargs["action"] = "user_broadcasts"
-        safe_kwargs["user"] = self.scope["user"]
-
-        queryset = self.filter_queryset(self.get_queryset(**safe_kwargs), **safe_kwargs)
-
-        data = await self.list_(
-            queryset=queryset,
-            page_size=self._clamp_page_size(page_size),
-            **safe_kwargs,
-        )
-
+        queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
+        data = await self.list_(queryset=queryset, page_size=page_size, **kwargs)
         return data, 200
 
     @action()
@@ -544,7 +444,7 @@ class BroadcastConsumer(
         if await self._user_can_manage_speakers(broadcast=broadcast):
             await self.speaker_request_activity.subscribe(pk=pk, request_id=user_id)
 
-        if self._parse_bool(is_muted):
+        if is_muted:
             await database_sync_to_async(BroadcastParticipantService.set_mute_status)(
                 broadcast_id=pk,
                 user_id=self.scope["user"].id,
@@ -629,7 +529,7 @@ class BroadcastConsumer(
         if not await self._user_is_speaker(broadcast):
             raise PermissionDenied("You are not a speaker.")
 
-        is_muted = self._parse_bool(data.get("is_muted"))
+        is_muted = data.get("is_muted")
         user_id = self.scope["user"].id
 
         if not is_muted:
@@ -676,7 +576,7 @@ class BroadcastConsumer(
         if not await self._target_is_speaker_or_co_host(broadcast, target_user_id):
             raise ValidationError("Target user is not a speaker, co-host, or host.")
 
-        is_muted = self._parse_bool(data.get("is_muted", True))
+        is_muted = data.get("is_muted", True)
 
         await database_sync_to_async(BroadcastParticipantService.set_mute_status)(
             broadcast_id=pk,
@@ -802,7 +702,7 @@ class BroadcastConsumer(
         if not isinstance(data, dict) or "is_accepted" not in data:
             raise ValidationError({"is_accepted": "This field is required."})
 
-        is_accepted = self._parse_bool(data.get("is_accepted"))
+        is_accepted = data.get("is_accepted")
 
         invite_obj = await self.get_speaker_invite(pk=pk)
 
@@ -872,15 +772,7 @@ class BroadcastConsumer(
         if not await self._user_can_manage_speakers(broadcast=broadcast):
             raise PermissionDenied("Only the host or co-host can view speaker requests.")
 
-        safe_kwargs = {
-            "previous_requests": self._sanitize_previous_ids(kwargs.get("previous_requests")),
-        }
-
-        data = await self.get_requests(
-            broadcast=broadcast,
-            page_size=self._clamp_page_size(page_size),
-            **safe_kwargs,
-        )
+        data = await self.get_requests(broadcast=broadcast,page_size=page_size,**kwargs)
 
         return data, 200
 
@@ -948,7 +840,7 @@ class BroadcastConsumer(
         if not isinstance(data, dict) or "is_approved" not in data:
             raise ValidationError({"is_approved": "This field is required."})
 
-        is_approved = self._parse_bool(data.get("is_approved"))
+        is_approved = data.get("is_approved")
 
         request_obj = await self.get_speaker_request(pk=pk)
 

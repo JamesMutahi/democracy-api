@@ -358,13 +358,7 @@ class PetitionConsumer(
             )
 
             if start_date and end_date:
-                queryset = queryset.filter(
-                    created_at__range=(start_date, end_date)
-                )
-            elif start_date:
-                queryset = queryset.filter(created_at__gte=start_date)
-            elif end_date:
-                queryset = queryset.filter(created_at__lte=end_date)
+                queryset = queryset.filter(Q(start_time__lte=end_date) & Q(end_time__gte=start_date))
 
             sort_by = kwargs.get("sort_by", "popular")
 

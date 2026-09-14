@@ -120,15 +120,17 @@ class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
             queryset = queryset.filter(region_q)
 
         if start_date and end_date:
-            queryset = queryset.filter(start_time__lte=end_date, end_time__gte=start_date)
+            queryset = queryset.filter(Q(start_time__lte=end_date) & Q(end_time__gte=start_date))
 
         if search_term and len(search_term) >= 2:
             return queryset.order_by(*search_ordering)
 
-        if sort_by == 'oldest':
-            queryset = queryset.order_by('created_at')
-        else:  # 'recent' (default)
-            queryset = queryset.order_by('-created_at')
+        if sort_by == 'recent':
+            queryset = queryset.order_by('-start_time', '-id')
+        elif sort_by == 'oldest':
+            queryset = queryset.order_by('start_time', 'id')
+        else:
+            queryset = queryset.order_by('-start_time', '-id')
 
         return queryset
 
@@ -138,15 +140,8 @@ class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     @rate_limit(limit=40, period=60)
     async def list(self, request_id: str, page_size=None, **kwargs):
         kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_user_regions()
-        data = await self.list_(page_size=self._sanitize_page_size(page_size), **kwargs)
+        data = await self.list_(page_size=page_size, **kwargs)
         await self.reply(action='list', data=data, request_id=request_id)
-
-    def _sanitize_page_size(self, page_size) -> int:
-        try:
-            page_size = int(page_size or self.page_size)
-        except (TypeError, ValueError):
-            page_size = self.page_size
-        return max(1, min(page_size, self.max_page_size))
 
     @database_sync_to_async
     def get_user_regions(self):

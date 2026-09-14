@@ -13,6 +13,7 @@ from apps.posts.models import Post
 
 def top_community_note_body_subquery():
     """
+    TODO: ENABLE
     Returns the body of the top community note for a post.
 
     Community notes are Post objects where:
@@ -62,7 +63,7 @@ def top_community_note_body_subquery():
     )
 
 
-def annotate_post_metrics(queryset, user, include_top_community_note=True):
+def annotate_post_metrics(queryset, user, include_top_community_note=False):
     """
     Annotate post queryset with counts and user-specific flags.
     """
