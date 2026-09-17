@@ -1,13 +1,15 @@
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
-from django.db.models import F
+from django.db.models import QuerySet
 from django.db.models.signals import post_save
+from django.utils import timezone
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.observer import model_observer
 from djangochannelsrestframework.observer.generics import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
-from apps.chat.models import Chat, Message
+from apps.chat.models import Chat, Message, ChatParticipant
+from apps.chat.querysets import annotate_chat_metrics, search_chats_by_user
 from apps.chat.serializers import (
     ChatSerializer,
     MessageSerializer,
@@ -24,13 +26,19 @@ User = get_user_model()
 
 class ChatConsumer(GenericAsyncAPIConsumer):
     serializer_class = ChatSerializer
-    queryset = Chat.objects.all()
     lookup_field = "pk"
     page_size = 20
+
+    def get_queryset(self, **kwargs) -> QuerySet:
+        return annotate_chat_metrics(
+            Chat.objects.filter(users=self.scope["user"]),
+            user=self.scope["user"]
+        )
 
     async def connect(self):
         if self.scope["user"].is_authenticated:
             await self.accept()
+            await self.chat_activity.subscribe()
         else:
             await self.close()
 
@@ -40,17 +48,18 @@ class ChatConsumer(GenericAsyncAPIConsumer):
     async def chat_activity(self, message, **kwargs):
         if message.get("action") != "delete":
             message["data"] = await self.get_chat_serializer_data(pk=message["data"])
-
         await self.send_json(message)
 
     @chat_activity.groups_for_signal
     def chat_activity_signal_groups(self, instance: Chat, **kwargs):
-        yield f"chat__{instance.pk}"
+        for user_id in instance.users.values_list('id', flat=True):
+            yield f"user_chats__{user_id}"
 
     @chat_activity.groups_for_consumer
-    def chat_activity_consumer_groups(self, pk=None, **kwargs):
-        if pk is not None:
-            yield f"chat__{pk}"
+    def chat_activity_consumer_groups(self, consumer, pk=None, **kwargs):
+        user = consumer.scope.get("user")
+        if user and user.is_authenticated:
+            yield f"user_chats__{user.id}"
 
     @chat_activity.serializer
     def chat_activity_serializer(self, instance: Chat, action, **kwargs):
@@ -84,21 +93,55 @@ class ChatConsumer(GenericAsyncAPIConsumer):
             yield f"chat__{chat}"
 
     @message_activity.serializer
-    def message_activity_serializer(self, instance: Message, action, **kwargs):
+    def message_activity_serializer(self, instance: Message, _action, **kwargs):
         return {
             "data": {
                 "pk": instance.pk,
                 "chat_id": instance.chat_id,
             },
-            "action": f"message_{action.value}",
+            "action": f"message_{_action.value}",
             "pk": instance.pk,
-            "response_status": 201 if action.value == "create" else 204 if action.value == "delete" else 200,
+            "response_status": 201 if _action.value == "create" else 204 if _action.value == "delete" else 200,
         }
 
     async def disconnect(self, code):
         await self.chat_activity.unsubscribe()
         await self.message_activity.unsubscribe()
         await super().disconnect(code)
+
+    # ==================== Filtering ====================
+
+    def filter_queryset(self, queryset, **kwargs):
+        queryset = super().filter_queryset(queryset=queryset, **kwargs)
+        user = self.scope["user"]
+        search_term = kwargs.get("search_term")
+        _action = kwargs.get("action")
+
+        if _action == "inbox":
+            # Inbox = chats where the current user is NOT the one with a
+            # pending request (i.e. they have accepted, OR they initiated).
+            # Exclude chats where this user's participant row is PENDING
+            # *and* they didn't send the latest message themselves.
+            pending_chats = ChatParticipant.objects.filter(
+                user=user,
+                status=ChatParticipant.Status.PENDING,
+            ).values_list("chat_id", flat=True)
+            queryset = queryset.exclude(
+                pk__in=pending_chats,
+            ).distinct()
+
+        if _action == "requests":
+            # Requests = chats where the current user's participant row is PENDING
+            pending_chats = ChatParticipant.objects.filter(
+                user=user,
+                status=ChatParticipant.Status.PENDING,
+            ).values_list("chat_id", flat=True)
+            queryset = queryset.filter(pk__in=pending_chats).distinct()
+
+        if search_term:
+            queryset = search_chats_by_user(queryset, user, search_term)
+
+        return queryset
 
     # ==================== Subscription Helpers ====================
 
@@ -114,25 +157,10 @@ class ChatConsumer(GenericAsyncAPIConsumer):
         except Chat.DoesNotExist:
             return None
 
-        if not can_user_access_chat(user, chat):
+        if not chat.users.filter(pk=user.pk).exists():
             return None
 
         return chat
-
-    async def subscribe_to_chat(self, pk, request_id):
-        chat = await self.get_accessible_chat(pk)
-
-        if not chat:
-            return False
-
-        await self.chat_activity.subscribe(pk=pk, request_id=request_id)
-        await self.message_activity.subscribe(chat=pk, request_id=request_id)
-
-        return True
-
-    async def unsubscribe_from_chat(self, pk, request_id):
-        await self.chat_activity.unsubscribe(pk=pk, request_id=request_id)
-        await self.message_activity.unsubscribe(chat=pk, request_id=request_id)
 
     # ==================== Serializer Helpers ====================
 
@@ -161,21 +189,40 @@ class ChatConsumer(GenericAsyncAPIConsumer):
         serializer = MessageSerializer(instance=message, context={"scope": self.scope})
         return serializer.data
 
+    # ==================== Retrieve ====================
+
+    @action()
+    @rate_limit(limit=40, period=60)
+    async def retrieve(self, request_id: str, pk: int = None, **kwargs):
+        if not pk:
+            raise ValidationError("pk is required.")
+
+        chat = await self.get_accessible_chat(pk)
+
+        if not chat:
+            raise NotFound("Chat not found")
+
+        data = await self.get_chat_serializer_data(pk=pk)
+
+        await self.message_activity.subscribe(chat=pk, request_id=request_id)
+
+        return data, 200
+
     # ==================== Chat + Message Creation ====================
 
     @database_sync_to_async
     def get_or_create_chat_for(self, target_user_id):
         user = self.scope["user"]
-
         try:
             target_user = User.objects.get(pk=target_user_id)
         except (User.DoesNotExist, ValueError, TypeError):
-            return None
+            return None, None
 
         if target_user.pk != user.pk and is_blocked_pair(user, target_user):
-            return None
+            return None, None
 
-        return get_or_create_direct_chat(user, target_user)
+        chat, will_create_request = get_or_create_direct_chat(user, target_user)
+        return chat, will_create_request
 
     @database_sync_to_async
     def create_message(self, data):
@@ -205,14 +252,14 @@ class ChatConsumer(GenericAsyncAPIConsumer):
         if not target_user_id:
             raise ValidationError("user is required.")
 
-        chat = await self.get_or_create_chat_for(target_user_id)
-
+        chat, will_create_request = await self.get_or_create_chat_for(target_user_id)
         if not chat:
             raise ValidationError("Failed to create chat.")
 
-        await self.subscribe_to_chat(chat.id, request_id)
-
         data = await self.get_chat_serializer_data(chat.pk)
+
+        # Include request metadata in response
+        data["will_create_request"] = will_create_request
 
         return data, 201
 
@@ -220,60 +267,124 @@ class ChatConsumer(GenericAsyncAPIConsumer):
 
     @action()
     @rate_limit(limit=40, period=60)
-    async def list(self, request_id: str, last_chat: int = None, page_size=None, **kwargs):
+    async def inbox(self, request_id: str, last_chat: int = None, page_size=None, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset(), **kwargs)
         data = await self.list_chats(
+            queryset=queryset,
             page_size=page_size or self.page_size,
             last_chat=last_chat,
             **kwargs,
         )
+        return data, 200
 
-        await self.reply(action="list", data=data, request_id=request_id)
+    @action()
+    @rate_limit(limit=40, period=60)
+    async def requests(self, request_id: str, last_chat: int = None, page_size=None, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset(), **kwargs)
+        data = await self.list_chats(
+            queryset=queryset,
+            page_size=page_size or self.page_size,
+            last_chat=last_chat,
+            **kwargs,
+        )
+        return data, 200
 
     @database_sync_to_async
-    def list_chats(self, page_size: int, last_chat: int = None, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset(), **kwargs)
+    def list_chats(self, queryset: QuerySet, page_size: int, last_chat: int = None, **kwargs):
 
         if last_chat:
             try:
-                cursor_chat = Chat.objects.with_latest_message().get(pk=last_chat)
-                if cursor_chat.latest_message_id:
-                    queryset = queryset.filter(
-                        latest_message_id__lt=cursor_chat.latest_message_id
-                    )
+                cursor_chat = Chat.objects.get(pk=last_chat)
+                latest_msg = cursor_chat.messages.order_by("-created_at", "-id").first()
+                if latest_msg:
+                    queryset = queryset.filter(latest_message_id__lt=latest_msg.id)
             except Chat.DoesNotExist:
                 pass
 
         from apps.utils.list_paginator import list_paginator
-
         page_obj = list_paginator(queryset=queryset, page=1, page_size=page_size)
-
         serializer = ChatSerializer(
             page_obj.object_list,
             many=True,
             context={"scope": self.scope},
         )
-
         results = serializer.data
-
         return {
             "results": results,
             "last_chat": last_chat,
-            "next_last_chat": results[-1]["id"] if results else None,
             "has_next": page_obj.has_next(),
         }
+
+    # ==================== Message Requests ====================
+
+    @action()
+    @interaction_rate_limit
+    async def accept_request(self, request_id: str, chat_id: int = None, **kwargs):
+        if not chat_id:
+            raise ValidationError("chat_id is required.")
+
+        await self._accept_request(chat_id)
+        return chat_id, 200
+
+    @database_sync_to_async
+    def _accept_request(self, chat_id: int):
+        try:
+            participant_entry = ChatParticipant.objects.select_related('chat').get(
+                chat_id=chat_id,
+                user=self.scope["user"],
+            )
+        except Chat.DoesNotExist:
+            raise NotFound("Chat not found")
+
+        # Perform the soft-delete update
+        participant_entry.status = ChatParticipant.Status.ACCEPTED
+        participant_entry.hidden_at = None
+        participant_entry.save()
+
+        post_save.send(sender=Chat, instance=participant_entry.chat, created=False)
+
+        return chat_id
+
+    @action()
+    @interaction_rate_limit
+    async def decline_request(self, request_id: str, chat_id: int = None, **kwargs):
+        if not chat_id:
+            raise ValidationError("chat_id is required.")
+
+        await self._decline_request(chat_id)
+        return chat_id, 200
+
+    @database_sync_to_async
+    def _decline_request(self, chat_id: int):
+        try:
+            participant_entry = ChatParticipant.objects.select_related('chat').get(
+                chat_id=chat_id,
+                user=self.scope["user"],
+            )
+        except Chat.DoesNotExist:
+            raise NotFound("Chat not found")
+
+        # Perform the soft-delete update
+        participant_entry.status = ChatParticipant.Status.DECLINED
+        participant_entry.hidden_at = timezone.now()
+        participant_entry.save()
+
+        post_save.send(sender=Chat, instance=participant_entry.chat, created=False)
+
+        return chat_id
 
     # ==================== Messages ====================
 
     @action()
     @rate_limit(limit=40, period=60)
     async def messages(
-        self,
-        request_id: str,
-        chat_id: int = None,
-        oldest_message: int = None,
-        newest_message: int = None,
-        page_size=20,
-        **kwargs,
+            self,
+            request_id: str,
+            chat_id: int = None,
+            oldest_message: int = None,
+            newest_message: int = None,
+            page_size=20,
+            **kwargs,
     ):
         if not chat_id:
             raise ValidationError("chat_id is required.")
@@ -289,11 +400,11 @@ class ChatConsumer(GenericAsyncAPIConsumer):
 
     @database_sync_to_async
     def get_messages(
-        self,
-        chat_id: int,
-        oldest_message: int = None,
-        newest_message: int = None,
-        page_size: int = 20,
+            self,
+            chat_id: int,
+            oldest_message: int = None,
+            newest_message: int = None,
+            page_size: int = 20,
     ):
         user = self.scope["user"]
 
@@ -335,62 +446,40 @@ class ChatConsumer(GenericAsyncAPIConsumer):
             "has_next": page_obj.has_next(),
         }, 200
 
-    # ==================== Retrieve ====================
-
-    @action()
-    @rate_limit(limit=40, period=60)
-    async def retrieve(self, request_id: str, pk: int = None, **kwargs):
-        if not pk:
-            raise ValidationError("pk is required.")
-
-        chat = await self.get_accessible_chat(pk)
-
-        if not chat:
-            raise NotFound("Chat not found")
-
-        data = await self.get_chat_serializer_data(pk=pk)
-
-        await self.subscribe_to_chat(pk, request_id)
-
-        return data, 200
-
     # ==================== Read State ====================
 
     @action()
     @interaction_rate_limit
     async def mark_as_read(self, pk: int, **kwargs):
-        result = await self.mark_as_read_(pk)
-
-        if result is None:
-            raise NotFound("Chat not found")
-
-        if result is False:
-            raise PermissionDenied("You cannot access this chat.")
-
+        await self.mark_as_read_(pk)
         return {}, 200
 
     @database_sync_to_async
     def mark_as_read_(self, pk: int):
         user = self.scope["user"]
-
         try:
             chat = Chat.objects.get(pk=pk)
         except Chat.DoesNotExist:
-            return None
-
+            raise NotFound("Chat not found")
         if not can_user_access_chat(user, chat):
-            return False
+            raise PermissionDenied("You cannot access this chat.")
+
+        # Block read marking while the user still has a PENDING request
+        if ChatParticipant.objects.filter(
+                chat=chat,
+                user=user,
+                status=ChatParticipant.Status.PENDING,
+        ).exists():
+            raise ValidationError("Pending request.")
 
         updated = (
             chat.messages.filter(is_read=False, is_deleted=False)
             .exclude(author=user)
             .update(is_read=True)
         )
-
         if updated:
             delete_notification_on_marked_as_read.delay_on_commit(pk, user.id)
             post_save.send(sender=Chat, instance=chat, created=False)
-
         return True
 
     # ==================== Unsubscribe ====================
@@ -398,24 +487,5 @@ class ChatConsumer(GenericAsyncAPIConsumer):
     @action()
     @interaction_rate_limit
     async def unsubscribe(self, pk: int, request_id: str, **kwargs):
-        await self.unsubscribe_from_chat(pk, request_id)
+        await self.message_activity.unsubscribe(chat=pk, request_id=request_id)
         return {"pk": pk}, 200
-
-    # ==================== Filtering ====================
-
-    def filter_queryset(self, queryset, **kwargs):
-        user = self.scope["user"]
-        search_term = kwargs.get("search_term")
-
-        queryset = (
-            queryset.for_user(user)
-            .with_latest_message()
-            .with_user_count()
-            .with_unread_count_for_user(user)
-            .prefetch_related("users")
-        )
-
-        if search_term:
-            queryset = queryset.search_by_other_user(user, search_term)
-
-        return queryset.order_by(F("latest_message_id").desc(nulls_last=True))

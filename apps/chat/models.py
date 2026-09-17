@@ -2,7 +2,6 @@ import uuid
 
 from django.contrib.auth import get_user_model
 from django.contrib.gis.db import models
-from django.db.models import Count, Exists, Manager, Max, OuterRef, Q
 from django.utils.translation import gettext_lazy as _
 
 from apps.ballot.models import Ballot
@@ -24,68 +23,58 @@ class BaseModel(models.Model):
     class Meta:
         abstract = True
 
-
-class ChatQuerySet(models.QuerySet):
-    def for_user(self, user):
-        return self.filter(users=user)
-
-    def with_latest_message(self):
-        return self.annotate(latest_message_id=Max("messages__id"))
-
-    def with_user_count(self):
-        return self.annotate(user_count=Count("users", distinct=True))
-
-    def with_unread_count_for_user(self, user):
-        return self.annotate(
-            unread_messages_count=Count(
-                "messages",
-                filter=(
-                        Q(messages__is_read=False)
-                        & Q(messages__is_deleted=False)
-                        & ~Q(messages__author=user)
-                ),
-                distinct=True,
-            )
-        )
-
-    def search_by_other_user(self, user, search_term: str):
-        if not search_term:
-            return self
-
-        search_term = search_term.strip().lower()
-
-        user_query = Q(username__icontains=search_term)
-
-        # Some custom user models may not have `name`.
-        if hasattr(User, "name"):
-            user_query |= Q(name__icontains=search_term)
-
-        other_user_match = (
-            User.objects.filter(chats=OuterRef("pk"))
-            .exclude(id=user.id)
-            .filter(user_query)
-        )
-
-        return self.annotate(has_matching_user=Exists(other_user_match)).filter(
-            has_matching_user=True
-        )
-
-
-class ChatManager(Manager.from_queryset(ChatQuerySet)):
-    pass
-
-
 class Chat(BaseModel):
     name = models.CharField(max_length=255, blank=True, null=True)
     is_group = models.BooleanField(default=False)
-    users = models.ManyToManyField(User, related_name="chats")
-    objects = ChatManager()
+    users = models.ManyToManyField(
+        User,
+        through='ChatParticipant',
+        related_name="chats"
+    )
 
     class Meta:
         db_table = 'Chat'
 
     def __str__(self):
         return f"Chat({self.pk})"
+
+
+class ChatParticipant(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", _("Pending (DM Request)")
+        ACCEPTED = "accepted", _("Accepted (Active)")
+        DECLINED = "declined", _("Declined (Hidden)")
+
+    chat = models.ForeignKey(Chat, on_delete=models.CASCADE, related_name="participants")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="chat_participations")
+
+    # State tracking fields
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    hidden_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'chat'],
+                name="unique_chat_participant_chat_user",
+            ),
+        ]
+        db_table = 'ChatParticipant'
+        verbose_name = 'Chat Participant'
+        verbose_name_plural = 'Chat Participants'
+
+    def __str__(self):
+        return f"{self.user} in Chat({self.chat_id}) -> {self.status}"
+
+    @classmethod
+    def are_connected(cls, user_a, user_b) -> bool:
+        """True if there exists a chat where BOTH users are ACCEPTED."""
+        return cls.objects.filter(
+            user=user_a,
+            status=cls.Status.ACCEPTED,
+            chat__participants__user=user_b,
+            chat__participants__status=cls.Status.ACCEPTED,
+        ).exists()
 
 
 class Message(BaseModel):
@@ -161,7 +150,6 @@ class Message(BaseModel):
     def delete(self, *args, **kwargs):
         """
         Soft-delete by default.
-
         Hard-deleting chat messages usually creates holes in pagination,
         last-message caching, unread counters and websocket history.
         If you need true deletion for admin/moderation flows, use hard_delete().
@@ -174,8 +162,11 @@ class Message(BaseModel):
             self.petition = None
             self.broadcast = None
             self.section = None
-            self.is_deleted = True
 
+            # Delete assets to scrub media and trigger S3 cleanup ---
+            self.assets.all().delete()
+
+            self.is_deleted = True
             self.save(
                 update_fields=[
                     "text",
@@ -190,7 +181,6 @@ class Message(BaseModel):
                 ]
             )
             return
-
         return super().delete(*args, **kwargs)
 
     def hard_delete(self):

@@ -3,6 +3,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 
 from apps.geo.serializers import CountySerializer, ConstituencySerializer, WardSerializer
+from apps.notification.models import MessagingPreference
 from apps.users.models import ProfileVisit
 from apps.utils.serializer_user import get_current_user
 
@@ -160,6 +161,39 @@ class UserSerializer(serializers.ModelSerializer):
             visitor_id=current_user.pk,
             visited_id=obj.pk,
         ).exists()
+
+    def get_messaging_preference(self, obj):
+        """
+        Returns the user's messaging preference.
+        Uses annotation if available, otherwise falls back to database lookup.
+        """
+        if hasattr(obj, "messaging_preference"):
+            return obj.messaging_preference
+        try:
+            return obj.preferences.messaging_preference
+        except Exception:
+            return "anyone"
+
+    def get_can_message_directly(self, obj):
+        """
+        Returns True if the current user can message this user without
+        triggering a message request.
+        Uses annotation if available, otherwise computes it.
+        """
+        if hasattr(obj, "can_message_directly"):
+            return obj.can_message_directly
+
+        current_user = get_current_user(self.context)
+        if not current_user or current_user.pk == obj.pk:
+            return True
+
+        preference = obj.preferences.messaging_preference
+
+        if preference == MessagingPreference.ANYONE:
+            return True
+
+        # preference == "following"
+        return current_user.following.filter(pk=obj.pk).exists()
 
 
 class UserUpdateSerializer(serializers.ModelSerializer):

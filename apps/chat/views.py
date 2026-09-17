@@ -71,10 +71,6 @@ class MessageAccessPermission(permissions.BasePermission):
         return obj.author_id == request.user.id
 
 
-# Backward-compatible alias.
-NotBlockedPermission = ChatAccessPermission
-
-
 class MessageCreateView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated, ChatAccessPermission]
     serializer_class = MessageSerializer
@@ -234,7 +230,6 @@ class MessageDetailView(generics.RetrieveUpdateDestroyAPIView):
 @permission_classes([permissions.IsAuthenticated])
 def direct_message(request):
     data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
-
     raw_user_ids = data.pop("user_ids", [])
 
     if not raw_user_ids or not isinstance(raw_user_ids, list):
@@ -243,7 +238,6 @@ def direct_message(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Remove duplicates while preserving order.
     user_ids = []
     for user_id in raw_user_ids:
         if user_id not in user_ids:
@@ -280,7 +274,6 @@ def direct_message(request):
         )
 
     user = request.user
-
     for target_user in target_users:
         if target_user.pk != user.pk and is_blocked_pair(user, target_user):
             return Response(
@@ -289,32 +282,34 @@ def direct_message(request):
             )
 
     context = {"scope": {"user": user}}
-
     created_chats = []
     upload_data = []
+    request_metadata = []
 
     with transaction.atomic():
         for target_user in target_users:
-            chat = get_or_create_direct_chat(user, target_user)
+            chat, will_create_request = get_or_create_direct_chat(user, target_user)
 
             message_data = data.copy()
             message_data["chat"] = chat.id
             message_data["uuid"] = uuid.uuid4()
-
             serializer = MessageSerializer(data=message_data, context=context)
             serializer.is_valid(raise_exception=True)
-
             message = serializer.save()
 
             created_chats.append(chat)
             upload_data.extend(build_asset_upload_data(message.assets.all()))
+            request_metadata.append({
+                "chat_id": chat.id,
+                "will_create_request": will_create_request,
+            })
 
         chat_serializer = ChatSerializer(created_chats, many=True, context=context)
-
         return Response(
             {
                 "chats": chat_serializer.data,
                 "uploads": upload_data,
+                "request_metadata": request_metadata,
             },
             status=status.HTTP_201_CREATED,
         )

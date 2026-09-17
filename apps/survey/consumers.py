@@ -138,7 +138,7 @@ class SurveyConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     @action()
     @rate_limit(limit=40, period=60)
-    async def list(self, request_id: str, page_size=None, **kwargs):
+    async def list(self, request_id: str, page_size=page_size, **kwargs):
         kwargs['county'], kwargs['constituency'], kwargs['ward'] = await self.get_user_regions()
         data = await self.list_(page_size=page_size, **kwargs)
         await self.reply(action='list', data=data, request_id=request_id)

@@ -251,23 +251,32 @@ class Report(BaseModel):
 
 @transaction.atomic
 def mark_deleted(post: Post):
+    # 1. Scrub Content & Media
     post.body = ''
     post.ballot = None
     post.survey = None
     post.petition = None
     post.broadcast = None
-    post.image1 = None
-    post.image2 = None
-    post.image3 = None
-    post.image4 = None
-    post.video1 = None
-    post.video2 = None
-    post.video3 = None
+
+    # 2. Delete Assets (Triggers S3 cleanup & removes DB rows)
+    # This removes the DB rows AND deletes the physical files in S3.
+    post.assets.all().delete()
+
+    # 3. Scrub Search Vectors (Prevents deleted posts from appearing in search)
+    post.search_vector = None
+    post.trending_vector = None
+
+    # 4. Mark as deleted
     post.is_deleted = True
     post.save()
+
+    # 5. Clear Interactions & Metrics
     post.bookmarks.clear()
     post.likes.clear()
-    post.views = 0
     post.tagged_users.clear()
+    post.views = 0
+
+    # 6. Trigger signals
     post_save.send(sender=Post, instance=post, created=False)
+
     return post

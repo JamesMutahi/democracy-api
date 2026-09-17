@@ -51,6 +51,7 @@ class PreferencesSerializer(serializers.ModelSerializer):
             'allow_reply_notifications',
             'allow_repost_notifications',
             'allow_message_notifications',
+            'messaging_preference',
             'allow_petition_notifications',
             'allow_petition_supporter_notifications',
         ]

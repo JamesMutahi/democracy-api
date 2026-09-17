@@ -1,11 +1,12 @@
 import logging
+from typing import Union, Iterable
 
 from asgiref.sync import async_to_sync
 from celery import shared_task
 from channels.layers import get_channel_layer
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
-from django.db.models import Prefetch
+from django.db.models import Prefetch, QuerySet
 from django.utils import timezone
 from fcm_django.models import FCMDevice
 from firebase_admin.messaging import Message as fireMessage, Notification as fireNotification
@@ -14,7 +15,6 @@ from apps.ballot.models import Ballot
 from apps.ballot.querysets import annotate_ballot_metrics
 from apps.broadcast.models import Broadcast
 from apps.broadcast.querysets import annotate_broadcast_metrics
-from apps.chat.models import Message
 from apps.notification.models import Notification, Preferences, NotificationType
 from apps.notification.serializers import NotificationSerializer
 from apps.petition.models import Petition
@@ -280,7 +280,7 @@ def send_notification_delete(notification_id: int, recipient_id: int):
 # ---------------------------------------------------------------------
 
 def _notify_users(
-        users,
+        users: Union[QuerySet[User], Iterable[User]],
         text: str,
         push_title: str,
         push_body: str,
@@ -625,6 +625,12 @@ def create_broadcast_notification_on_host_join(broadcast_id):
 # Message notifications
 # ---------------------------------------------------------------------
 
+from celery import shared_task
+from apps.chat.models import ChatParticipant, Message
+
+
+# ... (ensure _truncate and _notify_users are defined/imported) ...
+
 @shared_task
 def create_message_notifications_on_create(message_id):
     message = Message.objects.select_related("chat", "author").filter(id=message_id).first()
@@ -641,6 +647,23 @@ def create_message_notifications_on_create(message_id):
         pk=message.author_id,
     ).select_related("preferences").distinct()
 
+    # Exclude users who have a PENDING or DECLINED  participant status in this chat.
+    # These users will see the message in their Requests folder but won't
+    # get standard push notifications until they accept.
+    pending_request_user_ids = ChatParticipant.objects.filter(
+        chat=message.chat,
+        status__in=[
+            ChatParticipant.Status.PENDING,
+            ChatParticipant.Status.DECLINED
+        ],
+    ).values_list("user_id", flat=True)
+
+    users = users.exclude(pk__in=pending_request_user_ids)
+
+    # If no users remain after filtering, exit early
+    if not users.exists():
+        return
+
     text = f"{message.author} sent a message"
     push_body = _truncate(getattr(message, "text", "") or "New message")
 
@@ -652,6 +675,48 @@ def create_message_notifications_on_create(message_id):
         chat=message.chat,
         message=message,
     )
+
+
+@shared_task
+def create_message_request_notification(message_id):
+    """Create a notification for new message requests (optional)."""
+    message = Message.objects.select_related("chat", "author").filter(id=message_id).first()
+    if not message or message.chat.is_group:
+        return
+
+    # Find ChatParticipant rows with PENDING status, excluding the author
+    pending_requests = ChatParticipant.objects.filter(
+        chat=message.chat,
+        status=ChatParticipant.Status.PENDING,
+    ).exclude(user=message.author).select_related("user", "user__preferences")
+
+    for participant in pending_requests:
+        recipient = participant.user
+
+        # Skip if notifications are disabled
+        if not (
+                recipient.preferences.allow_notifications and
+                recipient.preferences.allow_message_notifications
+        ):
+            continue
+
+        # Skip if muted
+        if recipient.muted.filter(pk=message.author_id).exists():
+            continue
+
+        # Create a "message request" notification
+        text = f"{message.author} sent you a message request"
+
+        # Only notify on the FIRST message of the request (avoid spam)
+        if message.chat.messages.filter(author=message.author).count() == 1:
+            _notify_users(
+                users=[recipient],
+                text=text,
+                push_title="New Message Request",
+                push_body=f"{message.author.name} wants to message you",
+                chat=message.chat,
+                message=message,
+            )
 
 
 # ---------------------------------------------------------------------

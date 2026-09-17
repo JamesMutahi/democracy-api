@@ -1,6 +1,6 @@
+# apps/chat/serializers.py
 import logging
 import uuid
-
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
@@ -13,9 +13,10 @@ from apps.ballot.models import Ballot
 from apps.ballot.serializers import BallotSerializer
 from apps.broadcast.models import Broadcast
 from apps.broadcast.serializers import BroadcastSerializer
-from apps.chat.models import Asset, Chat, Message
+from apps.chat.models import Asset, Chat, ChatParticipant, Message
 from apps.constitution.models import Section
 from apps.constitution.serializers import SectionSerializer
+from apps.notification.models import MessagingPreference
 from apps.petition.models import Petition
 from apps.petition.serializers import PetitionSerializer
 from apps.posts.models import Post
@@ -44,54 +45,35 @@ MAX_UPLOAD_SIZE = getattr(settings, "CHAT_MAX_UPLOAD_SIZE", 25 * 1024 * 1024)
 ALLOWED_CONTENT_TYPES = getattr(settings, "CHAT_ALLOWED_CONTENT_TYPES", None)
 
 CONTENT_TYPE_EXTENSION_MAP = {
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "image/gif": ".gif",
-    "image/webp": ".webp",
-    "video/mp4": ".mp4",
-    "video/quicktime": ".mov",
-    "audio/mpeg": ".mp3",
-    "audio/mp4": ".m4a",
-    "application/pdf": ".pdf",
+    "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
+    "image/webp": ".webp", "video/mp4": ".mp4", "video/quicktime": ".mov",
+    "audio/mpeg": ".mp3", "audio/mp4": ".m4a", "application/pdf": ".pdf",
     "text/plain": ".txt",
 }
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 def is_blocked_pair(user, other):
-    """
-    Returns True if either user blocked the other.
-
-    This is defensive because custom user models may not always expose
-    the same blocked relationship.
-    """
-    if not user or not other:
+    if not user or not other or user.pk == other.pk:
         return False
-
-    if user.pk == other.pk:
-        return False
-
-    blocked_manager = getattr(other, "blocked", None)
-    if blocked_manager is not None and blocked_manager.filter(pk=user.pk).exists():
-        return True
-
-    blocked_manager = getattr(user, "blocked", None)
-    if blocked_manager is not None and blocked_manager.filter(pk=other.pk).exists():
-        return True
-
+    for u, o in ((user, other), (other, user)):
+        mgr = getattr(u, "blocked", None)
+        if mgr is not None and mgr.filter(pk=o.pk).exists():
+            return True
     return False
 
 
 def can_user_access_chat(user, chat):
     if not user or not chat:
         return False
-
     if not chat.users.filter(pk=user.pk).exists():
         return False
-
     for participant in chat.users.exclude(pk=user.pk):
         if is_blocked_pair(user, participant):
             return False
-
     return True
 
 
@@ -102,51 +84,40 @@ def ensure_can_access_chat(user, chat):
 
 def get_file_extension(name, content_type):
     name = name or ""
-
     if "." in name:
         extension = name.rsplit(".", 1)[-1].lower().strip()
         if extension and len(extension) <= 10:
             return f".{extension}"
-
     return CONTENT_TYPE_EXTENSION_MAP.get((content_type or "").lower(), "")
 
 
 def build_asset_upload_data(assets):
-    """
-    Builds presigned upload URLs for assets that are not completed yet.
-    """
     upload_data = []
-
     for asset in assets:
         if asset.is_completed:
             continue
-
         try:
             upload_url = generate_presigned_url(asset.file_key, asset.content_type)
         except Exception:
             logger.exception("Failed to generate presigned upload URL for asset %s", asset.id)
             upload_url = None
-
-        upload_data.append(
-            {
-                "asset_id": str(asset.id),
-                "name": asset.name,
-                "url": upload_url,
-            }
-        )
-
+        upload_data.append({
+            "asset_id": str(asset.id),
+            "name": asset.name,
+            "url": upload_url,
+        })
     return upload_data
 
 
+# ---------------------------------------------------------------------------
+# Chat creation + request logic
+# ---------------------------------------------------------------------------
+
 def get_or_create_direct_chat(user1, user2):
     """
-    Returns or creates a Chat for 1:1 or self-chat.
-
-    Self-chat:
-        chat contains only one user.
-
-    Normal DM:
-        chat contains exactly two users.
+    Returns (chat, will_create_request).
+    Ensures both users have a ChatParticipant row; the initiator is ACCEPTED,
+    the recipient is PENDING unless they're already connected.
     """
     if not user1 or not user2:
         raise ValueError("Both users are required.")
@@ -155,7 +126,6 @@ def get_or_create_direct_chat(user1, user2):
     user_ids = sorted({user1.pk, user2.pk})
 
     with transaction.atomic():
-        # Lock involved user rows to reduce duplicate chat creation races.
         locked_users = list(User.objects.select_for_update().filter(pk__in=user_ids))
         if len(locked_users) != len(user_ids):
             raise ValueError("One or both users do not exist.")
@@ -169,17 +139,85 @@ def get_or_create_direct_chat(user1, user2):
         )
 
         if chat:
-            return chat
+            will_create_request = _should_create_request(user1, user2, chat)
+            # Make sure participant rows exist (they should, but be defensive)
+            _ensure_participants(chat, user1, user2, is_new_chat=False)
+            return chat, will_create_request
 
         chat = Chat.objects.create()
+        # Adding users via the M2M creates ChatParticipant rows with default=PENDING
+        chat.users.add(user1, user2)
+        _ensure_participants(chat, user1, user2, is_new_chat=True)
 
-        if user1.pk == user2.pk:
-            chat.users.add(user1)
-        else:
-            chat.users.add(user1, user2)
+        will_create_request = _should_create_request(user1, user2, chat)
+        return chat, will_create_request
 
-        return chat
 
+def _ensure_participants(chat, initiator, recipient, *, is_new_chat: bool):
+    """
+    Set initiator -> ACCEPTED, recipient -> PENDING (unless already connected).
+    """
+    if initiator.pk == recipient.pk:
+        # Self-chat: always ACCEPTED
+        ChatParticipant.objects.filter(chat=chat, user=initiator).update(
+            status=ChatParticipant.Status.ACCEPTED, hidden_at=None
+        )
+        return
+
+    # If both are already ACCEPTED, nothing to do
+    both_accepted = ChatParticipant.objects.filter(
+        chat=chat, status=ChatParticipant.Status.ACCEPTED
+    ).count() == 2
+    if both_accepted:
+        return
+
+    # Initiator is active
+    ChatParticipant.objects.filter(chat=chat, user=initiator).update(
+        status=ChatParticipant.Status.ACCEPTED, hidden_at=None
+    )
+    # Recipient: PENDING unless they had previously ACCEPTED (re-opened chat)
+    recipient_part = ChatParticipant.objects.get(chat=chat, user=recipient)
+    if recipient_part.status != ChatParticipant.Status.ACCEPTED:
+        recipient_part.status = ChatParticipant.Status.PENDING
+        recipient_part.hidden_at = None
+        recipient_part.save(update_fields=["status", "hidden_at"])
+
+
+def _should_create_request(sender, recipient, chat) -> bool:
+    """
+    True if sender's message should surface as a request for recipient.
+    Driven entirely by ChatParticipant statuses.
+    """
+    if sender.pk == recipient.pk:
+        return False
+
+    preference = recipient.preferences.messaging_preference
+    if preference == MessagingPreference.ANYONE:
+        return False
+
+    if recipient.following.filter(pk=sender.pk).exists():
+        return False
+
+    # Already connected = both sides ACCEPTED
+    if ChatParticipant.are_connected(sender, recipient):
+        return False
+
+    # Recipient already has a PENDING request for this chat -> don't duplicate
+    if ChatParticipant.objects.filter(
+        chat=chat, user=recipient, status=ChatParticipant.Status.PENDING
+    ).exists():
+        return False
+
+    # Not the sender's first message in this chat
+    if chat.messages.filter(author=sender).count() > 1:
+        return False
+
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Serializers
+# ---------------------------------------------------------------------------
 
 class AssetSerializer(serializers.ModelSerializer):
     url = serializers.SerializerMethodField()
@@ -187,53 +225,33 @@ class AssetSerializer(serializers.ModelSerializer):
     class Meta:
         model = Asset
         fields = [
-            "id",
-            "name",
-            "file_key",
-            "file_size",
-            "content_type",
-            "url",
-            "is_completed",
-            "created_at",
+            "id", "name", "file_key", "file_size", "content_type",
+            "url", "is_completed", "created_at",
         ]
-        read_only_fields = [
-            "id",
-            "file_key",
-            "is_completed",
-            "created_at",
-        ]
+        read_only_fields = ["id", "file_key", "is_completed", "created_at"]
 
     def validate_file_size(self, value):
         if value is None:
             return value
-
         if value <= 0:
             raise ValidationError("File size must be greater than zero.")
-
         if value > MAX_UPLOAD_SIZE:
             raise ValidationError(
                 f"File size exceeds maximum allowed size of {MAX_UPLOAD_SIZE} bytes."
             )
-
         return value
 
     def validate_content_type(self, value):
         if not value:
             raise ValidationError("Content type is required.")
-
         if ALLOWED_CONTENT_TYPES and value not in ALLOWED_CONTENT_TYPES:
             raise ValidationError("This content type is not allowed.")
-
         return value
 
     @staticmethod
     def get_url(obj):
-        """
-        Returns a temporary GET URL only after upload is completed.
-        """
         if not obj.file_key or not obj.is_completed:
             return None
-
         try:
             return s3_client.generate_presigned_url(
                 "get_object",
@@ -250,7 +268,6 @@ class AssetSerializer(serializers.ModelSerializer):
 
 class MessageSerializer(serializers.ModelSerializer):
     author = UserSerializer(read_only=True)
-
     post = PostSerializer(read_only=True)
     ballot = BallotSerializer(read_only=True)
     survey = SurveySerializer(read_only=True)
@@ -301,83 +318,44 @@ class MessageSerializer(serializers.ModelSerializer):
         allow_null=True,
     )
 
-    # Explicitly declared so DRF does not add UniqueValidator.
-    # Duplicate UUIDs are handled as idempotent retries in create().
     uuid = serializers.UUIDField(required=False)
-
     assets = AssetSerializer(many=True, required=False, allow_empty=True)
 
     class Meta:
         model = Message
         fields = [
-            "id",
-            "chat",
-            "uuid",
-            "author",
-            "text",
-            "post",
-            "ballot",
-            "survey",
-            "petition",
-            "broadcast",
-            "section",
-            "post_id",
-            "ballot_id",
-            "survey_id",
-            "petition_id",
-            "broadcast_id",
-            "section_id",
-            "location",
-            "assets",
-            "is_read",
-            "is_edited",
-            "is_deleted",
-            "created_at",
-            "updated_at",
+            "id", "chat", "uuid", "author", "text",
+            "post", "ballot", "survey", "petition", "broadcast", "section",
+            "post_id", "ballot_id", "survey_id", "petition_id", "broadcast_id", "section_id",
+            "location", "assets", "is_read", "is_edited", "is_deleted",
+            "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id",
-            "author",
-            "is_read",
-            "is_edited",
-            "is_deleted",
-            "created_at",
-            "updated_at",
+            "id", "author", "is_read", "is_edited", "is_deleted", "created_at", "updated_at",
         ]
-        extra_kwargs = {
-            "chat": {"required": True},
-        }
+        extra_kwargs = {"chat": {"required": True}}
 
     def validate(self, attrs):
         user = get_current_user(self.context)
-
         if self.instance:
             if self.instance.is_deleted:
                 raise ValidationError("Cannot modify a deleted message.")
-
-            # Chat and uuid should never be changed after creation.
             attrs.pop("chat", None)
             attrs.pop("uuid", None)
         else:
             if not attrs.get("uuid"):
                 attrs["uuid"] = uuid.uuid4()
-
             chat = attrs.get("chat")
             if chat and user:
                 ensure_can_access_chat(user, chat)
 
-        # Count linked objects after applying partial update values.
         final_linked_fields = {}
-
         for field_name in LINK_FIELDS.values():
-            if field_name in attrs:
-                value = attrs.get(field_name)
-            else:
-                value = getattr(self.instance, field_name, None) if self.instance else None
-
+            value = attrs.get(field_name)
+            if value is None and self.instance:
+                value = getattr(self.instance, field_name, None)
             if value:
                 final_linked_fields[field_name] = value
-
         if len(final_linked_fields) > 1:
             raise ValidationError("Only one linked object can be attached to a message.")
 
@@ -387,26 +365,19 @@ class MessageSerializer(serializers.ModelSerializer):
                 raise ValidationError(
                     f"Cannot attach more than {MAX_ASSETS_PER_MESSAGE} assets to one message."
                 )
-
             if self.instance and assets:
                 raise ValidationError("Assets can only be added during message creation.")
 
         text = attrs.get("text", getattr(self.instance, "text", "") if self.instance else "")
-
         if not self.instance:
             has_content = bool((text or "").strip()) or bool(assets) or bool(final_linked_fields)
             if not has_content:
-                raise ValidationError(
-                    "Message must contain text, assets, or a linked object."
-                )
-
+                raise ValidationError("Message must contain text, assets, or a linked object.")
         return attrs
 
     def create(self, validated_data):
         user = get_current_user(self.context)
-
         validated_data["author"] = user
-
         text = validated_data.get("text") or ""
 
         linked_object = extract_linked_object(text=text) if text else None
@@ -418,19 +389,16 @@ class MessageSerializer(serializers.ModelSerializer):
 
         assets = validated_data.pop("assets", []) or []
         assets = []  # TODO: Remove to enable asset upload in production
-        message_uuid = validated_data.get("uuid")
 
-        # Idempotency: if client retries with same UUID, return the original message.
+        message_uuid = validated_data.get("uuid")
         if message_uuid:
             existing = Message.objects.filter(uuid=message_uuid).first()
             if existing:
                 expected_chat = validated_data.get("chat")
-
                 if existing.author_id == user.pk and (
-                        not expected_chat or existing.chat_id == expected_chat.id
+                    not expected_chat or existing.chat_id == expected_chat.id
                 ):
                     return existing
-
                 raise ValidationError({"uuid": "Message with this uuid already exists."})
 
         try:
@@ -441,28 +409,40 @@ class MessageSerializer(serializers.ModelSerializer):
                     name = asset.get("name") or "file"
                     content_type = asset.get("content_type") or "application/octet-stream"
                     file_size = asset.get("file_size") or 0
-
                     extension = get_file_extension(name, content_type)
                     file_key = (
                         f"uploads/{message.author_id}/messages/"
                         f"{message.uuid}/{uuid.uuid4().hex}{extension}"
                     )
-
                     Asset.objects.create(
-                        message=message,
-                        file_key=file_key,
-                        name=name,
-                        file_size=file_size,
-                        content_type=content_type,
+                        message=message, file_key=file_key, name=name,
+                        file_size=file_size, content_type=content_type,
                     )
 
-                # Notify chat list subscribers after the transaction commits.
+                # ---- Drive the request state via ChatParticipant ----
+                chat = message.chat
+                if not chat.is_group:
+                    other_user = chat.users.exclude(pk=user.pk).first()
+                    if other_user and _should_create_request(user, other_user, chat):
+                        # Flip the recipient's participant row to PENDING
+                        ChatParticipant.objects.filter(
+                            chat=chat, user=other_user
+                        ).update(
+                            status=ChatParticipant.Status.PENDING,
+                            hidden_at=None,
+                        )
+                        # Sender is definitely active
+                        ChatParticipant.objects.filter(
+                            chat=chat, user=user
+                        ).update(
+                            status=ChatParticipant.Status.ACCEPTED,
+                            hidden_at=None,
+                        )
+
                 transaction.on_commit(
                     lambda: post_save.send(sender=Chat, instance=message.chat, created=False)
                 )
-
         except IntegrityError:
-            # Very small race window for duplicate UUIDs.
             if message_uuid:
                 existing = Message.objects.filter(uuid=message_uuid).first()
                 if existing:
@@ -472,75 +452,52 @@ class MessageSerializer(serializers.ModelSerializer):
         return message
 
     def update(self, instance, validated_data):
-        # Assets are upload-time objects. Do not allow replacement via PATCH.
         validated_data.pop("assets", None)
         validated_data.pop("chat", None)
         validated_data.pop("uuid", None)
-
         editable_fields = {"text", *LINK_FIELDS.values()}
-
         if any(field in validated_data for field in editable_fields):
             validated_data["is_edited"] = True
-
         with transaction.atomic():
             instance = super().update(instance, validated_data)
-
             transaction.on_commit(
                 lambda: post_save.send(sender=Chat, instance=instance.chat, created=False)
             )
-
         return instance
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-
         if instance.is_deleted:
             data["text"] = ""
             data["assets"] = []
-
             for field_name in LINK_FIELDS.values():
                 data[field_name] = None
-
         return data
 
 
 class ChatSerializer(serializers.ModelSerializer):
     users = UserSerializer(many=True, read_only=True)
-
     user = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(),
-        write_only=True,
-        required=False,
-        allow_null=True,
+        queryset=User.objects.all(), write_only=True, required=False, allow_null=True,
     )
-
     last_message = serializers.SerializerMethodField(read_only=True)
     unread_messages = serializers.SerializerMethodField(read_only=True)
     is_self_chat = serializers.SerializerMethodField(read_only=True)
+    is_message_request = serializers.SerializerMethodField(read_only=True)
+    request_status = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Chat
         fields = [
-            "id",
-            "users",
-            "last_message",
-            "unread_messages",
-            "user",
-            "is_self_chat",
-        ]
-        read_only_fields = [
-            "last_message",
-            "unread_messages",
-            "is_self_chat",
+            "id", "users", "last_message", "unread_messages",
+            "user", "is_self_chat", "is_message_request", "request_status",
         ]
 
     def validate_user(self, value):
         current_user = get_current_user(self.context)
-
         if current_user and value and value.pk != current_user.pk:
             if is_blocked_pair(current_user, value):
                 raise PermissionDenied("You cannot start a chat with this user.")
-
         return value
 
     def get_last_message(self, obj: Chat):
@@ -549,28 +506,20 @@ class ChatSerializer(serializers.ModelSerializer):
             .select_related("author", "chat")
             .prefetch_related("assets")
         )
-
         latest_message_id = getattr(obj, "latest_message_id", None)
-
         message = None
-
         if latest_message_id:
             message = queryset.filter(pk=latest_message_id).first()
-
         if message is None:
             message = queryset.order_by("-created_at", "-id").first()
-
         if not message:
             return None
-
         return MessageSerializer(message, context=self.context).data
 
     def get_unread_messages(self, obj: Chat):
         if hasattr(obj, "unread_messages_count"):
             return obj.unread_messages_count
-
         user = get_current_user(self.context)
-
         if not user:
             return 0
 
@@ -579,23 +528,35 @@ class ChatSerializer(serializers.ModelSerializer):
     @staticmethod
     def get_is_self_chat(obj: Chat):
         user_count = getattr(obj, "user_count", None)
-
         if user_count is not None:
             return user_count == 1
-
         return obj.users.count() == 1
+
+    def get_is_message_request(self, obj: Chat) -> bool:
+        if hasattr(obj, "is_message_request"):
+            return bool(obj.is_message_request)
+        current_user = get_current_user(self.context)
+        return ChatParticipant.objects.filter(
+            chat=obj,
+            user=current_user,
+            status=ChatParticipant.Status.PENDING,
+        ).exists()
+
+    def get_request_status(self, obj: Chat) -> str:
+        if hasattr(obj, "request_status"):
+            return obj.request_status
+        current_user = get_current_user(self.context)
+        chat_participant =  ChatParticipant.objects.get(
+            chat=obj,
+            user=current_user,
+        )
+        return chat_participant.status
 
     def create(self, validated_data):
         current_user = get_current_user(self.context)
         target_user = validated_data.get("user")
-
-        if not current_user:
-            raise PermissionDenied("Authenticated user is required.")
-
         if not target_user:
             raise ValidationError({"user": "This field is required."})
-
         if is_blocked_pair(current_user, target_user):
             raise PermissionDenied("You cannot start a chat with this user.")
-
-        return get_or_create_direct_chat(current_user, target_user)
+        return get_or_create_direct_chat(current_user, target_user)[0]

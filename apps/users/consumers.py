@@ -52,9 +52,6 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         if not pk:
             return
 
-        if not await self.user_is_visible_to_current_user(pk):
-            return
-
         if message.get("action") != "delete":
             try:
                 message["data"] = await self.get_user_serializer_data(pk=pk)
@@ -86,15 +83,6 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         user = self.get_annotated_queryset(include_inactive=True).get(pk=pk)
         return UserSerializer(user, context={"scope": self.scope}).data
 
-    @database_sync_to_async
-    def user_is_visible_to_current_user(self, pk: int) -> bool:
-        try:
-            target = User.objects.get(pk=pk)
-            self.assert_can_view_user(target)
-            return True
-        except (User.DoesNotExist, PermissionDenied, NotFound, ValueError, TypeError):
-            return False
-
     # ====================== Querysets / Permissions ======================
 
     def get_annotated_queryset(self, include_inactive: bool = False):
@@ -120,7 +108,6 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         except User.DoesNotExist:
             raise NotFound("User not found")
 
-        self.assert_can_view_user(obj)
         return obj
 
     @staticmethod
@@ -129,24 +116,6 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
             return User.objects.get(pk=pk)
         except (User.DoesNotExist, ValueError, TypeError):
             raise NotFound("User not found")
-
-    def assert_can_view_user(self, target: User):
-        current = self.scope.get("user")
-
-        if not current or not current.is_authenticated:
-            raise PermissionDenied("Authentication required")
-
-        if current.pk == target.pk:
-            return
-
-        if not target.is_active and not current.is_staff:
-            raise NotFound("User not found")
-
-        current_blocked_target = current.blocked.filter(pk=target.pk).exists()
-        target_blocked_current = target.blocked.filter(pk=current.pk).exists()
-
-        if current_blocked_target or target_blocked_current:
-            raise PermissionDenied("You cannot view this profile.")
 
     def exclude_blocked_users(self, queryset: QuerySet) -> QuerySet:
         """
@@ -273,8 +242,6 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
             user = self.get_annotated_queryset(include_inactive=True).get(username=username)
         except User.DoesNotExist:
             raise NotFound("User not found")
-
-        self.assert_can_view_user(user)
         return UserSerializer(user, context={"scope": self.scope}).data
 
     @action()
@@ -595,7 +562,6 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     @database_sync_to_async
     def get_following_list(self, pk: int, page: int, page_size: int, last_user: int = None):
         target = self.get_user_or_error(pk)
-        self.assert_can_view_user(target)
 
         queryset = self.get_annotated_queryset(include_inactive=False).filter(
             pk__in=target.following.values("pk")
@@ -607,7 +573,6 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
     @database_sync_to_async
     def get_followers_list(self, pk: int, page: int, page_size: int, last_user: int = None):
         target = self.get_user_or_error(pk)
-        self.assert_can_view_user(target)
 
         queryset = self.get_annotated_queryset(include_inactive=False).filter(
             pk__in=target.followers.values("pk")
@@ -758,14 +723,7 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
 
     def _is_current_user(self, user_id: int) -> bool:
         current = self.scope.get("user")
-
-        if not current or not current.is_authenticated:
-            return False
-
-        try:
-            return current.pk == int(user_id)
-        except (TypeError, ValueError):
-            return False
+        return current.pk == int(user_id)
 
     def _signal_user_update(self, *users: User):
         """
@@ -776,9 +734,8 @@ class UserConsumer(RetrieveModelMixin, GenericAsyncAPIConsumer):
         current = self.scope.get("user")
         seen = set()
 
-        if current and getattr(current, "is_authenticated", False):
-            post_save.send(sender=User, instance=current, created=False)
-            seen.add(current.pk)
+        post_save.send(sender=User, instance=current, created=False)
+        seen.add(current.pk)
 
         for user in users:
             if user and user.pk not in seen:

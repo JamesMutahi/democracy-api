@@ -1,6 +1,8 @@
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Exists, OuterRef
+from django.db.models import Case, Count, Exists, OuterRef, Value, When
+from django.db.models import BooleanField, CharField
 
+from apps.notification.models import MessagingPreference
 from apps.users.models import ProfileVisit
 
 User = get_user_model()
@@ -9,7 +11,6 @@ User = get_user_model()
 def annotate_user_queryset(queryset, user):
     """
     Annotate queryset with counts and current-user relation flags.
-
     This dramatically reduces N+1 queries when serializing user lists.
     """
     queryset = queryset.annotate(
@@ -36,6 +37,37 @@ def annotate_user_queryset(queryset, user):
                 visited_id=OuterRef("pk"),
             )
         ),
+        messaging_preference=Case(
+            When(
+                preferences__messaging_preference__isnull=False,
+                then="preferences__messaging_preference",
+            ),
+            default=Value(MessagingPreference.FOLLOWING),
+            output_field=CharField(),
+        ),
+        can_message_directly=Case(
+            # Self or staff can always message
+            When(pk=user.pk, then=Value(True)),
+            When(
+                preferences__messaging_preference=MessagingPreference.ANYONE,
+                then=Value(True),
+            ),
+            When(
+                preferences__messaging_preference__isnull=True,
+                then=Value(True),
+            ),
+            # For 'following' preference, check if current user follows them
+            When(
+                preferences__messaging_preference="following",
+                then=Exists(
+                    User.objects.filter(
+                        pk=user.pk,
+                        following__pk=OuterRef("pk"),
+                    )
+                ),
+            ),
+            default=Value(False),
+            output_field=BooleanField(),
+        ),
     )
-
     return queryset

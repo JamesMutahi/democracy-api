@@ -73,41 +73,41 @@ class PetitionSerializer(serializers.ModelSerializer):
             "views": {"read_only": True},
         }
 
-    def validate_image(self, value):
-        """
-        Validate that the uploaded image meets size and dimension requirements.
-        - Max size: 10MB
-        - Min dimensions: 500x300px
-        """
-        if value:
-            # Check file size
-            if value.size > MAX_IMAGE_SIZE_BYTES:
-                raise serializers.ValidationError(
-                    f"Image file too large. Maximum size is {MAX_IMAGE_SIZE_BYTES // (1024 * 1024)}MB."
-                )
-
-            # Check dimensions using Pillow
-            try:
-                # Reset file pointer to beginning before reading
-                value.seek(0)
-                img = Image.open(value)
-                width, height = img.size
-
-                if width < MIN_IMAGE_WIDTH or height < MIN_IMAGE_HEIGHT:
-                    raise serializers.ValidationError(
-                        f"Image dimensions must be at least {MIN_IMAGE_WIDTH}x{MIN_IMAGE_HEIGHT}px. "
-                        f"Uploaded image is {width}x{height}px."
-                    )
-
-                # Reset file pointer again so Django can save it properly
-                value.seek(0)
-
-            except Exception as e:
-                if isinstance(e, serializers.ValidationError):
-                    raise
-                raise serializers.ValidationError("Upload a valid image file.")
-
-        return value
+    # def validate_image(self, value):
+    #     """
+    #     Validate that the uploaded image meets size and dimension requirements.
+    #     - Max size: 10MB
+    #     - Min dimensions: 500x300px
+    #     """
+    #     if value:
+    #         # Check file size
+    #         if value.size > MAX_IMAGE_SIZE_BYTES:
+    #             raise serializers.ValidationError(
+    #                 f"Image file too large. Maximum size is {MAX_IMAGE_SIZE_BYTES // (1024 * 1024)}MB."
+    #             )
+    #
+    #         # Check dimensions using Pillow
+    #         try:
+    #             # Reset file pointer to beginning before reading
+    #             value.seek(0)
+    #             img = Image.open(value)
+    #             width, height = img.size
+    #
+    #             if width < MIN_IMAGE_WIDTH or height < MIN_IMAGE_HEIGHT:
+    #                 raise serializers.ValidationError(
+    #                     f"Image dimensions must be at least {MIN_IMAGE_WIDTH}x{MIN_IMAGE_HEIGHT}px. "
+    #                     f"Uploaded image is {width}x{height}px."
+    #                 )
+    #
+    #             # Reset file pointer again so Django can save it properly
+    #             value.seek(0)
+    #
+    #         except Exception as e:
+    #             if isinstance(e, serializers.ValidationError):
+    #                 raise
+    #             raise serializers.ValidationError("Upload a valid image file.")
+    #
+    #     return value
 
     @staticmethod
     def get_supporters(instance: Petition) -> int:

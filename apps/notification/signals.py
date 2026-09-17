@@ -88,6 +88,7 @@ def broadcast_saved(sender, instance, created, **kwargs):
 def message_saved(sender, instance, created, **kwargs):
     if created:
         delay_on_commit(tasks.create_message_notifications_on_create, instance.id)
+        delay_on_commit(tasks.create_message_request_notification, instance.id)
 
 
 @receiver(post_save, sender=Post)

@@ -63,6 +63,16 @@ app.conf.beat_schedule = {
         "schedule": crontab(hour="*/1"),
     },
 
+    "cleanup-post-uploads-every-24-hr": {
+        "task": "apps.posts.tasks.cleanup_incomplete_uploads",
+        "schedule": crontab(hour="*/24"),
+    },
+
+    "cleanup-chat-uploads-every-24-hr": {
+        "task": "apps.chat.tasks.cleanup_incomplete_uploads",
+        "schedule": crontab(hour="*/24"),
+    },
+
     "cleanup-broadcast-participants-every-5-min": {
         "task": "apps.broadcast.tasks.cleanup_broadcast_participants",
         "schedule": crontab(minute="*/5"),

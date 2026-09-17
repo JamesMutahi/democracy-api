@@ -75,6 +75,11 @@ class Notification(models.Model):
         return self.text
 
 
+class MessagingPreference(models.TextChoices):
+    ANYONE = 'anyone', 'Anyone'
+    FOLLOWING = 'following', 'Following'
+
+
 class Preferences(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='preferences')
     allow_notifications = models.BooleanField(default=True)
@@ -84,7 +89,13 @@ class Preferences(models.Model):
     allow_like_notifications = models.BooleanField(default=True)
     allow_reply_notifications = models.BooleanField(default=True)
     allow_repost_notifications = models.BooleanField(default=True)
+
     allow_message_notifications = models.BooleanField(default=True)
+    messaging_preference = models.CharField(
+        max_length=50,
+        choices=MessagingPreference.choices,
+        default=MessagingPreference.FOLLOWING
+    )
 
     allow_petition_notifications = models.BooleanField(default=True)
     allow_petition_supporter_notifications = models.BooleanField(default=True)
