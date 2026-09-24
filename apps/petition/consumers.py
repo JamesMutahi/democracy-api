@@ -1,12 +1,9 @@
-from datetime import datetime, time
-
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from django.contrib.postgres.search import SearchQuery, SearchRank, TrigramSimilarity
 from django.db import transaction, DatabaseError
 from django.db.models import F, Q, QuerySet
 from django.utils import timezone
-from django.utils.dateparse import parse_date, parse_datetime
 from djangochannelsrestframework.decorators import action
 from djangochannelsrestframework.generics import GenericAsyncAPIConsumer
 from djangochannelsrestframework.mixins import (
@@ -125,100 +122,6 @@ class PetitionConsumer(
         await self.support_activity.unsubscribe()
         await super().disconnect(code)
 
-    # ====================== Queryset / Helpers ======================
-
-    @staticmethod
-    def _as_bool(value, default: bool = True) -> bool:
-        """
-        Parse JSON/client boolean-like values safely.
-        """
-        if value is None:
-            return default
-
-        if isinstance(value, bool):
-            return value
-
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-
-            if normalized in {
-                "0",
-                "false",
-                "no",
-                "off",
-                "",
-                "none",
-                "null",
-            }:
-                return False
-
-            return True
-
-        return bool(value)
-
-    @staticmethod
-    def _parse_datetime(value, end_of_day: bool = False):
-        """
-        Parse datetime or date strings.
-
-        If only a date is provided:
-        - start_date becomes 00:00:00
-        - end_date becomes 23:59:59.999999
-        """
-        if value in (None, ""):
-            return None
-
-        if isinstance(value, datetime):
-            parsed = value
-        else:
-            value = str(value)
-            parsed = parse_datetime(value)
-
-            if parsed is None:
-                parsed_date = parse_date(value)
-
-                if parsed_date is None:
-                    return None
-
-                parsed = datetime.combine(
-                    parsed_date,
-                    time.max if end_of_day else time.min,
-                )
-
-        if timezone.is_naive(parsed):
-            parsed = timezone.make_aware(parsed)
-
-        return parsed
-
-    @staticmethod
-    def _normalize_previous_petitions(value):
-        """
-        Normalize previous_petitions into a clean list of integers.
-        """
-        if not value:
-            return []
-
-        if isinstance(value, (int, str)):
-            value = [value]
-
-        normalized = []
-
-        for item in value:
-            try:
-                normalized.append(int(item))
-            except (TypeError, ValueError):
-                continue
-
-        return normalized
-
-    def _get_page_size(self, page_size) -> int:
-        try:
-            size = int(page_size or self.page_size)
-        except (TypeError, ValueError):
-            size = self.page_size
-
-        return max(1, min(size, self.max_page_size))
-
     # ====================== Advanced Search ======================
 
     @staticmethod
@@ -282,14 +185,9 @@ class PetitionConsumer(
             is_open = kwargs.get("is_open", None)
 
             if is_open is not None:
-                queryset = queryset.filter(
-                    is_open=self._as_bool(is_open, default=True)
-                )
+                queryset = queryset.filter(is_open=is_open)
 
-            filter_by_region = self._as_bool(
-                kwargs.get("filter_by_region", True),
-                default=True,
-            )
+            filter_by_region = kwargs.get("filter_by_region", True)
 
             if filter_by_region:
                 county = kwargs.get("county")
@@ -348,14 +246,8 @@ class PetitionConsumer(
 
                 queryset = queryset.filter(region_q)
 
-            start_date = self._parse_datetime(
-                kwargs.get("start_date"),
-                end_of_day=False,
-            )
-            end_date = self._parse_datetime(
-                kwargs.get("end_date"),
-                end_of_day=True,
-            )
+            start_date = kwargs.get("start_date")
+            end_date = kwargs.get("end_date")
 
             if start_date and end_date:
                 queryset = queryset.filter(Q(start_time__lte=end_date) & Q(end_time__gte=start_date))
@@ -388,11 +280,7 @@ class PetitionConsumer(
 
     @action()
     @rate_limit(limit=40, period=60)
-    async def list(self, request_id: str, page_size=None, **kwargs):
-        kwargs["action"] = "list"
-        kwargs["previous_petitions"] = self._normalize_previous_petitions(
-            kwargs.get("previous_petitions")
-        )
+    async def list(self, request_id: str, page_size=page_size, **kwargs):
         kwargs["county"], kwargs["constituency"], kwargs["ward"] = (
             await self.get_user_regions()
         )
@@ -407,8 +295,6 @@ class PetitionConsumer(
 
     @database_sync_to_async
     def list_(self, queryset: QuerySet, page_size=None, **kwargs):
-        page_size = self._get_page_size(page_size)
-
         try:
             page = int(kwargs.get("page", 1))
         except (TypeError, ValueError):
@@ -426,9 +312,7 @@ class PetitionConsumer(
             context={"scope": self.scope},
         )
 
-        previous_petitions = self._normalize_previous_petitions(
-            kwargs.get("previous_petitions")
-        )
+        previous_petitions = kwargs.get("previous_petitions")
 
         return {
             "results": serializer.data,
@@ -657,24 +541,9 @@ class PetitionConsumer(
 
     @action()
     @rate_limit(limit=40, period=60)
-    async def user_petitions(self, request_id: str, page_size=None, **kwargs):
-        kwargs["action"] = "user_petitions"
-        kwargs["user"] = self.scope.get("user")
-        kwargs["previous_petitions"] = self._normalize_previous_petitions(
-            kwargs.get("previous_petitions")
-        )
-
-        queryset = self.filter_queryset(
-            self.get_queryset(**kwargs),
-            **kwargs,
-        )
-
-        data = await self.list_(
-            queryset=queryset,
-            page_size=page_size,
-            **kwargs,
-        )
-
+    async def user_petitions(self, request_id: str, page_size=page_size, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset(**kwargs),**kwargs)
+        data = await self.list_(queryset=queryset, page_size=page_size, **kwargs)
         return data, 200
 
 

@@ -292,7 +292,7 @@ class BroadcastConsumer(
             return queryset
 
         if action_name == "user_broadcasts":
-            return queryset.filter(host=kwargs.get("user"))
+            return queryset.filter(host=kwargs.get("user")).order_by("-start_time")
 
         if action_name in {"patch", "delete"}:
             return queryset.filter(host=self.scope["user"])
@@ -316,7 +316,7 @@ class BroadcastConsumer(
 
     @action()
     @rate_limit(limit=40, period=60)
-    async def user_broadcasts(self, request_id: str, page_size=None, **kwargs):
+    async def user_broadcasts(self, request_id: str, page_size=page_size, **kwargs):
         queryset = self.filter_queryset(self.get_queryset(**kwargs), **kwargs)
         data = await self.list_(queryset=queryset, page_size=page_size, **kwargs)
         return data, 200
