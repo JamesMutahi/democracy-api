@@ -47,6 +47,5 @@ class ReasonClusterInline(admin.TabularInline):
 @admin.register(Ballot)
 class BallotAdmin(admin.ModelAdmin):
     list_display = ['title', 'county', 'constituency', 'ward', 'is_active', 'start_time', 'end_time']
-    inlines = [OptionInline, BallotSummaryInline, BallotVoteInline, ReasonInline, ReasonEmbeddingInline,
-               ReasonClusterInline]
+    inlines = [OptionInline, BallotSummaryInline]
     readonly_fields = ['created_at', 'updated_at']

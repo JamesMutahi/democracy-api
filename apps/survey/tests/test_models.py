@@ -3,7 +3,7 @@ from django.test import TestCase
 from apps.survey.models import *
 
 
-class TestParticipationAppModels(TestCase):
+class TestSurveyModels(TestCase):
     def setUp(self):
         self.user = User.objects.create(
             username='test_user',

@@ -75,5 +75,5 @@ class TextAnswerEmbeddingInline(admin.TabularInline):
 @admin.register(Survey)
 class SurveyAdmin(NestedModelAdmin):
     list_display = ['title', 'county', 'constituency', 'ward', 'start_time', 'end_time', 'is_active']
-    inlines = [PageInline, SurveySummaryInline, ResponseInline, SurveyTextClusterInline, TextAnswerEmbeddingInline]
+    inlines = [PageInline, SurveySummaryInline]
 

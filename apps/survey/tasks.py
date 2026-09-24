@@ -23,8 +23,8 @@ from apps.survey.models import (
     TextAnswerEmbedding,
 )
 from apps.utils.embedding import embed_texts, clean_text_for_embedding
-from apps.utils.pii import redact_text
 from apps.utils.llm import chat_json
+from apps.utils.pii import redact_text
 
 logger = get_task_logger(__name__)
 
@@ -430,27 +430,30 @@ def cluster_survey_text_answers(survey_id: int):
     return survey_id
 
 
-def choose_number_of_clusters(embedding_count: int) -> int:
+def choose_number_of_clusters(count: int) -> int:
     """
     Heuristic cluster count.
-
+    Returns a safe value that will never exceed the sample count.
     Tune this depending on your data.
     """
 
-    if embedding_count < 500:
+    if count < 10:
+        target = 2
+    elif count < 50:
+        target = 3
+    elif count < 200:
+        target = 5
+    elif count < 1_000:
         target = 10
-    elif embedding_count < 2_000:
+    elif count < 5_000:
         target = 20
-    elif embedding_count < 10_000:
-        target = 40
-    elif embedding_count < 50_000:
-        target = 70
-    elif embedding_count < 200_000:
-        target = 100
+    elif count < 20_000:
+        target = 35
     else:
-        target = 150
+        target = 50
 
-    return max(2, min(target, embedding_count))
+        # Never return more clusters than samples
+    return max(2, min(target, count))
 
 
 def cluster_question_embeddings(
@@ -459,30 +462,37 @@ def cluster_question_embeddings(
         embedding_count: int,
 ):
     """
-    Uses MiniBatchKMeans so that vectors can be processed in batches.
-
-    Embeddings are normalized so Euclidean KMeans approximates cosine
-    similarity behavior.
+    Cluster embeddings for one TEXT question within a survey.
+    Uses streaming for very large datasets.
     """
+
+    if embedding_count < 2:
+        logger.warning(
+            f"Skipping clustering for survey {survey_id} question {question.id}: "
+            f"only {embedding_count} embedding(s) available"
+        )
+        return
 
     n_clusters = choose_number_of_clusters(embedding_count)
 
+    if n_clusters > embedding_count:
+        n_clusters = max(2, embedding_count)
+
     kmeans = MiniBatchKMeans(
         n_clusters=n_clusters,
-        batch_size=4096,
+        batch_size=min(4096, max(n_clusters * 10, 1000)),  # Larger batch for streaming
         n_init=3,
         random_state=42,
     )
 
     embeddings_qs = (
-        TextAnswerEmbedding.objects.filter(
-            survey_id=survey_id,
-            question=question,
-        )
+        TextAnswerEmbedding.objects.filter(survey_id=survey_id, question=question)
         .order_by("id")
     )
 
-    # Train in batches.
+    # Stream through data for partial_fit
+    fitted = False
+
     for batch in embeddings_qs.values_list("embedding", flat=True).iterator(chunk_size=4096):
         if not batch:
             continue
@@ -496,17 +506,30 @@ def cluster_question_embeddings(
             continue
 
         X = normalize(X, norm="l2")
-        kmeans.partial_fit(X)
 
-    # Remove previous clusters for this question.
-    SurveyTextCluster.objects.filter(
-        survey_id=survey_id,
-        question=question,
-    ).delete()
+        # partial_fit requires first batch >= n_clusters
+        if not fitted and X.shape[0] < n_clusters:
+            continue
 
-    # Create new cluster rows.
+        try:
+            kmeans.partial_fit(X)
+            fitted = True
+        except ValueError:
+            continue
+
+    # Verify the model was fitted
+    if not fitted or not hasattr(kmeans, 'cluster_centers_'):
+        logger.warning(
+            f"Skipping clustering for survey {survey_id} question {question.id}: "
+            f"could not fit model (data too small or fragmented)"
+        )
+        return
+
+    # Remove previous clusters for this question
+    SurveyTextCluster.objects.filter(survey_id=survey_id, question=question).delete()
+
+    # Create cluster rows
     centers = normalize(kmeans.cluster_centers_, norm="l2")
-
     clusters_by_label = {}
 
     for label, centroid in enumerate(centers):
@@ -519,7 +542,7 @@ def cluster_question_embeddings(
         )
         clusters_by_label[int(label)] = cluster
 
-    # Assign embeddings to clusters in batches.
+    # Assign embeddings to clusters
     sizes = Counter()
     update_buffer = []
 
@@ -538,27 +561,21 @@ def cluster_question_embeddings(
 
         for item, label in zip(embeddings, labels):
             label = int(label)
-
             item.cluster_id = clusters_by_label[label].id
             sizes[label] += 1
             update_buffer.append(item)
 
         if len(update_buffer) >= 1000:
             TextAnswerEmbedding.objects.bulk_update(
-                update_buffer,
-                ["cluster_id"],
-                batch_size=1000,
+                update_buffer, ["cluster_id"], batch_size=1000
             )
             update_buffer = []
 
     if update_buffer:
         TextAnswerEmbedding.objects.bulk_update(
-            update_buffer,
-            ["cluster_id"],
-            batch_size=1000,
+            update_buffer, ["cluster_id"], batch_size=1000
         )
 
-    # Save cluster sizes.
     for label, cluster in clusters_by_label.items():
         cluster.size = sizes.get(label, 0)
         cluster.save(update_fields=["size", "updated_at"])

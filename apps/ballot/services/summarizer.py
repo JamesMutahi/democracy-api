@@ -4,6 +4,7 @@ from collections import Counter
 from itertools import islice
 
 import numpy as np
+from celery.utils.log import get_task_logger
 from django.conf import settings
 from django.db import connection
 from django.utils import timezone
@@ -20,6 +21,8 @@ from apps.ballot.models import (
 from apps.utils.embedding import embed_texts
 from apps.utils.llm import chat_json
 from apps.utils.pii import redact_text
+
+logger = get_task_logger(__name__)
 
 # ──────────────────────────────────────────────────────────────
 # System prompts
@@ -224,7 +227,16 @@ def ensure_ballot_reason_embeddings(ballot_id: int):
 # ──────────────────────────────────────────────────────────────
 
 def choose_cluster_count(count: int) -> int:
-    if count < 200:
+    """
+    Choose number of clusters based on sample size.
+
+    Returns a safe value that will never exceed the sample count.
+    """
+    if count < 10:
+        target = 2
+    elif count < 50:
+        target = 3
+    elif count < 200:
         target = 5
     elif count < 1_000:
         target = 10
@@ -235,6 +247,7 @@ def choose_cluster_count(count: int) -> int:
     else:
         target = 50
 
+    # Never return more clusters than samples
     return max(2, min(target, count))
 
 
@@ -264,11 +277,29 @@ def cluster_ballot_reasons(ballot_id: int):
 
 
 def cluster_option_embeddings(ballot_id: int, option: Option, embedding_count: int):
+    """
+    Cluster embeddings for one option within a ballot.
+    Uses streaming for large datasets to avoid memory issues.
+    """
+
+    if embedding_count < 2:
+        logger.warning(
+            f"Skipping clustering for ballot {ballot_id} option {option.id}: "
+            f"only {embedding_count} embedding(s) available"
+        )
+        return
+
     n_clusters = choose_cluster_count(embedding_count)
+
+    if n_clusters > embedding_count:
+        n_clusters = max(2, embedding_count)
+
+    # Use larger batch size for streaming to ensure first batch >= n_clusters
+    batch_size = min(4096, max(n_clusters * 10, 1000))
 
     kmeans = MiniBatchKMeans(
         n_clusters=n_clusters,
-        batch_size=4096,
+        batch_size=batch_size,
         n_init=3,
         random_state=42,
     )
@@ -278,17 +309,43 @@ def cluster_option_embeddings(ballot_id: int, option: Option, embedding_count: i
         .order_by("id")
     )
 
-    # Train in batches
-    for batch in embeddings_qs.values_list("embedding", flat=True).iterator(chunk_size=4096):
+    # Stream through data for partial_fit
+    fitted = False
+    total_processed = 0
+
+    for batch in embeddings_qs.values_list("embedding", flat=True).iterator(chunk_size=batch_size):
         if not batch:
             continue
+
         X = np.asarray(batch, dtype=np.float32)
+
         if X.ndim == 1:
             X = X.reshape(1, -1)
+
         if X.shape[0] == 0:
             continue
+
         X = normalize(X, norm="l2")
-        kmeans.partial_fit(X)
+
+        # partial_fit requires first batch >= n_clusters
+        if not fitted and X.shape[0] < n_clusters:
+            continue
+
+        try:
+            kmeans.partial_fit(X)
+            fitted = True
+            total_processed += X.shape[0]
+        except ValueError as e:
+            logger.warning(f"partial_fit failed: {e}")
+            continue
+
+    # Verify the model was fitted
+    if not fitted or not hasattr(kmeans, 'cluster_centers_'):
+        logger.warning(
+            f"Skipping clustering for ballot {ballot_id} option {option.id}: "
+            f"could not fit model (data too small or fragmented)"
+        )
+        return
 
     # Remove previous clusters for this option
     ReasonCluster.objects.filter(ballot_id=ballot_id, option=option).delete()
@@ -307,7 +364,7 @@ def cluster_option_embeddings(ballot_id: int, option: Option, embedding_count: i
         )
         clusters_by_label[int(label)] = cluster
 
-    # Assign embeddings to clusters
+    # Assign embeddings to clusters (streaming)
     sizes = Counter()
     update_buffer = []
 
@@ -316,8 +373,10 @@ def cluster_option_embeddings(ballot_id: int, option: Option, embedding_count: i
             continue
 
         X = np.asarray([item.embedding for item in embeddings], dtype=np.float32)
+
         if X.ndim == 1:
             X = X.reshape(1, -1)
+
         X = normalize(X, norm="l2")
 
         labels = kmeans.predict(X)
@@ -342,6 +401,11 @@ def cluster_option_embeddings(ballot_id: int, option: Option, embedding_count: i
     for label, cluster in clusters_by_label.items():
         cluster.size = sizes.get(label, 0)
         cluster.save(update_fields=["size", "updated_at"])
+
+    logger.info(
+        f"Clustered ballot {ballot_id} option {option.id} into {n_clusters} clusters "
+        f"from {total_processed} embeddings"
+    )
 
 
 # Add cluster_id to ReasonEmbedding model:

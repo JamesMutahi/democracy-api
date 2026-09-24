@@ -106,3 +106,41 @@ docker compose up --build
 
 docker compose --profile monitoring up -d flower
 ```
+
+### Ballots
+```
+Generate an already-ended ballot
+python manage.py generate_test_ballot --users=120 --ended
+
+Generate and queue Celery summarization
+python manage.py generate_test_ballot --users=120 --ended --queue-summary
+
+Generate and summarize immediately
+python manage.py generate_test_ballot --users=120 --ended --summarize
+
+Small fast test
+python manage.py generate_test_ballot --users=20 --reason-rate=1.0 --ended --summarize
+
+Larger clustering-style test
+python manage.py generate_test_ballot --users=1000 --reason-rate=0.9 --ended --queue-summary
+
+No fake PII
+python manage.py generate_test_ballot --users=120 --pii-rate=0.0 --ended --summarize
+
+Mostly PII-heavy test
+python manage.py generate_test_ballot --users=50 --reason-rate=1.0 --pii-rate=1.0 --ended --summarize
+```
+
+### Surveys
+```
+Generate more text-heavy responses
+python manage.py generate_test_survey --responses=150 --text-rate=1.0 --ended
+
+python manage.py generate_test_survey --responses=200 --text-rate=1.0 --pii-rate=0.3 --ended
+
+Generate responses with lots of fake PII
+python manage.py generate_test_survey --responses=50 --text-rate=1.0 --pii-rate=0.8
+
+docker compose exec web python manage.py generate_test_survey --responses=80 --ended
+docker compose exec web python manage.py generate_test_survey --responses=200 --text-rate=1.0 --pii-rate=0.3
+```
