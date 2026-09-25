@@ -129,6 +129,8 @@ python manage.py generate_test_ballot --users=120 --pii-rate=0.0 --ended --summa
 
 Mostly PII-heavy test
 python manage.py generate_test_ballot --users=50 --reason-rate=1.0 --pii-rate=1.0 --ended --summarize
+
+python manage.py shell -c "from apps.ballot.tasks import check_ended_ballots; print(check_ended_ballots())"
 ```
 
 ### Surveys

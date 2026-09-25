@@ -438,7 +438,9 @@ class Command(BaseCommand):
         """
 
         username_field = getattr(UserModel, "USERNAME_FIELD", "username")
-        base_username = f"test_survey_responder_{index}"
+        base_username = f"test_user_{index}"
+        name = f"Test User {index}"
+        password = "Kenya123"
 
         if username_field == "email":
             lookup = {"email": f"{base_username}@example.com"}
@@ -452,17 +454,20 @@ class Command(BaseCommand):
 
         fields = dict(lookup)
 
+        if hasattr(UserModel, "name") and "name" not in fields:
+            fields["name"] = name
+
         if hasattr(UserModel, "email") and "email" not in fields:
             fields["email"] = f"{base_username}@example.com"
 
         try:
             user = UserModel.objects.create_user(
-                password="TestPass123!",
+                password=password,
                 **fields,
             )
         except TypeError:
             user = UserModel(**fields)
-            user.set_password("TestPass123!")
+            user.set_password(password)
             user.save()
 
         return user
