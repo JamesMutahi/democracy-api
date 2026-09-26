@@ -46,6 +46,11 @@ class ReasonClusterInline(admin.TabularInline):
 
 @admin.register(Ballot)
 class BallotAdmin(admin.ModelAdmin):
-    list_display = ['title', 'county', 'constituency', 'ward', 'is_active', 'start_time', 'end_time']
+    list_display = ['title', 'county', 'constituency', 'ward', 'is_active', 'start_time', 'end_time', 'get_status']
     inlines = [OptionInline, BallotSummaryInline]
     readonly_fields = ['created_at', 'updated_at']
+    list_filter = ('summary__status',)
+
+    @admin.display(description='Summary Status')
+    def get_status(self, obj):
+        return obj.summary.status

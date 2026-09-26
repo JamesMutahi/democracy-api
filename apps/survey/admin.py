@@ -74,6 +74,10 @@ class TextAnswerEmbeddingInline(admin.TabularInline):
 
 @admin.register(Survey)
 class SurveyAdmin(NestedModelAdmin):
-    list_display = ['title', 'county', 'constituency', 'ward', 'start_time', 'end_time', 'is_active']
+    list_display = ['title', 'county', 'constituency', 'ward', 'start_time', 'end_time', 'is_active', 'get_status']
     inlines = [PageInline, SurveySummaryInline]
+    list_filter = ('summary__status',)
 
+    @admin.display(description='Summary Status')
+    def get_status(self, obj):
+        return obj.summary.status
